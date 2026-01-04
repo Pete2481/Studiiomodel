@@ -108,23 +108,24 @@ export async function addTenantAdminAction(tenantId: string, email: string, name
     });
 
     // 2. Create the membership
-    await prisma.tenantMembership.upsert({
+    const existingMembership = await prisma.tenantMembership.findFirst({
       where: {
-        tenantId_userId_role_clientId: {
+        tenantId,
+        userId: user.id,
+        role: "TENANT_ADMIN"
+      }
+    });
+
+    if (!existingMembership) {
+      await prisma.tenantMembership.create({
+        data: {
           tenantId,
           userId: user.id,
           role: "TENANT_ADMIN",
-          clientId: null as any
+          hasFullClientAccess: true,
         }
-      },
-      update: {},
-      create: {
-        tenantId,
-        userId: user.id,
-        role: "TENANT_ADMIN",
-        hasFullClientAccess: true,
-      }
-    });
+      });
+    }
 
     revalidatePath("/master");
     return { success: true };
@@ -165,28 +166,30 @@ export async function syncTenantAccessAction(tenantId: string) {
     });
 
     // 3. Ensure they have a Membership
-    await prisma.tenantMembership.upsert({
+    // Use findFirst + create to be safer than upsert with null clientId
+    const existingMembership = await prisma.tenantMembership.findFirst({
       where: {
-        tenantId_userId_role_clientId: {
-          tenantId: tenant.id,
-          userId: user.id,
-          role: "TENANT_ADMIN",
-          clientId: null as any
-        }
-      },
-      update: {},
-      create: {
         tenantId: tenant.id,
         userId: user.id,
-        role: "TENANT_ADMIN",
-        hasFullClientAccess: true,
+        role: "TENANT_ADMIN"
       }
     });
 
+    if (!existingMembership) {
+      await prisma.tenantMembership.create({
+        data: {
+          tenantId: tenant.id,
+          userId: user.id,
+          role: "TENANT_ADMIN",
+          hasFullClientAccess: true,
+        }
+      });
+    }
+
     revalidatePath("/master");
     return { success: true, message: `Access synced for ${email}` };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Failed to sync access:", error);
-    return { success: false, error: "Failed to sync access" };
+    return { success: false, error: `Failed to sync access: ${error.message || "Unknown error"}` };
   }
 }

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 import { addDays } from "date-fns";
+import { notificationService } from "@/server/services/notification.service";
 
 export async function POST(request: Request) {
   try {
@@ -18,7 +19,6 @@ export async function POST(request: Request) {
     }
 
     // 1. Create the Tenant with initial trial
-    // Use raw query for creation to bypass Prisma Client field validation during caching issues
     const trialEndsAt = addDays(new Date(), 90); // 3-month free trial
     const slugLower = slug.toLowerCase().trim();
     const settingsJson = settings ? JSON.parse(settings) : {};
@@ -33,8 +33,6 @@ export async function POST(request: Request) {
       )
       RETURNING *
     `, 
-      // Generate a cuid-like ID if not provided, or let the DB default if handled (Prisma usually handles id generation)
-      // Since we are bypassing Prisma, we need to provide an ID.
       `cm${Math.random().toString(36).substring(2, 11)}`,
       name, slugLower, contactEmail, contactPhone, JSON.stringify(settingsJson), "trialing", trialEndsAt
     );
@@ -42,22 +40,23 @@ export async function POST(request: Request) {
     const tenant = tenantResults[0];
 
     // 2. Automatically link the contact email as a TENANT_ADMIN
+    let contactUserId = null;
     if (contactEmail) {
       const normalizedContactEmail = contactEmail.toLowerCase().trim();
       
-      // Find or create the user for the contact email
       const contactUser = await prisma.user.upsert({
         where: { email: normalizedContactEmail },
         update: {
-          name: contactName || name // Update name if provided
+          name: contactName || name
         },
         create: {
           email: normalizedContactEmail,
-          name: contactName || name, // Default to studio name if no user name provided
+          name: contactName || name,
         }
       });
 
-      // Create membership for the contact person
+      contactUserId = contactUser.id;
+
       await prisma.tenantMembership.create({
         data: {
           tenantId: tenant.id,
@@ -68,7 +67,7 @@ export async function POST(request: Request) {
       });
     }
 
-    // 3. Also link the creator (Master Admin) as a TENANT_ADMIN for initial setup
+    // 3. Link the Master Admin
     await prisma.tenantMembership.create({
       data: {
         tenantId: tenant.id,
@@ -77,6 +76,37 @@ export async function POST(request: Request) {
         hasFullClientAccess: true,
       },
     });
+
+    // 4. AUTO-SEED STANDARD SERVICES
+    const standardServices = [
+      { name: "Professional Real Estate Photography", price: 250, duration: 60, icon: "Camera" },
+      { name: "Aerial Drone (Photos & Video)", price: 350, duration: 45, icon: "Zap" },
+      { name: "2D & 3D Floor Plans", price: 150, duration: 30, icon: "FileText" },
+      { name: "Full Cinematic Video Tour", price: 550, duration: 90, icon: "Video" },
+    ];
+
+    await Promise.all(standardServices.map(s => 
+      prisma.service.create({
+        data: {
+          tenantId: tenant.id,
+          name: s.name,
+          description: `Standard ${s.name.toLowerCase()} service for real estate properties.`,
+          price: s.price,
+          durationMinutes: s.duration,
+          icon: s.icon,
+          active: true,
+        }
+      })
+    ));
+
+    // 5. SEND WELCOME EMAIL
+    if (contactEmail) {
+      try {
+        await notificationService.sendTeamMemberWelcome(contactUserId as string);
+      } catch (e) {
+        console.error("[CreateTenant] Failed to send welcome email:", e);
+      }
+    }
 
     return NextResponse.json({ tenant });
   } catch (error: any) {
