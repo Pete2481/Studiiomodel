@@ -20,7 +20,7 @@ export function MobileTopBar() {
     <div className="fixed top-0 left-0 right-0 z-[50] bg-white/80 backdrop-blur-md border-b border-slate-50 px-6 h-12 flex items-center justify-between">
       <div className="flex items-center gap-3 relative">
         {/* Version Tag */}
-        <span className="absolute -top-3 left-0 text-[7px] font-black text-slate-200 uppercase tracking-widest pointer-events-none">
+        <span className="absolute -top-3 left-0 text-[7px] font-black text-slate-400 uppercase tracking-widest pointer-events-none">
           ver {APP_VERSION}
         </span>
 

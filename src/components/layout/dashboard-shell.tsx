@@ -470,7 +470,7 @@ function DashboardShellContent({
           isSidebarCollapsed && "lg:px-4 lg:justify-center lg:gap-0"
         )}>
           {/* Version Tag */}
-          <span className="absolute top-2 left-6 text-[8px] font-black text-slate-200 uppercase tracking-widest pointer-events-none">
+          <span className="absolute top-2 left-6 text-[8px] font-black text-slate-400 uppercase tracking-widest pointer-events-none">
             ver {APP_VERSION}
           </span>
           
