@@ -1,10 +1,13 @@
 import { auth } from "@/auth";
 import { getTenantPrisma } from "@/lib/tenant-guard";
+import { redirect } from "next/navigation";
 import { MobileSearchButton } from "@/components/app/mobile-search-button";
 import { EditMobileContent } from "@/components/modules/edits/edit-mobile-content";
 
 export default async function MobileEditsPage() {
   const session = await auth();
+  if (!session?.user?.tenantId) redirect("/login");
+
   const tPrisma = await getTenantPrisma();
   const clientId = (session?.user as any)?.clientId;
 

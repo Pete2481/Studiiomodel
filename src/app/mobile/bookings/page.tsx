@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { getTenantPrisma } from "@/lib/tenant-guard";
+import { redirect } from "next/navigation";
 import { format, isToday, isTomorrow, startOfToday } from "date-fns";
 import { 
   Calendar,
@@ -16,6 +17,8 @@ export const dynamic = "force-dynamic";
 export default async function AppCalendar() {
   await headers();
   const session = await auth();
+  if (!session?.user?.tenantId) redirect("/login");
+
   const tPrisma = await getTenantPrisma();
   const clientId = (session?.user as any)?.clientId;
 

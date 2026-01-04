@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { getTenantPrisma } from "@/lib/tenant-guard";
+import { redirect } from "next/navigation";
 import { 
   Users,
   Plus
@@ -9,6 +10,8 @@ import { ClientMobileContent } from "@/components/modules/clients/client-mobile-
 
 export default async function AppClientsPage() {
   const session = await auth();
+  if (!session?.user?.tenantId) redirect("/login");
+
   const tPrisma = await getTenantPrisma();
 
   // Fetch all clients for the tenant

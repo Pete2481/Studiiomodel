@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { getTenantPrisma } from "@/lib/tenant-guard";
+import { redirect } from "next/navigation";
 import { 
   Wrench,
   Plus
@@ -9,6 +10,8 @@ import { ServiceMobileContent } from "@/components/modules/services/service-mobi
 
 export default async function AppServicesPage() {
   const session = await auth();
+  if (!session?.user?.tenantId) redirect("/login");
+
   const tPrisma = await getTenantPrisma();
 
   // Fetch all services for the tenant

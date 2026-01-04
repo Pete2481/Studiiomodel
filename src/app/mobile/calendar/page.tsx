@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { getTenantPrisma } from "@/lib/tenant-guard";
+import { redirect } from "next/navigation";
 import { format, addDays, startOfToday, eachDayOfInterval } from "date-fns";
 import { 
   ChevronLeft,
@@ -11,6 +12,8 @@ import { MobileSearchButton } from "@/components/app/mobile-search-button";
 
 export default async function AppCalendarPage() {
   const session = await auth();
+  if (!session?.user?.tenantId) redirect("/login");
+
   const tPrisma = await getTenantPrisma();
   
   const user = {

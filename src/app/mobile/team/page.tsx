@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { getTenantPrisma } from "@/lib/tenant-guard";
+import { redirect } from "next/navigation";
 import { 
   Users,
   Plus
@@ -9,6 +10,8 @@ import { TeamMobileContent } from "@/components/team/team-mobile-content";
 
 export default async function AppTeamPage() {
   const session = await auth();
+  if (!session?.user?.tenantId) redirect("/login");
+
   const tPrisma = await getTenantPrisma();
 
   // Fetch all team members for the tenant

@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { getTenantPrisma } from "@/lib/tenant-guard";
+import { redirect } from "next/navigation";
 import { format } from "date-fns";
 import { 
   Play, 
@@ -22,6 +23,8 @@ export const dynamic = "force-dynamic";
 export default async function AppHome() {
   await headers();
   const session = await auth();
+  if (!session?.user?.tenantId) redirect("/login");
+
   const tPrisma = await getTenantPrisma();
   const clientId = (session?.user as any)?.clientId;
   const tenantId = session?.user?.tenantId;
