@@ -72,7 +72,7 @@ export default async function ClientsPage() {
     }),
     tPrisma.tenant.findUnique({
       where: { id: session.user.tenantId as string },
-      select: { name: true, logoUrl: true }
+      select: { name: true, logoUrl: true, brandColor: true }
     }),
     tPrisma.service.findMany({
       where: { deletedAt: null, active: true },
@@ -110,6 +110,7 @@ export default async function ClientsPage() {
       user={JSON.parse(JSON.stringify(user))}
       workspaceName={tenant?.name || "Studiio Tenant"}
       logoUrl={tenant?.logoUrl || undefined}
+      brandColor={tenant?.brandColor || undefined}
       title="Client Directory"
       subtitle="Keep your agencies and key contacts in sync with portal access control."
       isActionLocked={!isSubscribed}

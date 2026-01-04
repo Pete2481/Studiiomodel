@@ -44,7 +44,7 @@ export default async function NewsletterPage() {
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: session.user.tenantId },
-    select: { name: true, logoUrl: true }
+    select: { name: true, logoUrl: true, brandColor: true }
   });
 
   return (
@@ -57,6 +57,7 @@ export default async function NewsletterPage() {
       }}
       workspaceName={tenant?.name || "Studiio Tenant"}
       logoUrl={tenant?.logoUrl || undefined}
+      brandColor={tenant?.brandColor || undefined}
       title="Newsletter Broadcast"
       subtitle="Send updates, news, and announcements directly to your clients."
     >

@@ -272,6 +272,7 @@ export default async function ReportsPage(props: {
       user={JSON.parse(JSON.stringify(user))}
       workspaceName={tenant?.name || "Studiio Tenant"}
       logoUrl={tenant?.logoUrl || undefined}
+      brandColor={tenant?.brandColor || undefined}
       title="Performance Insights"
       subtitle="Monitor revenue, team output, and client value with live dashboards."
     >

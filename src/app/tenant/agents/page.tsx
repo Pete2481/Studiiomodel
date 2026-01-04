@@ -21,6 +21,21 @@ export default async function AgentsPage() {
   const clientId = sessionUser.clientId;
   const role = sessionUser.role;
 
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { name: true, logoUrl: true, brandColor: true }
+  });
+
+  const user = {
+    name: sessionUser.name || "User",
+    role: sessionUser.role || "CLIENT",
+    clientId: sessionUser.clientId || null,
+    agentId: sessionUser.agentId || null,
+    initials: sessionUser.name?.split(' ').map((n: string) => n[0]).join('') || "U",
+    avatarUrl: sessionUser.image || null,
+    permissions: sessionUser.permissions || {}
+  };
+
   // Fetch agents based on context
   let agents: any[] = [];
   let clientInfo = null;
@@ -28,7 +43,14 @@ export default async function AgentsPage() {
   if (role === "CLIENT") {
     if (!clientId) {
       return (
-        <DashboardShell title="Agents" subtitle="Manage your agency team.">
+        <DashboardShell 
+          user={JSON.parse(JSON.stringify(user))}
+          workspaceName={tenant?.name || "Studiio Tenant"}
+          logoUrl={tenant?.logoUrl || undefined}
+          brandColor={tenant?.brandColor || undefined}
+          title="Agents" 
+          subtitle="Manage your agency team."
+        >
           <div className="p-12 text-center bg-white rounded-[32px] shadow-sm border border-slate-100">
             <p className="text-slate-500 font-medium">Client account not found.</p>
           </div>
@@ -76,26 +98,12 @@ export default async function AgentsPage() {
     agencyName: a.client?.businessName || clientInfo?.businessName || "Unknown Agency"
   }));
 
-  const tenant = await prisma.tenant.findUnique({
-    where: { id: tenantId },
-    select: { name: true, logoUrl: true }
-  });
-
-  const user = {
-    name: sessionUser.name || "User",
-    role: sessionUser.role || "CLIENT",
-    clientId: sessionUser.clientId || null,
-    agentId: sessionUser.agentId || null,
-    initials: sessionUser.name?.split(' ').map((n: string) => n[0]).join('') || "U",
-    avatarUrl: sessionUser.image || null,
-    permissions: sessionUser.permissions || {}
-  };
-
   return (
     <DashboardShell 
       user={JSON.parse(JSON.stringify(user))}
       workspaceName={tenant?.name || "Studiio Tenant"}
       logoUrl={tenant?.logoUrl || undefined}
+      brandColor={tenant?.brandColor || undefined}
       title="Agents" 
       subtitle={role === "CLIENT" ? `Manage agents for ${clientInfo?.businessName}` : "Manage all agency crew members."}
     >

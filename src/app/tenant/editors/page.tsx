@@ -34,7 +34,7 @@ export default async function EditorsPage() {
   const [tenant, dbEditors] = await Promise.all([
     prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { name: true, logoUrl: true }
+      select: { name: true, logoUrl: true, brandColor: true }
     }),
     prisma.teamMember.findMany({
       where: { tenantId, role: 'EDITOR', deletedAt: null },
@@ -63,6 +63,7 @@ export default async function EditorsPage() {
       user={user}
       workspaceName={tenant?.name || "Studiio Tenant"}
       logoUrl={tenant?.logoUrl || undefined}
+      brandColor={tenant?.brandColor || undefined}
       title="Editors Roster"
       subtitle="Manage your post-production team, monitor turnaround times, and assign tasks."
     >

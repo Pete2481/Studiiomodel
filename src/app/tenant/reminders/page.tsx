@@ -18,7 +18,7 @@ export default async function RemindersPage() {
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: session.user.tenantId },
-    select: { name: true, logoUrl: true, settings: true }
+    select: { name: true, logoUrl: true, settings: true, brandColor: true }
   });
 
   const settings = (tenant?.settings as any) || {};
@@ -42,6 +42,7 @@ export default async function RemindersPage() {
       }}
       workspaceName={tenant?.name || "Studiio Tenant"}
       logoUrl={tenant?.logoUrl || undefined}
+      brandColor={tenant?.brandColor || undefined}
       title="Booking Reminders"
       subtitle="Configure automated notifications to keep your clients informed and prepared."
     >

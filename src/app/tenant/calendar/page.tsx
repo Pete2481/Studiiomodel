@@ -103,9 +103,8 @@ export default async function CalendarPage(props: {
     tPrisma.agent.findMany({
       where: { deletedAt: null },
     }),
-    // Use raw query for tenant to ensure fresh data for business hours
     prisma.$queryRawUnsafe(
-      `SELECT * FROM "Tenant" WHERE id = $1 LIMIT 1`,
+      `SELECT id, name, "logoUrl", "brandColor", "bookingStatuses", "businessHours", "sunriseSlotTime", "duskSlotTime", "sunriseSlotsPerDay", "duskSlotsPerDay", "calendarSecret" FROM "Tenant" WHERE id = $1 LIMIT 1`,
       sessionUser.tenantId
     ).then(rows => (rows as any[])[0])
   ]);
@@ -208,6 +207,7 @@ export default async function CalendarPage(props: {
       user={JSON.parse(JSON.stringify(user))}
       workspaceName={tenant?.name || workspaceName}
       logoUrl={tenant?.logoUrl || undefined}
+      brandColor={tenant?.brandColor || undefined}
       title="Booking calendar"
       subtitle="Colour-coded bookings, drag-in favourites, and fast rescheduling for your production days."
       navCounts={navCounts}

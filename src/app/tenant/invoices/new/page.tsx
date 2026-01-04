@@ -75,6 +75,7 @@ export default async function NewInvoicePage() {
     <DashboardShell
       workspaceName={tenant?.name || "Studiio Tenant"}
       logoUrl={tenant?.logoUrl || undefined}
+      brandColor={tenant?.brandColor || undefined}
       title="Create Invoice"
       subtitle="Generate a new invoice for your clients."
     >

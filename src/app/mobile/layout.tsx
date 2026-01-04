@@ -7,6 +7,8 @@ import { MobileSearchProvider } from "@/components/app/mobile-search-context";
 import { MobileMenuProvider } from "@/components/app/mobile-menu-context";
 import { GuideProvider } from "@/components/layout/guide-context";
 import { headers } from "next/headers";
+import { prisma } from "@/lib/prisma";
+import { MobileBrandProvider } from "@/components/layout/mobile-brand-provider";
 
 export const dynamic = "force-dynamic";
 
@@ -22,29 +24,42 @@ export default async function AppLayout({
     redirect("/login");
   }
 
+  const tenantId = session.user.tenantId;
+  let brandColor = undefined;
+
+  if (tenantId) {
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { brandColor: true }
+    });
+    brandColor = tenant?.brandColor || undefined;
+  }
+
   return (
-    <GuideProvider>
-      <MobileMenuProvider>
-        <MobileSearchProvider>
-          <div className="flex flex-col min-h-screen bg-white">
-            {/* Static Top Bar */}
-            <MobileTopBar />
+    <MobileBrandProvider brandColor={brandColor}>
+      <GuideProvider>
+        <MobileMenuProvider>
+          <MobileSearchProvider>
+            <div className="flex flex-col min-h-screen bg-white">
+              {/* Static Top Bar */}
+              <MobileTopBar />
 
-            {/* Mobile App Shell */}
-            <main className="relative touch-pan-y pt-12">
-              <div className="pb-32">
-                {children}
-              </div>
-            </main>
+              {/* Mobile App Shell */}
+              <main className="relative touch-pan-y pt-12">
+                <div className="pb-32">
+                  {children}
+                </div>
+              </main>
 
-            {/* Persistent Bottom Nav */}
-            <AppBottomNav />
+              {/* Persistent Bottom Nav */}
+              <AppBottomNav />
 
-            {/* PWA Install Flow */}
-            <AppInstallPrompt />
-          </div>
-        </MobileSearchProvider>
-      </MobileMenuProvider>
-    </GuideProvider>
+              {/* PWA Install Flow */}
+              <AppInstallPrompt />
+            </div>
+          </MobileSearchProvider>
+        </MobileMenuProvider>
+      </GuideProvider>
+    </MobileBrandProvider>
   );
 }

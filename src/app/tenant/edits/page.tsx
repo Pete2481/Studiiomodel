@@ -108,7 +108,7 @@ export default async function EditRequestsPage(props: {
     }),
     tPrisma.tenant.findUnique({
       where: { id: session.user.tenantId as string },
-      select: { name: true, logoUrl: true }
+      select: { name: true, logoUrl: true, brandColor: true }
     })
   ]);
 
@@ -160,6 +160,7 @@ export default async function EditRequestsPage(props: {
       user={user}
       workspaceName={tenant?.name || "Studiio Tenant"}
       logoUrl={tenant?.logoUrl || undefined}
+      brandColor={tenant?.brandColor || undefined}
       title="Edit Requests"
       subtitle="Track client feedback, request revisions, and respond to changes."
       isActionLocked={!isSubscribed}
