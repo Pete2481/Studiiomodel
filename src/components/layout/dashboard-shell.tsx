@@ -117,8 +117,8 @@ function DashboardShellContent({
   children, 
   navSections: providedNavSections, 
   user: providedUser,
-  title = "Operations Control",
-  subtitle = "Monitor and manage your photography workflow.",
+  title: propTitle,
+  subtitle: propSubtitle,
   isMasterMode = false,
   workspaceName,
   workspaceSlug,
@@ -131,6 +131,20 @@ function DashboardShellContent({
   navCounts = {}
 }: DashboardShellProps) {
   const { showHints, setShowHints } = useGuide();
+  const { 
+    activeModal, 
+    setActiveModal, 
+    isSidebarCollapsed, 
+    setIsSidebarCollapsed,
+    isMobileMenuOpen,
+    setIsMobileMenuOpen,
+    title: contextTitle,
+    subtitle: contextSubtitle
+  } = useDashboard();
+
+  const title = propTitle || contextTitle;
+  const subtitle = propSubtitle || contextSubtitle;
+
   const pathname = usePathname();
   const router = useRouter();
   const { data: session } = useSession();
@@ -152,15 +166,6 @@ function DashboardShellContent({
       root.style.setProperty("--primary-soft", `${safeColor}33`);
     }
   }, [brandColor]);
-
-  const { 
-    activeModal, 
-    setActiveModal, 
-    isSidebarCollapsed, 
-    setIsSidebarCollapsed,
-    isMobileMenuOpen,
-    setIsMobileMenuOpen
-  } = useDashboard();
 
   const [isSeeAllEnabled, setIsSeeAllEnabled] = useState(false);
 

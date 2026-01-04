@@ -1,0 +1,160 @@
+import { auth } from "@/auth";
+import { redirect } from "next/navigation";
+import { getTenantPrisma } from "@/lib/tenant-guard";
+import { BookingsPageContent } from "@/components/bookings/bookings-page-content";
+import { prisma } from "@/lib/prisma";
+import { Suspense } from "react";
+import { ShellSettings } from "@/components/layout/shell-settings";
+import { Loader2 } from "lucide-react";
+
+export const dynamic = "force-dynamic";
+
+export default async function CalendarPage(props: {
+  searchParams: Promise<{ global?: string }>
+}) {
+  const session = await auth();
+  const searchParams = await props.searchParams;
+  const isGlobal = searchParams.global === "true";
+
+  if (!session) {
+    redirect("/login");
+  }
+
+  const sessionUser = session.user as any;
+
+  return (
+    <div className="space-y-12">
+      <ShellSettings 
+        title="Booking calendar" 
+        subtitle="Colour-coded bookings, drag-in favourites, and fast rescheduling for your production days." 
+      />
+      
+      <Suspense fallback={
+        <div className="flex h-[50vh] w-full items-center justify-center">
+          <Loader2 className="h-10 w-10 text-primary animate-spin" />
+        </div>
+      }>
+        <CalendarDataWrapper sessionUser={sessionUser} isGlobal={isGlobal} />
+      </Suspense>
+    </div>
+  );
+}
+
+async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any, isGlobal: boolean }) {
+  const tPrisma = isGlobal && sessionUser.isMasterAdmin ? prisma : await getTenantPrisma();
+  const { role, teamMemberId, clientId, agentId } = sessionUser;
+
+  const user = {
+    name: sessionUser.name || "User",
+    role: sessionUser.role || "CLIENT",
+    clientId: sessionUser.clientId || null,
+    agentId: sessionUser.agentId || null,
+    initials: sessionUser.name?.split(' ').map((n: string) => n[0]).join('') || "U",
+    avatarUrl: sessionUser.image || null,
+    permissions: sessionUser.permissions || {}
+  };
+
+  // Visibility Scoping
+  const bookingWhere: any = { 
+    deletedAt: null,
+    startAt: {
+      gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    },
+    endAt: {
+      lte: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+    }
+  };
+
+  const canViewAll = sessionUser.role === "TENANT_ADMIN" || sessionUser.role === "ADMIN";
+  if (!canViewAll) {
+    if (role === "CLIENT") bookingWhere.clientId = clientId;
+    else if (role === "AGENT") bookingWhere.agentId = agentId;
+    else if (teamMemberId) bookingWhere.assignments = { some: { teamMemberId } };
+  }
+
+  // Real data fetching
+  const [dbBookings, dbClients, dbServices, dbTeamMembers, dbAgents, tenant] = await Promise.all([
+    tPrisma.booking.findMany({
+      where: bookingWhere,
+      include: {
+        client: { select: { id: true, name: true, businessName: true } },
+        property: { select: { id: true, name: true } },
+        services: { include: { service: { select: { name: true } } } },
+        assignments: { include: { teamMember: { select: { id: true, displayName: true, avatarUrl: true } } } },
+      }
+    }),
+    tPrisma.client.findMany({ where: { deletedAt: null }, select: { id: true, name: true, businessName: true, avatarUrl: true } }),
+    tPrisma.service.findMany({ where: { active: true } }),
+    tPrisma.teamMember.findMany({ where: { deletedAt: null } }),
+    tPrisma.agent.findMany({ where: { deletedAt: null } }),
+    tPrisma.tenant.findUnique({
+      where: { id: sessionUser.tenantId as string },
+      select: { 
+        id: true, 
+        bookingStatuses: true, 
+        businessHours: true, 
+        sunriseSlotTime: true, 
+        duskSlotTime: true, 
+        sunriseSlotsPerDay: true, 
+        duskSlotsPerDay: true, 
+        calendarSecret: true,
+        settings: true
+      }
+    })
+  ]);
+
+  const customStatuses = (tenant as any)?.bookingStatuses || (tenant as any)?.settings?.bookingStatuses || [
+    "Tenanted Property", "Owner Occupied", "Empty (Keys at office)"
+  ];
+
+  const bookings = (dbBookings as any[]).map(b => {
+    const startAt = b.startAt instanceof Date && !isNaN(b.startAt.getTime()) ? b.startAt.toISOString() : null;
+    const endAt = b.endAt instanceof Date && !isNaN(b.endAt.getTime()) ? b.endAt.toISOString() : null;
+    if (!startAt || !endAt) return null;
+    let status = (b.status || "REQUESTED").toLowerCase();
+    if (status === 'approved') status = 'confirmed';
+    
+    return {
+      id: String(b.id),
+      title: String(b.title || (b.isPlaceholder ? (b.slotType + " SLOT") : "Booking")),
+      startAt, endAt, status: status as any,
+      propertyStatus: b.propertyStatus || "",
+      clientId: b.clientId ? String(b.clientId) : null,
+      agentId: b.agentId ? String(b.agentId) : null,
+      client: !b.client ? null : { name: String(b.client.name || ""), businessName: String(b.client.businessName || "") },
+      property: !b.property ? { name: "TBC" } : { name: String(b.property.name || "TBC") },
+      internalNotes: String(b.internalNotes || ""),
+      clientNotes: String(b.clientNotes || ""),
+      isPlaceholder: !!b.isPlaceholder,
+      slotType: (b as any).slotType || null,
+      services: (b.services || []).map((s: any) => ({ serviceId: String(s.serviceId), name: String(s.service?.name || "Unknown Service") })),
+      assignments: (b.assignments || []).map((a: any) => ({ teamMemberId: String(a.teamMemberId), teamMember: { displayName: String(a.teamMember?.displayName || "To assign"), avatarUrl: a.teamMember?.avatarUrl || null } }))
+    };
+  }).filter(Boolean);
+
+  const clients = dbClients.map(c => ({ id: String(c.id), name: String(c.name), businessName: String(c.businessName || ""), avatarUrl: c.avatarUrl || null }));
+  const services = dbServices.map(s => ({ id: String(s.id), name: String(s.name), price: Number(s.price), durationMinutes: Number(s.durationMinutes), icon: String(s.icon || "CAMERA"), slotType: (s as any).slotType || null, clientVisible: (s as any).clientVisible !== false, isFavorite: (s.settings as any)?.isFavorite || false }));
+  const teamMembers = dbTeamMembers.map(m => ({ id: String(m.id), displayName: String(m.displayName), avatarUrl: m.avatarUrl || null }));
+  const agents = dbAgents.map(a => ({ id: String(a.id), name: String(a.name), clientId: String(a.clientId), avatarUrl: a.avatarUrl || null }));
+
+  return (
+    <BookingsPageContent 
+      mode="calendar"
+      initialBookings={bookings}
+      clients={clients}
+      services={services}
+      teamMembers={teamMembers}
+      agents={agents}
+      customStatuses={customStatuses}
+      businessHours={(tenant as any)?.businessHours || null}
+      calendarSecret={(tenant as any)?.calendarSecret || null}
+      slotSettings={{
+        sunriseSlotTime: (tenant as any)?.sunriseSlotTime || "06:00",
+        duskSlotTime: (tenant as any)?.duskSlotTime || "18:30",
+        sunriseSlotsPerDay: (tenant as any)?.sunriseSlotsPerDay || 1,
+        duskSlotsPerDay: (tenant as any)?.duskSlotsPerDay || 1
+      }}
+      user={user}
+    />
+  );
+}
