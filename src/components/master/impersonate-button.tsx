@@ -25,12 +25,14 @@ export function ImpersonateButton({ tenantId }: ImpersonateButtonProps) {
           email: result.email,
           tenantId: result.membershipId,
           otp: result.otp,
-          redirect: true,
-          callbackUrl: "/",
+          redirect: false,
         });
 
         if (signInResult?.error) {
           alert("Failed to switch: " + signInResult.error);
+        } else {
+          // Manually redirect on success
+          window.location.href = "/";
         }
       } else {
         alert(result.error || "Failed to prepare switch");
