@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import { SessionProvider } from "next-auth/react";
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import { LoadingBar } from "@/components/layout/loading-bar";
+import { Suspense } from "react";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -24,7 +25,9 @@ export default function RootLayout({
       <body className={`${inter.className} min-h-screen bg-slate-50 antialiased`}>
         <SessionProvider>
           <ThemeProvider brandColor="#10b981">
-            <LoadingBar />
+            <Suspense fallback={null}>
+              <LoadingBar />
+            </Suspense>
             {children}
           </ThemeProvider>
         </SessionProvider>
