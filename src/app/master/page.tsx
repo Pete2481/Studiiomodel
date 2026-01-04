@@ -24,6 +24,8 @@ import { format, differenceInDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import { SubscriptionOverwriteToggle } from "@/components/master/subscription-overwrite-toggle";
 import { ImpersonateButton } from "@/components/master/impersonate-button";
+import { AddAdminModal } from "@/components/master/add-admin-modal";
+import { SyncAccessButton } from "@/components/master/sync-access-button";
 import { headers } from "next/headers";
 
 export const dynamic = "force-dynamic";
@@ -200,6 +202,12 @@ export default async function MasterDashboardPage() {
                       <td className="px-10 py-6 text-right">
                         <div className="flex items-center justify-end gap-3">
                           <SubscriptionOverwriteToggle tenantId={tenant.id} initialValue={!!tenant.subscriptionOverwrite} />
+                          <SyncAccessButton tenantId={tenant.id} />
+                          <AddAdminModal 
+                            tenantId={tenant.id} 
+                            tenantName={tenant.name} 
+                            defaultEmail={tenant.contactEmail} 
+                          />
                           <ImpersonateButton tenantId={tenant.id} />
                           <Trash2 className="h-4 w-4 text-slate-200 hover:text-rose-500 cursor-pointer ml-2 transition-colors" />
                         </div>

@@ -86,3 +86,107 @@ export async function impersonateTenantAction(tenantId: string) {
     return { success: false, error: "Failed to prepare impersonation" };
   }
 }
+
+export async function addTenantAdminAction(tenantId: string, email: string, name: string) {
+  const session = await auth();
+  
+  if (!session?.user?.isMasterAdmin) {
+    throw new Error("Unauthorized");
+  }
+
+  try {
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // 1. Find or create the user
+    const user = await prisma.user.upsert({
+      where: { email: normalizedEmail },
+      update: { name },
+      create: {
+        email: normalizedEmail,
+        name,
+      }
+    });
+
+    // 2. Create the membership
+    await prisma.tenantMembership.upsert({
+      where: {
+        tenantId_userId_role_clientId: {
+          tenantId,
+          userId: user.id,
+          role: "TENANT_ADMIN",
+          clientId: null as any
+        }
+      },
+      update: {},
+      create: {
+        tenantId,
+        userId: user.id,
+        role: "TENANT_ADMIN",
+        hasFullClientAccess: true,
+      }
+    });
+
+    revalidatePath("/master");
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to add admin:", error);
+    return { success: false, error: "Failed to add admin user" };
+  }
+}
+
+export async function syncTenantAccessAction(tenantId: string) {
+  const session = await auth();
+  
+  if (!session?.user?.isMasterAdmin) {
+    throw new Error("Unauthorized: Master Admin only");
+  }
+
+  try {
+    // 1. Get the tenant details
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, name: true, contactEmail: true }
+    });
+
+    if (!tenant || !tenant.contactEmail) {
+      return { success: false, error: "Tenant has no contact email set" };
+    }
+
+    const email = tenant.contactEmail.toLowerCase().trim();
+
+    // 2. Ensure the User exists
+    const user = await prisma.user.upsert({
+      where: { email },
+      update: {},
+      create: {
+        email,
+        name: tenant.name,
+      }
+    });
+
+    // 3. Ensure they have a Membership
+    await prisma.tenantMembership.upsert({
+      where: {
+        tenantId_userId_role_clientId: {
+          tenantId: tenant.id,
+          userId: user.id,
+          role: "TENANT_ADMIN",
+          clientId: null as any
+        }
+      },
+      update: {},
+      create: {
+        tenantId: tenant.id,
+        userId: user.id,
+        role: "TENANT_ADMIN",
+        hasFullClientAccess: true,
+      }
+    });
+
+    revalidatePath("/master");
+    return { success: true, message: `Access synced for ${email}` };
+  } catch (error) {
+    console.error("Failed to sync access:", error);
+    return { success: false, error: "Failed to sync access" };
+  }
+}
