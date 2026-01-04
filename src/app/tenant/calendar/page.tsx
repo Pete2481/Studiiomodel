@@ -116,12 +116,13 @@ export default async function CalendarPage(props: {
         duskSlotTime: true, 
         sunriseSlotsPerDay: true, 
         duskSlotsPerDay: true, 
-        calendarSecret: true 
+        calendarSecret: true,
+        settings: true
       }
     })
   ]);
 
-  const customStatuses = tenant?.bookingStatuses || (tenant?.settings as any)?.bookingStatuses || [
+  const customStatuses = (tenant as any)?.bookingStatuses || (tenant as any)?.settings?.bookingStatuses || [
     "Tenanted Property",
     "Owner Occupied",
     "Empty (Keys at office)"

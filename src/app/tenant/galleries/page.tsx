@@ -122,7 +122,7 @@ export default async function GalleriesPage(props: {
     }),
     tPrisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { name: true, logoUrl: true, brandColor: true }
+      select: { id: true, name: true, logoUrl: true, brandColor: true }
     })
   ]);
 
@@ -187,9 +187,9 @@ export default async function GalleriesPage(props: {
   return (
     <DashboardShell 
       user={JSON.parse(JSON.stringify(user))}
-      workspaceName={tenant?.name || workspaceName}
-      logoUrl={tenant?.logoUrl || undefined}
-      brandColor={tenant?.brandColor || undefined}
+      workspaceName={(tenant as any)?.name || workspaceName}
+      logoUrl={(tenant as any)?.logoUrl || undefined}
+      brandColor={(tenant as any)?.brandColor || undefined}
       title="Galleries"
       subtitle="Manage your photography assets and client deliveries."
       isActionLocked={!isSubscribed}

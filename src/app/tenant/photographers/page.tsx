@@ -72,7 +72,7 @@ export default async function PhotographersPage() {
     }),
     prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { name: true, logoUrl: true, brandColor: true }
+      select: { id: true, name: true, logoUrl: true, brandColor: true }
     })
   ]);
 
@@ -92,9 +92,9 @@ export default async function PhotographersPage() {
     <DashboardShell 
       navSections={filteredNav} 
       user={JSON.parse(JSON.stringify(user))}
-      workspaceName={tenant?.name || "Studiio Tenant"}
-      logoUrl={tenant?.logoUrl || undefined}
-      brandColor={tenant?.brandColor || undefined}
+      workspaceName={(tenant as any)?.name || "Studiio Tenant"}
+      logoUrl={(tenant as any)?.logoUrl || undefined}
+      brandColor={(tenant as any)?.brandColor || undefined}
       title="Team Members"
       subtitle="Manage your production crew, update permissions, and keep contact info current."
       isActionLocked={!isSubscribed}

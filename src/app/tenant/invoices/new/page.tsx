@@ -38,6 +38,7 @@ export default async function NewInvoicePage() {
     prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { 
+        id: true,
         name: true, 
         logoUrl: true, 
         brandColor: true, 
@@ -76,15 +77,15 @@ export default async function NewInvoicePage() {
 
   const serializedTenant = {
     ...tenant,
-    settings: tenant?.settings || {},
-    taxRate: tenant?.taxRate ? Number(tenant.taxRate) : null
+    settings: (tenant as any)?.settings || {},
+    taxRate: (tenant as any)?.taxRate ? Number((tenant as any).taxRate) : null
   };
 
   return (
     <DashboardShell
-      workspaceName={tenant?.name || "Studiio Tenant"}
-      logoUrl={tenant?.logoUrl || undefined}
-      brandColor={tenant?.brandColor || undefined}
+      workspaceName={(tenant as any)?.name || "Studiio Tenant"}
+      logoUrl={(tenant as any)?.logoUrl || undefined}
+      brandColor={(tenant as any)?.brandColor || undefined}
       title="Create Invoice"
       subtitle="Generate a new invoice for your clients."
     >
@@ -92,7 +93,7 @@ export default async function NewInvoicePage() {
         clients={serializedClients} 
         services={serializedServices} 
         bookings={serializedBookings} 
-        tenant={serializedTenant}
+        tenant={serializedTenant as any}
         isActionLocked={!isSubscribed}
       />
     </DashboardShell>

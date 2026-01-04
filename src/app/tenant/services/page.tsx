@@ -53,7 +53,7 @@ export default async function ServicesPage() {
     }),
     tPrisma.tenant.findUnique({
       where: { id: session.user.tenantId as string },
-      select: { name: true, logoUrl: true, brandColor: true }
+      select: { id: true, name: true, logoUrl: true, brandColor: true }
     })
   ]);
 
@@ -77,9 +77,9 @@ export default async function ServicesPage() {
     <DashboardShell 
       navSections={filteredNav} 
       user={JSON.parse(JSON.stringify(user))}
-      workspaceName={tenant?.name || "Studiio Tenant"}
-      logoUrl={tenant?.logoUrl || undefined}
-      brandColor={tenant?.brandColor || undefined}
+      workspaceName={(tenant as any)?.name || "Studiio Tenant"}
+      logoUrl={(tenant as any)?.logoUrl || undefined}
+      brandColor={(tenant as any)?.brandColor || undefined}
       title="Service Catalogue"
       subtitle="Manage the packages your team delivers, track usage, and keep pricing aligned."
       isActionLocked={!isSubscribed}

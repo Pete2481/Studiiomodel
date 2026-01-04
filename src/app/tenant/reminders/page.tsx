@@ -18,10 +18,10 @@ export default async function RemindersPage() {
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: session.user.tenantId },
-    select: { name: true, logoUrl: true, settings: true, brandColor: true }
+    select: { id: true, name: true, logoUrl: true, settings: true, brandColor: true }
   });
 
-  const settings = (tenant?.settings as any) || {};
+  const settings = ((tenant as any)?.settings as any) || {};
   const reminderTemplate = settings.reminderTemplate;
 
   const filteredNav = permissionService.getFilteredNav(
@@ -40,9 +40,9 @@ export default async function RemindersPage() {
         role: session.user.role || "TENANT_ADMIN",
         initials: session.user.name?.split(' ').map(n => n[0]).join('') || "U"
       }}
-      workspaceName={tenant?.name || "Studiio Tenant"}
-      logoUrl={tenant?.logoUrl || undefined}
-      brandColor={tenant?.brandColor || undefined}
+      workspaceName={(tenant as any)?.name || "Studiio Tenant"}
+      logoUrl={(tenant as any)?.logoUrl || undefined}
+      brandColor={(tenant as any)?.brandColor || undefined}
       title="Booking Reminders"
       subtitle="Configure automated notifications to keep your clients informed and prepared."
     >

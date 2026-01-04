@@ -48,7 +48,7 @@ export default async function TenantDashboard() {
   // Fetch Tenant Branding
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
-    select: { name: true, logoUrl: true, slug: true, brandColor: true }
+    select: { id: true, name: true, logoUrl: true, slug: true, brandColor: true }
   });
 
   const user = {
@@ -284,13 +284,13 @@ export default async function TenantDashboard() {
     <DashboardShell 
       user={user}
       title={dashboardTitle}
-      workspaceName={tenant?.name || dashboardTitle}
-      workspaceSlug={tenant?.slug}
-      logoUrl={tenant?.logoUrl || undefined}
-      brandColor={tenant?.brandColor || undefined}
+      workspaceName={(tenant as any)?.name || dashboardTitle}
+      workspaceSlug={(tenant as any)?.slug}
+      logoUrl={(tenant as any)?.logoUrl || undefined}
+      brandColor={(tenant as any)?.brandColor || undefined}
       subtitle={user.role === "TENANT_ADMIN" || user.role === "ADMIN" 
-        ? `Monitor ${tenant?.name || 'studio'} bookings, assets, and team performance.`
-        : `Welcome back to the ${tenant?.name || 'studio'} dashboard, ${user.name}`}
+        ? `Monitor ${(tenant as any)?.name || 'studio'} bookings, assets, and team performance.`
+        : `Welcome back to the ${(tenant as any)?.name || 'studio'} dashboard, ${user.name}`}
       isMasterMode={false}
       clients={clients}
       agents={dbAgents.map(a => ({ id: String(a.id), name: String(a.name), clientId: String(a.clientId) }))}

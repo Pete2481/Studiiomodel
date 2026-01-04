@@ -48,6 +48,7 @@ export default async function EditInvoicePage({ params }: EditInvoicePageProps) 
     prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { 
+        id: true,
         name: true, 
         logoUrl: true, 
         brandColor: true, 
@@ -103,17 +104,17 @@ export default async function EditInvoicePage({ params }: EditInvoicePageProps) 
 
   const serializedTenant = {
     ...tenant,
-    settings: tenant?.settings || {},
-    taxRate: tenant?.taxRate ? Number(tenant.taxRate) : null
+    settings: (tenant as any)?.settings || {},
+    taxRate: (tenant as any)?.taxRate ? Number((tenant as any).taxRate) : null
   };
 
   const isSubscribed = await checkSubscriptionStatus(tenantId);
 
   return (
     <DashboardShell
-      workspaceName={tenant?.name || "Studiio Tenant"}
-      logoUrl={tenant?.logoUrl || undefined}
-      brandColor={tenant?.brandColor || undefined}
+      workspaceName={(tenant as any)?.name || "Studiio Tenant"}
+      logoUrl={(tenant as any)?.logoUrl || undefined}
+      brandColor={(tenant as any)?.brandColor || undefined}
       title="Edit Invoice"
       subtitle={`Update invoice #${invoice.number}`}
     >
@@ -122,7 +123,7 @@ export default async function EditInvoicePage({ params }: EditInvoicePageProps) 
         services={serializedServices} 
         bookings={serializedBookings}
         initialData={serializedInvoice}
-        tenant={serializedTenant}
+        tenant={serializedTenant as any}
         isActionLocked={!isSubscribed}
       />
     </DashboardShell>

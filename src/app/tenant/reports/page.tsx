@@ -77,7 +77,20 @@ export default async function ReportsPage(props: {
     }),
     tPrisma.tenant.findUnique({
       where: { id: session.user.tenantId as string },
-      select: { name: true, logoUrl: true, settings: true, abn: true, taxLabel: true, taxRate: true, accountName: true, accountNumber: true, invoiceTerms: true, invoiceLogoUrl: true, brandColor: true }
+      select: { 
+        id: true,
+        name: true, 
+        logoUrl: true, 
+        settings: true, 
+        abn: true, 
+        taxLabel: true, 
+        taxRate: true, 
+        accountName: true, 
+        accountNumber: true, 
+        invoiceTerms: true, 
+        invoiceLogoUrl: true, 
+        brandColor: true 
+      }
     }),
     tPrisma.service.findMany({
       where: { deletedAt: null },
@@ -270,9 +283,9 @@ export default async function ReportsPage(props: {
   return (
     <DashboardShell 
       user={JSON.parse(JSON.stringify(user))}
-      workspaceName={tenant?.name || "Studiio Tenant"}
-      logoUrl={tenant?.logoUrl || undefined}
-      brandColor={tenant?.brandColor || undefined}
+      workspaceName={(tenant as any)?.name || "Studiio Tenant"}
+      logoUrl={(tenant as any)?.logoUrl || undefined}
+      brandColor={(tenant as any)?.brandColor || undefined}
       title="Performance Insights"
       subtitle="Monitor revenue, team output, and client value with live dashboards."
     >

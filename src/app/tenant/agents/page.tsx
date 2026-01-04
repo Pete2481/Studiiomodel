@@ -23,7 +23,7 @@ export default async function AgentsPage() {
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
-    select: { name: true, logoUrl: true, brandColor: true }
+    select: { id: true, name: true, logoUrl: true, brandColor: true }
   });
 
   const user = {
@@ -101,9 +101,9 @@ export default async function AgentsPage() {
   return (
     <DashboardShell 
       user={JSON.parse(JSON.stringify(user))}
-      workspaceName={tenant?.name || "Studiio Tenant"}
-      logoUrl={tenant?.logoUrl || undefined}
-      brandColor={tenant?.brandColor || undefined}
+      workspaceName={(tenant as any)?.name || "Studiio Tenant"}
+      logoUrl={(tenant as any)?.logoUrl || undefined}
+      brandColor={(tenant as any)?.brandColor || undefined}
       title="Agents" 
       subtitle={role === "CLIENT" ? `Manage agents for ${clientInfo?.businessName}` : "Manage all agency crew members."}
     >

@@ -60,6 +60,7 @@ export default async function InvoicesPage() {
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
     select: { 
+      id: true,
       name: true, 
       logoUrl: true, 
       brandColor: true, 
@@ -106,9 +107,9 @@ export default async function InvoicesPage() {
   return (
     <DashboardShell
       user={JSON.parse(JSON.stringify(user))}
-      workspaceName={tenant?.name || "Studiio Tenant"}
-      logoUrl={tenant?.logoUrl || undefined}
-      brandColor={tenant?.brandColor || undefined}
+      workspaceName={(tenant as any)?.name || "Studiio Tenant"}
+      logoUrl={(tenant as any)?.logoUrl || undefined}
+      brandColor={(tenant as any)?.brandColor || undefined}
       title="Invoices"
       subtitle="Manage your billing and collection cycles."
       isActionLocked={!isSubscribed}
