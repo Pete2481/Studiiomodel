@@ -12,7 +12,7 @@ export default async function NewInvoicePage() {
   const tenantId = session.user.tenantId;
   const isSubscribed = await checkSubscriptionStatus(tenantId);
 
-  const [clients, services, bookings] = await Promise.all([
+  const [clients, services, bookings, tenant] = await Promise.all([
     prisma.client.findMany({
       where: { tenantId, deletedAt: null },
       select: { id: true, name: true, businessName: true, avatarUrl: true, settings: true }
@@ -34,18 +34,27 @@ export default async function NewInvoicePage() {
         }
       },
       orderBy: { startAt: 'desc' }
+    }),
+    prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { 
+        name: true, 
+        logoUrl: true, 
+        brandColor: true, 
+        autoInvoiceReminders: true, 
+        invoiceDueDays: true, 
+        abn: true, 
+        taxLabel: true, 
+        taxRate: true, 
+        accountName: true, 
+        bsb: true, 
+        accountNumber: true, 
+        invoiceTerms: true, 
+        invoiceLogoUrl: true, 
+        settings: true 
+      }
     })
   ]);
-
-  // USE RAW SQL to bypass Prisma Client's "Unknown Field" cache issues
-  const results: any[] = await prisma.$queryRawUnsafe(
-    `SELECT name, "logoUrl", "brandColor", "autoInvoiceReminders", "invoiceDueDays", 
-            abn, "taxLabel", "taxRate", "accountName", bsb, "accountNumber", 
-            "invoiceTerms", "invoiceLogoUrl", settings
-     FROM "Tenant" WHERE id = $1 LIMIT 1`,
-    tenantId
-  );
-  const tenant = results[0];
 
   // Serialize Decimal to Number
   const serializedServices = services.map(s => ({

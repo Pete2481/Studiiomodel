@@ -18,7 +18,7 @@ export default async function EditInvoicePage({ params }: EditInvoicePageProps) 
 
   const tenantId = session.user.tenantId;
 
-  const [invoice, clients, services, bookings] = await Promise.all([
+  const [invoice, clients, services, bookings, tenant] = await Promise.all([
     prisma.invoice.findFirst({
       where: { id: invoiceId, tenantId },
       include: { lineItems: true }
@@ -44,18 +44,27 @@ export default async function EditInvoicePage({ params }: EditInvoicePageProps) 
         }
       },
       orderBy: { startAt: 'desc' }
+    }),
+    prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { 
+        name: true, 
+        logoUrl: true, 
+        brandColor: true, 
+        autoInvoiceReminders: true, 
+        invoiceDueDays: true, 
+        abn: true, 
+        taxLabel: true, 
+        taxRate: true, 
+        accountName: true, 
+        bsb: true, 
+        accountNumber: true, 
+        invoiceTerms: true, 
+        invoiceLogoUrl: true, 
+        settings: true 
+      }
     })
   ]);
-
-  // USE RAW SQL to bypass Prisma Client's "Unknown Field" cache issues
-  const results: any[] = await prisma.$queryRawUnsafe(
-    `SELECT name, "logoUrl", "brandColor", "autoInvoiceReminders", "invoiceDueDays", 
-            abn, "taxLabel", "taxRate", "accountName", bsb, "accountNumber", 
-            "invoiceTerms", "invoiceLogoUrl", settings
-     FROM "Tenant" WHERE id = $1 LIMIT 1`,
-    tenantId
-  );
-  const tenant = results[0];
 
   if (!invoice) notFound();
 

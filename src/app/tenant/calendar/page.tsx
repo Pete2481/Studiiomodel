@@ -103,10 +103,22 @@ export default async function CalendarPage(props: {
     tPrisma.agent.findMany({
       where: { deletedAt: null },
     }),
-    prisma.$queryRawUnsafe(
-      `SELECT id, name, "logoUrl", "brandColor", "bookingStatuses", "businessHours", "sunriseSlotTime", "duskSlotTime", "sunriseSlotsPerDay", "duskSlotsPerDay", "calendarSecret" FROM "Tenant" WHERE id = $1 LIMIT 1`,
-      sessionUser.tenantId
-    ).then(rows => (rows as any[])[0])
+    tPrisma.tenant.findUnique({
+      where: { id: sessionUser.tenantId as string },
+      select: { 
+        id: true, 
+        name: true, 
+        logoUrl: true, 
+        brandColor: true, 
+        bookingStatuses: true, 
+        businessHours: true, 
+        sunriseSlotTime: true, 
+        duskSlotTime: true, 
+        sunriseSlotsPerDay: true, 
+        duskSlotsPerDay: true, 
+        calendarSecret: true 
+      }
+    })
   ]);
 
   const customStatuses = tenant?.bookingStatuses || (tenant?.settings as any)?.bookingStatuses || [

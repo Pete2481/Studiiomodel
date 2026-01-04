@@ -57,15 +57,24 @@ export default async function InvoicesPage() {
     }
   });
 
-  // USE RAW SQL to bypass Prisma Client's "Unknown Field" cache issues
-  const results: any[] = await prisma.$queryRawUnsafe(
-    `SELECT name, "logoUrl", "brandColor", "autoInvoiceReminders", "invoiceDueDays", 
-            abn, "taxLabel", "taxRate", "accountName", bsb, "accountNumber", 
-            "invoiceTerms", "invoiceLogoUrl" 
-     FROM "Tenant" WHERE id = $1 LIMIT 1`,
-    tenantId
-  );
-  const tenant = results[0];
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { 
+      name: true, 
+      logoUrl: true, 
+      brandColor: true, 
+      autoInvoiceReminders: true, 
+      invoiceDueDays: true, 
+      abn: true, 
+      taxLabel: true, 
+      taxRate: true, 
+      accountName: true, 
+      bsb: true, 
+      accountNumber: true, 
+      invoiceTerms: true, 
+      invoiceLogoUrl: true 
+    }
+  });
 
   // Serialize Decimal to Number for Client Component
   const serializedInvoices = invoices.map(inv => {

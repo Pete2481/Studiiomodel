@@ -72,10 +72,10 @@ export class GalleryService {
     };
 
     const galleryData: any = {
-      clientId,
-      propertyId,
-      bookingId: bookingId || null,
-      agentId: agentId || null,
+      client: { connect: { id: clientId } },
+      property: { connect: { id: propertyId } },
+      booking: bookingId ? { connect: { id: bookingId } } : undefined,
+      agent: agentId ? { connect: { id: agentId } } : undefined,
       title,
       status: status as any,
       notifyClient,
