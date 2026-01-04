@@ -288,19 +288,6 @@ export async function getGalleryAssets(galleryId: string) {
       });
     });
 
-    // 3. Update Gallery Metadata with Image Count
-    if (allAssets.length > 0) {
-      await tPrisma.gallery.update({
-        where: { id: galleryId },
-        data: {
-          metadata: {
-            ...metadata,
-            imageCount: allAssets.length
-          }
-        }
-      });
-    }
-
     return { success: true, assets: allAssets };
   } catch (error: any) {
     console.error("GET GALLERY ASSETS ERROR:", error);

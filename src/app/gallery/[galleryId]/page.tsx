@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { GalleryPublicViewer } from "@/components/modules/galleries/gallery-public-viewer";
 import { formatDropboxUrl } from "@/lib/utils";
 import { auth } from "@/auth";
+import { getGalleryAssets } from "@/app/actions/dropbox";
 
 export const dynamic = "force-dynamic";
 
@@ -14,63 +15,69 @@ export default async function PublicGalleryPage({
   const { galleryId } = await params;
   const session = await auth();
 
-  // Fetch gallery and active edit tags for the tenant
-  const gallery = await prisma.gallery.findUnique({
-    where: { id: galleryId, deletedAt: null },
-    include: {
-      tenant: {
-        include: {
-          editTags: {
-            where: { active: true },
-            orderBy: { name: 'asc' }
+  // 1. Parallelize data fetching
+  const [gallery, assetsResult] = await Promise.all([
+    prisma.gallery.findUnique({
+      where: { id: galleryId, deletedAt: null },
+      include: {
+        tenant: {
+          include: {
+            editTags: {
+              where: { active: true },
+              orderBy: { name: 'asc' }
+            }
           }
-        }
-      },
-      client: {
-        select: {
-          id: true,
-          name: true,
-          businessName: true,
-          watermarkUrl: true,
-          watermarkSettings: true
-        }
-      },
-      property: {
-        select: {
-          name: true
-        }
-      },
-      favorites: {
-        select: {
-          imageId: true
-        }
-      },
-      editRequests: {
-        where: { status: { not: 'CANCELLED' } },
-        select: {
-          fileUrl: true,
-          status: true
-        }
-      },
-      booking: {
-        include: {
-          assignments: {
-            include: {
-              teamMember: {
-                select: {
-                  displayName: true
+        },
+        client: {
+          select: {
+            id: true,
+            name: true,
+            businessName: true,
+            watermarkUrl: true,
+            watermarkSettings: true
+          }
+        },
+        property: {
+          select: {
+            name: true
+          }
+        },
+        favorites: {
+          select: {
+            imageId: true
+          }
+        },
+        editRequests: {
+          where: { status: { not: 'CANCELLED' } },
+          select: {
+            fileUrl: true,
+            status: true
+          }
+        },
+        booking: {
+          include: {
+            assignments: {
+              include: {
+                teamMember: {
+                  select: {
+                    displayName: true
+                  }
                 }
               }
             }
           }
         }
       }
-    }
-  });
+    }),
+    getGalleryAssets(galleryId)
+  ]);
 
   if (!gallery) {
     notFound();
   }
+
+  // 2. Prepare assets
+  const initialAssets = assetsResult.success ? assetsResult.assets : [];
 
   // Serialize edit tags (handling Decimal)
   const serializedEditTags = gallery.tenant.editTags.map(tag => ({
@@ -125,6 +132,7 @@ export default async function PublicGalleryPage({
         tenant={serializedTenant} 
         editTags={serializedEditTags}
         user={serializedUser}
+        initialAssets={initialAssets}
       />
     </div>
   );

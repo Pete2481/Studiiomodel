@@ -41,14 +41,21 @@ interface GalleryPublicViewerProps {
   tenant: any;
   editTags?: any[];
   user?: any;
+  initialAssets?: any[];
 }
 
-export function GalleryPublicViewer({ gallery, tenant, editTags = [], user }: GalleryPublicViewerProps) {
+export function GalleryPublicViewer({ 
+  gallery, 
+  tenant, 
+  editTags = [], 
+  user,
+  initialAssets = [] 
+}: GalleryPublicViewerProps) {
   const router = useRouter();
-  const [assets, setAssets] = useState<any[]>([]);
+  const [assets, setAssets] = useState<any[]>(initialAssets);
   const [videos, setVideos] = useState<any[]>(gallery.metadata?.videoLinks || []);
   const [activeVideoIdx, setActiveVideoIdx] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(initialAssets.length === 0);
   const [selectedAsset, setSelectedAsset] = useState<any>(null);
   const [activeFilter, setActiveFilter] = useState<"all" | "images" | "videos" | "favorites">("all");
   const [error, setError] = useState<string | null>(null);
@@ -119,6 +126,13 @@ export function GalleryPublicViewer({ gallery, tenant, editTags = [], user }: Ga
 
   // Load real assets from multiple Dropbox folders
   useEffect(() => {
+    // If we already have initial assets, we can skip the initial load
+    // but we might still want to refresh if they are empty
+    if (initialAssets.length > 0) {
+      setIsLoading(false);
+      return;
+    }
+
     async function loadAssets() {
       setIsLoading(true);
       setError(null);
@@ -139,7 +153,7 @@ export function GalleryPublicViewer({ gallery, tenant, editTags = [], user }: Ga
     }
 
     loadAssets();
-  }, [gallery.id]);
+  }, [gallery.id, initialAssets]);
 
   const handleToggleFavorite = async (e: React.MouseEvent, item: any) => {
     e.stopPropagation();
@@ -147,25 +161,26 @@ export function GalleryPublicViewer({ gallery, tenant, editTags = [], user }: Ga
     const isFav = favorites.includes(itemId);
     
     // Optimistic Update
-    if (isFav) {
-      setFavorites(favorites.filter(id => id !== itemId));
-    } else {
-      setFavorites([...favorites, itemId]);
-    }
+    setFavorites(prev => 
+      isFav ? prev.filter(id => id !== itemId) : [...prev, itemId]
+    );
 
     setIsTogglingFavorite(itemId);
     try {
       const res = await toggleFavorite(gallery.id, itemId, item.path || item.url);
       if (!res.success) {
         // Rollback on failure
-        if (isFav) {
-          setFavorites([...favorites, itemId]);
-        } else {
-          setFavorites(favorites.filter(id => id !== itemId));
-        }
+        setFavorites(prev => 
+          isFav ? [...prev, itemId] : prev.filter(id => id !== itemId)
+        );
+        console.error("Fav toggle failed:", res.error);
       }
     } catch (err) {
       console.error("Fav error:", err);
+      // Rollback on network error
+      setFavorites(prev => 
+        isFav ? [...prev, itemId] : prev.filter(id => id !== itemId)
+      );
     } finally {
       setIsTogglingFavorite(null);
     }

@@ -5,6 +5,10 @@ import { auth } from "@/auth";
 import sharp from "sharp";
 import { logger } from "@/lib/logger";
 
+// In-memory cache for logos to avoid repeated fetches during high-volume thumbnail requests
+const logoCache = new Map<string, { buffer: Buffer, timestamp: number }>();
+const LOGO_CACHE_TTL = 1000 * 60 * 60; // 1 hour
+
 /**
  * Proxy route to fetch high-res assets from Dropbox.
  * This avoids CORS issues and keeps tokens server-side.
@@ -148,9 +152,20 @@ export async function GET(
 
     // Apply Watermark
     try {
-      const logoResponse = await fetch(gallery.tenant.logoUrl);
-      if (logoResponse.ok) {
-        const logoBuffer = Buffer.from(await logoResponse.arrayBuffer());
+      let logoBuffer: Buffer | null = null;
+      const cached = logoCache.get(gallery.tenant.logoUrl);
+      
+      if (cached && Date.now() - cached.timestamp < LOGO_CACHE_TTL) {
+        logoBuffer = cached.buffer;
+      } else {
+        const logoResponse = await fetch(gallery.tenant.logoUrl);
+        if (logoResponse.ok) {
+          logoBuffer = Buffer.from(await logoResponse.arrayBuffer());
+          logoCache.set(gallery.tenant.logoUrl, { buffer: logoBuffer, timestamp: Date.now() });
+        }
+      }
+
+      if (logoBuffer) {
         const processedLogo = await sharp(logoBuffer)
           .resize({ width: 300, height: 300, fit: 'inside' })
           .composite([{
@@ -168,16 +183,16 @@ export async function GET(
           }])
           .toBuffer();
 
-                return new NextResponse(Buffer.from(watermarkedBuffer), {
-                  headers: {
-                    "Content-Type": "image/jpeg",
-                    "Cache-Control": "public, max-age=3600"
-                  }
-                });
-              }
-            } catch (watermarkError) {
-              console.error("[PROXY] Watermark application failed:", watermarkError);
-            }
+        return new NextResponse(Buffer.from(watermarkedBuffer), {
+          headers: {
+            "Content-Type": "image/jpeg",
+            "Cache-Control": "public, max-age=3600"
+          }
+        });
+      }
+    } catch (watermarkError) {
+      console.error("[PROXY] Watermark application failed:", watermarkError);
+    }
 
             return new NextResponse(Buffer.from(buffer), {
               headers: {
