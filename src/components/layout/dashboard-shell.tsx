@@ -467,7 +467,7 @@ function DashboardShellContent({
           "mb-10 flex items-center gap-3 px-6 pt-8 transition-all duration-300",
           isSidebarCollapsed && "lg:px-4 lg:justify-center lg:gap-0"
         )}>
-          <div className="flex h-11 w-11 flex-none items-center justify-center rounded-2xl bg-[var(--primary)] text-white shadow-lg overflow-hidden group-hover:scale-105 transition-transform"
+          <div className="flex h-11 w-11 flex-none items-center justify-center rounded-2xl bg-primary text-white shadow-lg overflow-hidden group-hover:scale-105 transition-transform"
                style={{ 
                  boxShadow: isMasterMode ? `0 10px 15px -3px rgba(99, 102, 241, 0.3)` : `0 10px 15px -3px var(--primary-soft)`,
                  background: isMasterMode ? 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)' : undefined
@@ -520,7 +520,7 @@ function DashboardShellContent({
                           className={cn(
                             "group flex items-center rounded-xl px-3 py-2.5 text-[13px] font-semibold transition-all duration-200",
                             isActive 
-                              ? "bg-[var(--primary)] text-white shadow-lg" 
+                              ? "bg-primary text-white shadow-lg" 
                               : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
                             isSidebarCollapsed ? "lg:justify-center lg:px-0 lg:w-12 lg:h-12 lg:mx-auto" : "justify-between"
                           )}
@@ -529,7 +529,7 @@ function DashboardShellContent({
                           <span className={cn("flex items-center gap-3", isSidebarCollapsed && "lg:gap-0")}>
                             <span className={cn(
                               "flex h-8 w-8 flex-none items-center justify-center rounded-full transition-colors relative",
-                              isActive ? "bg-white/20 text-white" : "bg-slate-50 group-hover:bg-[var(--primary)] group-hover:text-white"
+                              isActive ? "bg-white/20 text-white" : "bg-slate-50 group-hover:bg-primary group-hover:text-white"
                             )}>
                               <Icon className="h-4 w-4" />
                               {isSidebarCollapsed && count && count > 0 && (

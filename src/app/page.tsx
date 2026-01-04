@@ -334,7 +334,7 @@ export default async function TenantDashboard() {
                           <Link 
                             href={!isSubscribed ? "/tenant/settings?tab=billing" : "/tenant/calendar?action=new"}
                             className={cn(
-                              "h-10 bg-[var(--primary)] hover:opacity-90 text-white rounded-full px-5 text-xs font-bold transition-all shadow-lg shadow-primary/20 active:scale-95 flex items-center justify-center gap-2",
+                              "h-10 bg-primary hover:opacity-90 text-white rounded-full px-5 text-xs font-bold transition-all shadow-lg shadow-primary/20 active:scale-95 flex items-center justify-center gap-2",
                               !isSubscribed && "opacity-50 grayscale hover:grayscale-0 transition-all"
                             )}
                           >

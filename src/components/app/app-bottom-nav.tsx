@@ -97,7 +97,7 @@ export function AppBottomNav() {
             <>
               <Icon className={cn(
                 "h-6 w-6 transition-all duration-300",
-                isActive ? "fill-primary/10" : ""
+                isActive ? "fill-primary text-primary" : ""
               )} />
               <span className="text-[10px] font-bold uppercase tracking-widest mt-1">
                 {item.label}
