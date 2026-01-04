@@ -23,6 +23,7 @@ import Link from "next/link";
 import { format, differenceInDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import { SubscriptionOverwriteToggle } from "@/components/master/subscription-overwrite-toggle";
+import { ImpersonateButton } from "@/components/master/impersonate-button";
 import { headers } from "next/headers";
 
 export const dynamic = "force-dynamic";
@@ -199,7 +200,7 @@ export default async function MasterDashboardPage() {
                       <td className="px-10 py-6 text-right">
                         <div className="flex items-center justify-end gap-3">
                           <SubscriptionOverwriteToggle tenantId={tenant.id} initialValue={!!tenant.subscriptionOverwrite} />
-                          <ActionButton icon={<Eye className="h-4 w-4" />} />
+                          <ImpersonateButton tenantId={tenant.id} />
                           <Trash2 className="h-4 w-4 text-slate-200 hover:text-rose-500 cursor-pointer ml-2 transition-colors" />
                         </div>
                       </td>

@@ -41,7 +41,32 @@ export async function POST(request: Request) {
     
     const tenant = tenantResults[0];
 
-    // 2. Automatically link the creator as a TENANT_ADMIN for initial setup
+    // 2. Automatically link the contact email as a TENANT_ADMIN
+    if (contactEmail) {
+      const normalizedContactEmail = contactEmail.toLowerCase().trim();
+      
+      // Find or create the user for the contact email
+      const contactUser = await prisma.user.upsert({
+        where: { email: normalizedContactEmail },
+        update: {}, // Don't change anything if they exist
+        create: {
+          email: normalizedContactEmail,
+          name: name, // Default to studio name
+        }
+      });
+
+      // Create membership for the contact person
+      await prisma.tenantMembership.create({
+        data: {
+          tenantId: tenant.id,
+          userId: contactUser.id,
+          role: "TENANT_ADMIN",
+          hasFullClientAccess: true,
+        },
+      });
+    }
+
+    // 3. Also link the creator (Master Admin) as a TENANT_ADMIN for initial setup
     await prisma.tenantMembership.create({
       data: {
         tenantId: tenant.id,

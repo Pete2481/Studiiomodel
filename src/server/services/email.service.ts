@@ -48,12 +48,36 @@ class EmailService {
     }
 
     // Determine SMTP configuration
-    // Fallback to global env if tenant settings are missing or MASTER
-    const host = tenant?.smtpHost || process.env.SMTP_HOST || "mediadrive.com.au";
-    const port = Number(tenant?.smtpPort || process.env.SMTP_PORT || 465);
-    const user = tenant?.smtpUser || process.env.SMTP_USER || "systems@mediadrive.com.au";
-    const pass = tenant?.smtpPass || process.env.SMTP_PASS || "Password@2026";
-    const secure = tenant?.smtpSecure !== null && tenant?.smtpSecure !== undefined ? tenant.smtpSecure : (process.env.SMTP_SECURE === "true" || true);
+    // Fallback order: Tenant Settings -> AUTH_EMAIL_SERVER -> SMTP_ Env Vars -> Hardcoded Defaults
+    let host = tenant?.smtpHost || process.env.SMTP_HOST;
+    let port = Number(tenant?.smtpPort || process.env.SMTP_PORT);
+    let user = tenant?.smtpUser || process.env.SMTP_USER;
+    let pass = tenant?.smtpPass || process.env.SMTP_PASS;
+    let secure = tenant?.smtpSecure !== null && tenant?.smtpSecure !== undefined 
+      ? tenant.smtpSecure 
+      : (process.env.SMTP_SECURE === "true");
+
+    // NEW: If we still don't have settings, try to parse the AUTH_EMAIL_SERVER JSON
+    if (!host && process.env.AUTH_EMAIL_SERVER) {
+      try {
+        const authConfig = JSON.parse(process.env.AUTH_EMAIL_SERVER);
+        host = authConfig.host;
+        port = Number(authConfig.port);
+        user = authConfig.auth?.user;
+        pass = authConfig.auth?.pass;
+        secure = authConfig.secure;
+        console.log(`[EMAIL_SERVICE] Using configuration from AUTH_EMAIL_SERVER`);
+      } catch (e) {
+        console.error("[EMAIL_SERVICE] Failed to parse AUTH_EMAIL_SERVER JSON", e);
+      }
+    }
+
+    // Final hardcoded fallbacks if absolutely nothing is set
+    host = host || "mail.studiio.au";
+    port = port || 465;
+    user = user || "team@studiio.au";
+    pass = pass || "Media@2026!";
+    if (secure === undefined) secure = true;
 
     const transporter = nodemailer.createTransport({
       host,
