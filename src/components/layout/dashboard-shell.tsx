@@ -464,16 +464,18 @@ function DashboardShellContent({
           isSidebarCollapsed ? "lg:w-24" : "lg:w-72"
         )}
       >
+        {/* Version Badge - Absolute to Sidebar */}
+        <div className="absolute top-2 left-6 z-[60] pointer-events-none">
+          <span className="text-[9px] font-black text-rose-500 uppercase tracking-[0.2em] opacity-80">
+            v{APP_VERSION}
+          </span>
+        </div>
+
         {/* Brand */}
         <div className={cn(
           "mb-10 flex items-center gap-3 px-6 pt-8 transition-all duration-300 relative",
           isSidebarCollapsed && "lg:px-4 lg:justify-center lg:gap-0"
         )}>
-          {/* Version Tag */}
-          <span className="absolute top-2 left-6 text-[8px] font-black text-slate-400 uppercase tracking-widest pointer-events-none">
-            ver {APP_VERSION}
-          </span>
-          
           <div className="flex h-11 w-11 flex-none items-center justify-center rounded-2xl bg-primary text-white shadow-lg overflow-hidden group-hover:scale-105 transition-transform"
                style={{ 
                  boxShadow: isMasterMode ? `0 10px 15px -3px rgba(99, 102, 241, 0.3)` : `0 10px 15px -3px var(--primary-soft)`,

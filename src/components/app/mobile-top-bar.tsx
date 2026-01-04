@@ -18,12 +18,12 @@ export function MobileTopBar() {
 
   return (
     <div className="fixed top-0 left-0 right-0 z-[50] bg-white/80 backdrop-blur-md border-b border-slate-50 px-6 h-12 flex items-center justify-between">
-      <div className="flex items-center gap-3 relative">
-        {/* Version Tag */}
-        <span className="absolute -top-3 left-0 text-[7px] font-black text-slate-400 uppercase tracking-widest pointer-events-none">
-          ver {APP_VERSION}
-        </span>
+      {/* Version Tag */}
+      <span className="absolute top-1 left-6 text-[8px] font-black text-rose-500 uppercase tracking-widest pointer-events-none">
+        v{APP_VERSION}
+      </span>
 
+      <div className="flex items-center gap-3 relative">
         <div className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200">
           {session.user.image && session.user.image !== "" ? (
             <img src={session.user.image} className="h-full w-full object-cover" alt="Profile" />
