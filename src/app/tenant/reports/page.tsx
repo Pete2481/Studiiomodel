@@ -282,14 +282,14 @@ export default async function ReportsPage(props: {
 
   return (
     <DashboardShell 
-      user={JSON.parse(JSON.stringify(user))}
+      user={user}
       workspaceName={(tenant as any)?.name || "Studiio Tenant"}
       logoUrl={(tenant as any)?.logoUrl || undefined}
       brandColor={(tenant as any)?.brandColor || undefined}
       title="Performance Insights"
       subtitle="Monitor revenue, team output, and client value with live dashboards."
     >
-      <ReportsOverview tenantId={tenantId} stats={JSON.parse(JSON.stringify(stats))} />
+      <ReportsOverview tenantId={tenantId} stats={stats} />
     </DashboardShell>
   );
 }

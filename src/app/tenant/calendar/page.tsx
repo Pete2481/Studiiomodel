@@ -53,7 +53,16 @@ export default async function CalendarPage(props: {
   }
 
   // Fetching Logic with Scoping
-  const bookingWhere: any = { deletedAt: null };
+  const bookingWhere: any = { 
+    deletedAt: null,
+    // Only fetch bookings from 1 month ago to 3 months ahead for performance
+    startAt: {
+      gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    },
+    endAt: {
+      lte: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+    }
+  };
   if (!canViewAll) {
     // Scope to user's own data
     if (role === "CLIENT") {
@@ -217,7 +226,7 @@ export default async function CalendarPage(props: {
 
   return (
     <DashboardShell 
-      user={JSON.parse(JSON.stringify(user))}
+      user={user}
       workspaceName={tenant?.name || workspaceName}
       logoUrl={tenant?.logoUrl || undefined}
       brandColor={tenant?.brandColor || undefined}
@@ -228,12 +237,12 @@ export default async function CalendarPage(props: {
       <div className="space-y-12">
         <BookingsPageContent 
           mode="calendar"
-          initialBookings={JSON.parse(JSON.stringify(bookings))}
-          clients={JSON.parse(JSON.stringify(clients))}
-          services={JSON.parse(JSON.stringify(services))}
-          teamMembers={JSON.parse(JSON.stringify(teamMembers))}
-          agents={JSON.parse(JSON.stringify(agents))}
-          customStatuses={JSON.parse(JSON.stringify(customStatuses))}
+          initialBookings={bookings}
+          clients={clients}
+          services={services}
+          teamMembers={teamMembers}
+          agents={agents}
+          customStatuses={customStatuses}
           businessHours={(tenant as any)?.businessHours || null}
           calendarSecret={(tenant as any)?.calendarSecret || null}
           slotSettings={{
@@ -242,7 +251,7 @@ export default async function CalendarPage(props: {
             sunriseSlotsPerDay: (tenant as any)?.sunriseSlotsPerDay || 1,
             duskSlotsPerDay: (tenant as any)?.duskSlotsPerDay || 1
           }}
-          user={JSON.parse(JSON.stringify(user))}
+          user={user}
         />
       </div>
     </DashboardShell>

@@ -84,6 +84,8 @@ export default async function BookingsPage(props: {
       where: { 
         deletedAt: null,
       },
+      orderBy: { startAt: 'desc' },
+      take: 50, // Limit to recent 50 for performance
       include: {
         client: { select: { id: true, name: true, businessName: true } },
         property: { select: { id: true, name: true } },
@@ -218,7 +220,7 @@ export default async function BookingsPage(props: {
 
   return (
     <DashboardShell 
-      user={JSON.parse(JSON.stringify(user))}
+      user={user}
       workspaceName={tenant?.name || workspaceName}
       logoUrl={tenant?.logoUrl || undefined}
       brandColor={tenant?.brandColor || undefined}
@@ -230,12 +232,12 @@ export default async function BookingsPage(props: {
       <div className="space-y-12">
         <BookingsPageContent 
           mode="list"
-          initialBookings={JSON.parse(JSON.stringify(bookings))}
-          clients={JSON.parse(JSON.stringify(clients))}
-          services={JSON.parse(JSON.stringify(services))}
-          teamMembers={JSON.parse(JSON.stringify(teamMembers))}
-          agents={JSON.parse(JSON.stringify(agents))}
-          customStatuses={JSON.parse(JSON.stringify(customStatuses))}
+          initialBookings={bookings}
+          clients={clients}
+          services={services}
+          teamMembers={teamMembers}
+          agents={agents}
+          customStatuses={customStatuses}
           businessHours={tenant?.businessHours || null}
           slotSettings={{
             sunriseSlotTime: tenant?.sunriseSlotTime || "06:00",
@@ -243,7 +245,7 @@ export default async function BookingsPage(props: {
             sunriseSlotsPerDay: tenant?.sunriseSlotsPerDay || 1,
             duskSlotsPerDay: tenant?.duskSlotsPerDay || 1
           }}
-          user={JSON.parse(JSON.stringify(user))}
+          user={user}
           isActionLocked={!isSubscribed}
         />
       </div>

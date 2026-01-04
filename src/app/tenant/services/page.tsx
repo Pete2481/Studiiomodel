@@ -36,10 +36,10 @@ export default async function ServicesPage() {
 
   const isSubscribed = await checkSubscriptionStatus(tenantId);
 
-  const filteredNav = JSON.parse(JSON.stringify(permissionService.getFilteredNav(
+  const filteredNav = permissionService.getFilteredNav(
     { role: user.role, isMasterMode: false },
     UNIFIED_NAV_CONFIG
-  )));
+  );
 
   // Real data fetching
   const [dbServices, tenant] = await Promise.all([
@@ -76,7 +76,7 @@ export default async function ServicesPage() {
   return (
     <DashboardShell 
       navSections={filteredNav} 
-      user={JSON.parse(JSON.stringify(user))}
+      user={user}
       workspaceName={(tenant as any)?.name || "Studiio Tenant"}
       logoUrl={(tenant as any)?.logoUrl || undefined}
       brandColor={(tenant as any)?.brandColor || undefined}
@@ -85,7 +85,7 @@ export default async function ServicesPage() {
       isActionLocked={!isSubscribed}
     >
       <ServicePageContent 
-        initialServices={JSON.parse(JSON.stringify(services))} 
+        initialServices={services} 
         isActionLocked={!isSubscribed}
       />
     </DashboardShell>

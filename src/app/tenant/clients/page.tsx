@@ -107,7 +107,7 @@ export default async function ClientsPage() {
   return (
     <DashboardShell 
       navSections={filteredNav} 
-      user={JSON.parse(JSON.stringify(user))}
+      user={user}
       workspaceName={(tenant as any)?.name || "Studiio Tenant"}
       logoUrl={(tenant as any)?.logoUrl || undefined}
       brandColor={(tenant as any)?.brandColor || undefined}
@@ -116,8 +116,8 @@ export default async function ClientsPage() {
       isActionLocked={!isSubscribed}
     >
       <ClientPageContent 
-        initialClients={JSON.parse(JSON.stringify(clients))} 
-        services={JSON.parse(JSON.stringify(services))}
+        initialClients={clients} 
+        services={services}
         isActionLocked={!isSubscribed}
       />
     </DashboardShell>

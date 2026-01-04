@@ -173,7 +173,7 @@ export function BookingsPageContent({
       });
       if (result.success) {
         setIsDrawerOpen(false);
-        window.location.reload();
+        router.refresh();
       } else {
         alert(result.error || "Something went wrong while saving the booking.");
       }
@@ -188,7 +188,7 @@ export function BookingsPageContent({
       const result = await deleteBooking(id);
       if (result.success) {
         setIsDrawerOpen(false);
-        window.location.reload();
+        router.refresh();
       } else {
         alert(result.error || "Failed to remove booking.");
       }

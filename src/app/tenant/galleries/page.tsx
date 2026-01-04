@@ -186,7 +186,7 @@ export default async function GalleriesPage(props: {
 
   return (
     <DashboardShell 
-      user={JSON.parse(JSON.stringify(user))}
+      user={user}
       workspaceName={(tenant as any)?.name || workspaceName}
       logoUrl={(tenant as any)?.logoUrl || undefined}
       brandColor={(tenant as any)?.brandColor || undefined}

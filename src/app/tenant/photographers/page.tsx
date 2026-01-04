@@ -51,10 +51,10 @@ export default async function PhotographersPage() {
     permissions: (session.user as any).permissions || {}
   };
 
-  const filteredNav = JSON.parse(JSON.stringify(permissionService.getFilteredNav(
+  const filteredNav = permissionService.getFilteredNav(
     { role: user.role, isMasterMode: false },
     UNIFIED_NAV_CONFIG
-  )));
+  );
 
   // Real data fetching
   const [dbTeamMembers, tenant] = await Promise.all([
@@ -85,13 +85,13 @@ export default async function PhotographersPage() {
     shoots: Number(m._count.bookings),
     avatar: m.avatarUrl || null,
     role: String(m.role),
-    permissions: JSON.parse(JSON.stringify(m.permissions || {}))
+    permissions: m.permissions || {}
   }));
 
   return (
     <DashboardShell 
       navSections={filteredNav} 
-      user={JSON.parse(JSON.stringify(user))}
+      user={user}
       workspaceName={(tenant as any)?.name || "Studiio Tenant"}
       logoUrl={(tenant as any)?.logoUrl || undefined}
       brandColor={(tenant as any)?.brandColor || undefined}
@@ -100,7 +100,7 @@ export default async function PhotographersPage() {
       isActionLocked={!isSubscribed}
     >
       <TeamMemberPageContent 
-        initialMembers={JSON.parse(JSON.stringify(teamMembers))} 
+        initialMembers={teamMembers} 
         isActionLocked={!isSubscribed}
       />
     </DashboardShell>
