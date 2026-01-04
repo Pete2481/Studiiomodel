@@ -47,6 +47,8 @@ import { DashboardProvider, useDashboard } from "./dashboard-context";
 import { GlobalSearch } from "./global-search";
 import { GuideProvider, useGuide } from "./guide-context";
 import { Hint } from "@/components/ui";
+import { SetupChecklist } from "@/components/onboarding/setup-checklist";
+import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -137,10 +139,15 @@ function DashboardShellContent({
 
   // Dynamically apply brand color
   useEffect(() => {
-    if (brandColor && typeof document !== "undefined") {
+    // If brandColor is white, empty, or missing, default to a safe Slate Gray (#94a3b8)
+    const safeColor = (!brandColor || brandColor.toLowerCase() === "#ffffff" || brandColor.toLowerCase() === "white") 
+      ? "#94a3b8" 
+      : brandColor;
+
+    if (typeof document !== "undefined") {
       const root = document.documentElement;
-      root.style.setProperty("--primary", brandColor);
-      root.style.setProperty("--primary-soft", `${brandColor}33`);
+      root.style.setProperty("--primary", safeColor);
+      root.style.setProperty("--primary-soft", `${safeColor}33`);
     }
   }, [brandColor]);
 
@@ -661,6 +668,10 @@ function DashboardShellContent({
             <div className="hidden lg:flex items-center justify-center px-4" />
             
                     <div className="flex items-center gap-3 md:gap-6 flex-shrink-0">
+                      {user.role === "TENANT_ADMIN" && !isMasterMode && (
+                        <SetupChecklist />
+                      )}
+                      
                       {finalSlug && user.role !== "CLIENT" && user.role !== "AGENT" && user.role !== "EDITOR" && (
                         <Hint title="Public Booking Link" content="Copy your unique booking URL to share with new clients." position="bottom">
                           <button 
@@ -718,6 +729,10 @@ function DashboardShellContent({
         <div className="px-4 md:px-10 py-6 md:py-10 max-w-[1600px] mx-auto">
           {children}
         </div>
+
+        {user.role === "TENANT_ADMIN" && !isMasterMode && (
+          <OnboardingWizard />
+        )}
       </main>
     </div>
   );

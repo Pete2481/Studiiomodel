@@ -26,15 +26,15 @@ export async function POST(request: Request) {
     const tenantResults: any[] = await prisma.$queryRawUnsafe(`
       INSERT INTO "Tenant" (
         id, name, slug, "contactEmail", "contactPhone", settings, 
-        "subscriptionStatus", "trialEndsAt", "createdAt", "updatedAt"
+        "subscriptionStatus", "trialEndsAt", "brandColor", "createdAt", "updatedAt"
       )
       VALUES (
-        $1, $2, $3, $4, $5, $6::jsonb, $7, $8, NOW(), NOW()
+        $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, NOW(), NOW()
       )
       RETURNING *
     `, 
       `cm${Math.random().toString(36).substring(2, 11)}`,
-      name, slugLower, contactEmail, contactPhone, JSON.stringify(settingsJson), "trialing", trialEndsAt
+      name, slugLower, contactEmail, contactPhone, JSON.stringify(settingsJson), "trialing", trialEndsAt, "#94a3b8"
     );
     
     const tenant = tenantResults[0];

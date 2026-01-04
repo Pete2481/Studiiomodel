@@ -6,7 +6,7 @@ import { notificationService } from "@/server/services/notification.service";
 import { auth } from "@/auth";
 import { permissionService } from "@/lib/permission-service";
 
-export async function upsertClient(data: any) {
+export async function upsertClient(data: any, skipNotification = false) {
   try {
     const session = await auth();
     if (!session) return { success: false, error: "Unauthorized" };
@@ -151,9 +151,11 @@ export async function upsertClient(data: any) {
 
     // Notifications
     try {
-      if (isNew) {
+      if (isNew && !skipNotification) {
         console.log(`[ACTION_CLIENT] New client created, triggering welcome email for ${client.id}...`);
         await notificationService.sendClientWelcome(client.id);
+      } else if (isNew && skipNotification) {
+        console.log(`[ACTION_CLIENT] New client created, skipping notification as requested.`);
       } else {
         console.log(`[ACTION_CLIENT] Client ${client.id} updated, no welcome email needed.`);
       }
@@ -219,5 +221,60 @@ export async function resendClientInvite(id: string) {
   } catch (error: any) {
     console.error("RESEND INVITE ERROR:", error);
     return { success: false, error: "Failed to resend invite." };
+  }
+}
+
+export async function importClientsCsv(formData: FormData) {
+  try {
+    const session = await auth();
+    if (!session) return { success: false, error: "Unauthorized" };
+
+    // PERMISSION CHECK
+    if (session.user.role !== "TENANT_ADMIN" && session.user.role !== "ADMIN") {
+      return { success: false, error: "Permission Denied: Cannot manage clients." };
+    }
+
+    const tPrisma = await getTenantPrisma();
+
+    const file = formData.get("file") as File;
+    if (!file) return { success: false, error: "No file provided" };
+
+    const text = await file.text();
+    const rows = text.split("\n").filter(row => row.trim());
+    
+    // Skip header row
+    const dataRows = rows.slice(1);
+    let count = 0;
+
+    for (const row of dataRows) {
+      // CSV format: Business Name, Contact Name, Email, Phone
+      // We use a regex for CSV split to handle quotes better
+      const columns = row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || row.split(",").map(s => s.trim());
+      const values = columns.map(s => s.trim().replace(/^"|"$/g, ''));
+      
+      const [businessName, contactName, email, phone] = values;
+      
+      if (!contactName && !businessName) continue;
+
+      // Use the upsert logic if email is provided, or just create
+      await upsertClient({
+        name: contactName || businessName,
+        email: email || null,
+        businessName: businessName || contactName,
+        phone: phone || null,
+        status: "PENDING",
+        permissions: {},
+        priceOverrides: {}
+      }, true); // skipNotification = true
+      
+      count++;
+    }
+
+    revalidatePath("/tenant/clients");
+    revalidatePath("/mobile/clients");
+    return { success: true, count };
+  } catch (error: any) {
+    console.error("CLIENT CSV IMPORT ERROR:", error);
+    return { success: false, error: "Failed to import CSV. Please ensure the format is: Agency Name, Contact Name, Email, Phone" };
   }
 }

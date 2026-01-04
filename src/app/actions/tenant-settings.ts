@@ -28,7 +28,7 @@ export async function updateTenantBranding(data: {
       data: {
         name: data.name,
         logoUrl: data.logoUrl,
-        brandColor: data.brandColor || "#10b981",
+        brandColor: data.brandColor || "#94a3b8",
       }
     });
 

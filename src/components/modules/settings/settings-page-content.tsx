@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { 
   Palette, 
   Globe, 
@@ -87,14 +88,23 @@ const TIMEZONES = [
 const DEFAULT_INVOICE_TERMS = "All services are provided in accordance with standard industry practice. Payment is due within 7 days of the invoice date unless otherwise agreed in writing. Late payments may incur additional fees or suspension of services until the account is brought up to date. All imagery, video, and creative assets remain the property of the service provider until full payment has received, after which usage rights are granted to the client for their intended purpose. Revisions outside the agreed scope, additional services, or re-shoots may be charged separately. Cancellations made within 24 hours of a scheduled booking may incur a cancellation fee. By engaging our services, the client agrees to these terms and conditions.";
 
 export function SettingsPageContent({ tenant, user }: SettingsPageContentProps) {
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState("branding");
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab) {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
+
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   
   const [formData, setFormData] = useState({
     name: tenant.name || "",
     logoUrl: tenant.logoUrl || "",
-    brandColor: tenant.brandColor || "#10b981",
+    brandColor: tenant.brandColor || "#94a3b8",
     contactEmail: tenant.contactEmail || "",
     contactPhone: tenant.contactPhone || "",
     accountEmail: tenant.accountEmail || "",

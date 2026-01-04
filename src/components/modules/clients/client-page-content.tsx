@@ -14,12 +14,13 @@ import {
   Edit2,
   Users,
   Send,
-  MoreHorizontal
+  MoreHorizontal,
+  Upload
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ClientDrawer } from "./client-drawer";
 import { AgentDrawer } from "./agent-drawer";
-import { upsertClient, deleteClient, resendClientInvite } from "@/app/actions/client";
+import { upsertClient, deleteClient, resendClientInvite, importClientsCsv } from "@/app/actions/client";
 import { getAgentsByClient } from "@/app/actions/agent";
 import { useSearchParams, usePathname } from "next/navigation";
 
@@ -41,6 +42,30 @@ export function ClientPageContent({
   const [clients, setClients] = useState(initialClients);
   const [searchQuery, setSearchQuery] = useState("");
   const [isActionsOpen, setIsActionsOpen] = useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleImportCsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (isActionLocked) {
+      window.location.href = "/tenant/settings?tab=billing";
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const result = await importClientsCsv(formData);
+    if (result.success) {
+      alert(`Successfully imported ${result.count} clients!`);
+      window.location.reload();
+    } else {
+      alert(result.error);
+    }
+    
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   useEffect(() => {
     const action = searchParams.get("action");
@@ -166,6 +191,28 @@ export function ClientPageContent({
         </div>
 
         <div className="flex items-center gap-3">
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleImportCsv} 
+            accept=".csv" 
+            className="hidden" 
+          />
+          <button 
+            onClick={() => {
+              if (isActionLocked) {
+                window.location.href = "/tenant/settings?tab=billing";
+                return;
+              }
+              fileInputRef.current?.click();
+            }}
+            className={cn(
+              "flex h-10 px-4 items-center justify-center rounded-full border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:text-slate-900 transition-colors shadow-sm gap-2",
+              isActionLocked && "opacity-50 grayscale hover:grayscale-0 transition-all"
+            )}
+          >
+            <Upload className="h-3.5 w-3.5" /> {isActionLocked ? "Sub Required" : "Import CSV"}
+          </button>
           <button 
             onClick={handleCreate}
             className={cn(

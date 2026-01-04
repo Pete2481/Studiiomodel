@@ -50,7 +50,7 @@ model Tenant {
   settings          Json               @default("{}")
   
   // Invoicing & Branding
-  brandColor        String?            @default("#10b981")
+  brandColor        String?            @default("#94a3b8")
   invoiceLogoUrl    String?            @db.Text
   invoiceTerms      String?            @db.Text
   abn               String?
