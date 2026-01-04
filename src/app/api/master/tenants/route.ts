@@ -11,7 +11,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { name, slug, contactEmail, contactPhone, settings } = await request.json();
+    const { name, slug, contactName, contactEmail, contactPhone, settings } = await request.json();
 
     if (!name || !slug) {
       return NextResponse.json({ error: "Name and Slug are required" }, { status: 400 });
@@ -48,10 +48,12 @@ export async function POST(request: Request) {
       // Find or create the user for the contact email
       const contactUser = await prisma.user.upsert({
         where: { email: normalizedContactEmail },
-        update: {}, // Don't change anything if they exist
+        update: {
+          name: contactName || name // Update name if provided
+        },
         create: {
           email: normalizedContactEmail,
-          name: name, // Default to studio name
+          name: contactName || name, // Default to studio name if no user name provided
         }
       });
 

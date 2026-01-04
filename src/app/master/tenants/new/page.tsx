@@ -25,6 +25,7 @@ const NewTenantPage = () => {
   const [formData, setFormData] = useState({
     name: "",
     slug: "",
+    contactName: "",
     contactEmail: "",
     contactPhone: "",
     settings: ""
@@ -136,7 +137,25 @@ const NewTenantPage = () => {
               </div>
 
               <div className="space-y-3">
-                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] ml-1 text-xs">Contact Email</label>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] ml-1 text-xs">Primary User Name</label>
+                <div className="relative group">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-3">
+                    <Save className="h-4.5 w-4.5 text-slate-300 group-focus-within:text-emerald-500 transition-colors" />
+                    <div className="w-[1px] h-4 bg-slate-100" />
+                  </div>
+                  <input 
+                    type="text" 
+                    required
+                    value={formData.contactName}
+                    onChange={(e) => setFormData(prev => ({ ...prev, contactName: e.target.value }))}
+                    placeholder="e.g. Peter Hogan"
+                    className="w-full h-14 rounded-2xl border border-slate-100 bg-slate-50/50 pl-14 pr-4 text-[15px] font-bold text-slate-900 outline-none transition-all focus:border-slate-900 focus:bg-white focus:ring-[8px] focus:ring-slate-900/5 placeholder:text-slate-300 placeholder:font-medium"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] ml-1 text-xs">Primary User Email</label>
                 <div className="relative group">
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-3">
                     <Mail className="h-4.5 w-4.5 text-slate-300 group-focus-within:text-emerald-500 transition-colors" />
