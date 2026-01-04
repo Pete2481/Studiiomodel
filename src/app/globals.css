@@ -1,0 +1,218 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --primary: #10b981;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+}
+
+@layer components {
+  .ui-card {
+    @apply rounded-3xl border border-slate-200 bg-white p-6 shadow-sm;
+  }
+  
+  .ui-button-primary {
+    @apply inline-flex items-center justify-center rounded-full bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white shadow transition hover:opacity-90 active:scale-95 disabled:opacity-50;
+  }
+  
+  .ui-input {
+    @apply h-11 w-full rounded-full border border-slate-200 bg-white px-4 text-sm text-slate-700 outline-none transition focus:border-[var(--primary)] focus:ring focus:ring-opacity-20;
+    --tw-ring-color: var(--primary);
+  }
+
+  .ui-input-tight {
+    @apply h-12 w-full rounded-2xl border border-slate-100 bg-slate-50/50 px-5 text-sm font-medium text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-[var(--primary)] focus:bg-white focus:ring-4 focus:ring-opacity-5 shadow-sm;
+    --tw-ring-color: var(--primary);
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #e2e8f0;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #cbd5e1;
+}
+
+/* FullCalendar Custom Styles */
+.fc {
+  --fc-button-bg-color: #f8fafc;
+  --fc-button-border-color: #e2e8f0;
+  --fc-button-hover-bg-color: #f1f5f9;
+  --fc-button-hover-border-color: #cbd5e1;
+  --fc-button-active-bg-color: var(--primary);
+  --fc-button-active-border-color: var(--primary);
+  --fc-button-text-color: #475569;
+  --fc-today-bg-color: #f0fdfa;
+  --fc-border-color: #f1f5f9;
+  --fc-non-business-color: #e2e8f0;
+  font-family: inherit;
+}
+
+.fc .fc-non-business {
+  background-color: #e2e8f0 !important;
+  opacity: 1 !important;
+}
+
+.fc .fc-non-business {
+  background-color: #e2e8f0 !important;
+  opacity: 1 !important;
+}
+
+.fc .fc-timegrid-col {
+  background-color: transparent !important;
+}
+
+.fc .fc-timegrid-slots, 
+.fc .fc-timegrid-cols,
+.fc .fc-timegrid-body {
+  background-color: transparent !important;
+}
+
+.fc .fc-timegrid-slot {
+  background-color: transparent !important;
+}
+
+.fc .fc-timegrid-slot-lane {
+  background-color: transparent !important;
+}
+
+/* Background events (available holes) */
+.fc .fc-bg-event {
+  opacity: 1 !important;
+  background-color: #ffffff !important;
+  z-index: 1 !important;
+}
+
+/* Background events (available holes) */
+.fc .fc-bg-event {
+  opacity: 1 !important;
+  background-color: #ffffff !important;
+}
+
+.fc .fc-toolbar-title {
+  @apply text-lg font-bold text-slate-900 tracking-tight !important;
+}
+
+.fc .fc-button {
+  @apply rounded-full px-4 py-2 text-[10px] font-bold uppercase tracking-widest transition-all shadow-none outline-none focus:ring-0 !important;
+}
+
+.fc .fc-button-primary:not(:disabled):active, 
+.fc .fc-button-primary:not(:disabled).fc-button-active {
+  @apply bg-[var(--primary)] text-white border-[var(--primary)] shadow-lg !important;
+}
+
+.fc .fc-col-header-cell {
+  @apply py-4 bg-slate-50/50 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 border-none !important;
+}
+
+.fc .fc-daygrid-day-number {
+  @apply p-3 text-[11px] font-bold text-slate-400 !important;
+}
+
+.fc .fc-timegrid-slot {
+  @apply h-[39px] border-slate-100 !important;
+}
+
+.fc .fc-timegrid-slot-label {
+  @apply text-[10px] font-bold uppercase tracking-widest text-slate-400 border-none !important;
+}
+
+.fc .fc-timegrid-axis-cushion, .fc .fc-timegrid-slot-label-cushion {
+  @apply py-2.5 !important;
+}
+
+.fc .fc-timegrid-col {
+  @apply border-slate-100 !important;
+}
+
+.fc .fc-v-event {
+  @apply bg-transparent border-none shadow-none overflow-visible !important;
+}
+
+.fc .fc-timegrid-event-harness {
+  @apply p-1 overflow-visible !important;
+}
+
+.fc .fc-event-main {
+  @apply p-0 overflow-visible !important;
+}
+
+.booking-event-card {
+  @apply transition-all duration-200 !important;
+}
+
+.booking-event-card:hover {
+  @apply z-50 !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-slate-200 rounded-full hover:bg-slate-300;
+}
+
+/* Sunrise/Sunset Calendar Lines */
+.sunrise-line {
+  border-top: 2px dashed rgba(251, 191, 36, 0.4) !important;
+  pointer-events: none !important;
+  z-index: 5 !important;
+  height: 0 !important;
+  overflow: visible !important;
+}
+
+.sunrise-line::after {
+  content: "☀️ Sunrise";
+  position: absolute;
+  left: 4px;
+  top: -14px;
+  font-size: 8px;
+  font-weight: 900;
+  text-transform: uppercase;
+  color: #fbbf24;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.sunset-line {
+  border-top: 2px dashed rgba(124, 58, 237, 0.4) !important;
+  pointer-events: none !important;
+  z-index: 5 !important;
+  height: 0 !important;
+  overflow: visible !important;
+}
+
+.sunset-line::after {
+  content: "🌙 Sunset";
+  position: absolute;
+  left: 4px;
+  top: -14px;
+  font-size: 8px;
+  font-weight: 900;
+  text-transform: uppercase;
+  color: #7c3aed;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}

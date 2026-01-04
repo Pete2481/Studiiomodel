@@ -1,0 +1,52 @@
+{
+  "name": "studiio-unified",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push"
+  },
+  "dependencies": {
+    "@auth/prisma-adapter": "^2.11.1",
+    "@fullcalendar/core": "^6.1.20",
+    "@fullcalendar/daygrid": "^6.1.20",
+    "@fullcalendar/interaction": "^6.1.20",
+    "@fullcalendar/list": "^6.1.20",
+    "@fullcalendar/react": "^6.1.20",
+    "@fullcalendar/timegrid": "^6.1.20",
+    "@prisma/client": "^6.19.1",
+    "@types/nodemailer": "^7.0.4",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "file-saver": "^2.0.5",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.468.0",
+    "next": "15.1.0",
+    "next-auth": "^5.0.0-beta.30",
+    "nodemailer": "^7.0.12",
+    "pdf-lib": "^1.17.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-easy-crop": "^5.5.6",
+    "recharts": "^3.6.0",
+    "sharp": "^0.34.5",
+    "stripe": "^20.1.0",
+    "tailwind-merge": "^2.5.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "@types/file-saver": "^2.0.7",
+    "@types/node": "^20.19.27",
+    "@types/react": "^19.0.1",
+    "@types/react-dom": "^19.0.1",
+    "autoprefixer": "^10.4.23",
+    "postcss": "^8.4.49",
+    "prisma": "^6.1.0",
+    "tailwindcss": "^3.4.16",
+    "typescript": "^5.7.2"
+  }
+}

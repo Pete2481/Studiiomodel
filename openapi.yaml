@@ -1,0 +1,2249 @@
+openapi: 3.1.0
+info:
+  title: Studiio Photography Platform API
+  version: 1.0.0
+  description: |
+    Multi-tenant SaaS API for photographers and real estate agents.
+    
+    ## Features
+    - Tenant isolation with automatic filtering
+    - Role-based access control (RBAC)
+    - Gallery and media management
+    - Booking and scheduling system
+    - Property and client management
+    
+    ## Authentication
+    All endpoints require authentication via Bearer token (JWT) in the Authorization header.
+    The token automatically scopes requests to the user's tenant.
+    
+    ## Tenant Isolation
+    All tenant-scoped resources automatically filter by the authenticated user's tenant.
+    The `X-Tenant-Id` header can be used for tenant admin operations (optional).
+    
+    ## Rate Limiting
+    - Standard: 1000 requests/hour per tenant
+    - Upload endpoints: 100 requests/hour per tenant
+    - Admin endpoints: 5000 requests/hour
+    
+  contact:
+    name: Studiio API Support
+    email: api@studiio.com
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://api.studiio.com/v1
+    description: Production server
+  - url: https://api.staging.studiio.com/v1
+    description: Staging server
+  - url: http://localhost:3000/api/v1
+    description: Local development server
+
+tags:
+  - name: Authentication
+    description: User authentication and session management
+  - name: Tenants
+    description: Tenant management (admin only)
+  - name: Clients
+    description: Client management
+  - name: Properties
+    description: Property management
+  - name: Galleries
+    description: Gallery and media management
+  - name: Media
+    description: Media file operations
+  - name: Bookings
+    description: Booking and scheduling
+  - name: Team Members
+    description: Team member management
+  - name: Favorites
+    description: Gallery favorites management
+
+security:
+  - bearerAuth: []
+
+paths:
+  # Authentication Endpoints
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: User login
+      description: Authenticate user and receive JWT token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Successful authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      summary: User logout
+      description: Invalidate current session
+      responses:
+        '204':
+          description: Successfully logged out
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/me:
+    get:
+      tags: [Authentication]
+      summary: Get current user
+      description: Returns the authenticated user's profile and tenant memberships
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserWithMemberships'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # Tenant Endpoints (Admin Only)
+  /tenants:
+    get:
+      tags: [Tenants]
+      summary: List tenants
+      description: List all tenants (Master Admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search by name or slug
+      responses:
+        '200':
+          description: List of tenants
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantListResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags: [Tenants]
+      summary: Create tenant
+      description: Create a new tenant (Master Admin only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantCreate'
+      responses:
+        '201':
+          description: Tenant created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /tenants/{tenantId}:
+    get:
+      tags: [Tenants]
+      summary: Get tenant
+      description: Get tenant details (Master Admin or Tenant Admin)
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      responses:
+        '200':
+          description: Tenant details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags: [Tenants]
+      summary: Update tenant
+      description: Update tenant details (Tenant Admin only)
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantUpdate'
+      responses:
+        '200':
+          description: Tenant updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Client Endpoints
+  /clients:
+    get:
+      tags: [Clients]
+      summary: List clients
+      description: List all clients for the current tenant
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search by name, email, or slug
+        - name: includeDeleted
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include soft-deleted clients
+      responses:
+        '200':
+          description: List of clients
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientListResponse'
+
+    post:
+      tags: [Clients]
+      summary: Create client
+      description: Create a new client
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientCreate'
+      responses:
+        '201':
+          description: Client created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+
+  /clients/{clientId}:
+    get:
+      tags: [Clients]
+      summary: Get client
+      description: Get client details
+      parameters:
+        - $ref: '#/components/parameters/ClientIdPath'
+        - name: include
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [properties, galleries, bookings, memberships]
+          description: Include related resources
+      responses:
+        '200':
+          description: Client details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientWithRelations'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags: [Clients]
+      summary: Update client
+      description: Update client details
+      parameters:
+        - $ref: '#/components/parameters/ClientIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientUpdate'
+      responses:
+        '200':
+          description: Client updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Clients]
+      summary: Delete client
+      description: Soft delete a client
+      parameters:
+        - $ref: '#/components/parameters/ClientIdPath'
+      responses:
+        '204':
+          description: Client deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Property Endpoints
+  /properties:
+    get:
+      tags: [Properties]
+      summary: List properties
+      description: List all properties for the current tenant
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: clientId
+          in: query
+          schema:
+            type: string
+          description: Filter by client ID
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search by name, address, or slug
+        - name: includeDeleted
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: List of properties
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PropertyListResponse'
+
+    post:
+      tags: [Properties]
+      summary: Create property
+      description: Create a new property
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PropertyCreate'
+      responses:
+        '201':
+          description: Property created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Property'
+
+  /properties/{propertyId}:
+    get:
+      tags: [Properties]
+      summary: Get property
+      description: Get property details
+      parameters:
+        - $ref: '#/components/parameters/PropertyIdPath'
+        - name: include
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [client, galleries, bookings, agents]
+      responses:
+        '200':
+          description: Property details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PropertyWithRelations'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags: [Properties]
+      summary: Update property
+      parameters:
+        - $ref: '#/components/parameters/PropertyIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PropertyUpdate'
+      responses:
+        '200':
+          description: Property updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Property'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Properties]
+      summary: Delete property
+      description: Soft delete a property
+      parameters:
+        - $ref: '#/components/parameters/PropertyIdPath'
+      responses:
+        '204':
+          description: Property deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /properties/{propertyId}/agents:
+    get:
+      tags: [Properties]
+      summary: List property agents
+      description: Get all agents assigned to a property
+      parameters:
+        - $ref: '#/components/parameters/PropertyIdPath'
+      responses:
+        '200':
+          description: List of agent assignments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PropertyAgentAssignment'
+
+    post:
+      tags: [Properties]
+      summary: Assign agent to property
+      description: Assign an agent (membership) to a property
+      parameters:
+        - $ref: '#/components/parameters/PropertyIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [membershipId]
+              properties:
+                membershipId:
+                  type: string
+      responses:
+        '201':
+          description: Agent assigned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PropertyAgentAssignment'
+
+    delete:
+      tags: [Properties]
+      summary: Remove agent from property
+      description: Remove an agent assignment
+      parameters:
+        - $ref: '#/components/parameters/PropertyIdPath'
+        - name: membershipId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Agent removed
+
+  # Gallery Endpoints
+  /galleries:
+    get:
+      tags: [Galleries]
+      summary: List galleries
+      description: List all galleries for the current tenant
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: clientId
+          in: query
+          schema:
+            type: string
+        - name: propertyId
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/GalleryStatus'
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search by title
+        - name: includeDeleted
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: List of galleries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GalleryListResponse'
+
+    post:
+      tags: [Galleries]
+      summary: Create gallery
+      description: Create a new gallery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GalleryCreate'
+      responses:
+        '201':
+          description: Gallery created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Gallery'
+
+  /galleries/{galleryId}:
+    get:
+      tags: [Galleries]
+      summary: Get gallery
+      description: Get gallery details with media
+      parameters:
+        - $ref: '#/components/parameters/GalleryIdPath'
+        - name: include
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [media, property, client, editors, favorites]
+      responses:
+        '200':
+          description: Gallery details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GalleryWithRelations'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags: [Galleries]
+      summary: Update gallery
+      parameters:
+        - $ref: '#/components/parameters/GalleryIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GalleryUpdate'
+      responses:
+        '200':
+          description: Gallery updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Gallery'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Galleries]
+      summary: Delete gallery
+      description: Soft delete a gallery
+      parameters:
+        - $ref: '#/components/parameters/GalleryIdPath'
+      responses:
+        '204':
+          description: Gallery deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /galleries/{galleryId}/publish:
+    post:
+      tags: [Galleries]
+      summary: Publish gallery
+      description: Mark gallery as ready and set publish date
+      parameters:
+        - $ref: '#/components/parameters/GalleryIdPath'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                publishAt:
+                  type: string
+                  format: date-time
+                  description: Optional publish date (defaults to now)
+      responses:
+        '200':
+          description: Gallery published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Gallery'
+
+  /galleries/{galleryId}/deliver:
+    post:
+      tags: [Galleries]
+      summary: Deliver gallery
+      description: Mark gallery as delivered
+      parameters:
+        - $ref: '#/components/parameters/GalleryIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deliveryEmail]
+              properties:
+                deliveryEmail:
+                  type: string
+                  format: email
+                deliveryNotes:
+                  type: string
+      responses:
+        '200':
+          description: Gallery delivered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Gallery'
+
+  # Media Endpoints
+  /galleries/{galleryId}/media:
+    get:
+      tags: [Media]
+      summary: List gallery media
+      description: Get all media for a gallery
+      parameters:
+        - $ref: '#/components/parameters/GalleryIdPath'
+        - name: type
+          in: query
+          schema:
+            $ref: '#/components/schemas/MediaType'
+        - name: provider
+          in: query
+          schema:
+            $ref: '#/components/schemas/MediaProvider'
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [createdAt, createdAtDesc]
+            default: createdAt
+      responses:
+        '200':
+          description: List of media
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Media'
+
+    post:
+      tags: [Media]
+      summary: Add media to gallery
+      description: Add media files to a gallery (supports batch)
+      parameters:
+        - $ref: '#/components/parameters/GalleryIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/MediaCreate'
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/MediaCreate'
+      responses:
+        '201':
+          description: Media created
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/Media'
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/Media'
+
+  /media/{mediaId}:
+    get:
+      tags: [Media]
+      summary: Get media
+      description: Get media details
+      parameters:
+        - name: mediaId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Media details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Media'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags: [Media]
+      summary: Update media
+      parameters:
+        - name: mediaId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MediaUpdate'
+      responses:
+        '200':
+          description: Media updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Media'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Media]
+      summary: Delete media
+      description: Soft delete media
+      parameters:
+        - name: mediaId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Media deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /media/upload:
+    post:
+      tags: [Media]
+      summary: Upload media file
+      description: Upload a media file directly (for DIRECT_UPLOAD provider)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, galleryId, type]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                galleryId:
+                  type: string
+                type:
+                  $ref: '#/components/schemas/MediaType'
+                providerId:
+                  type: string
+                  description: Optional provider-specific ID
+                metadata:
+                  type: object
+                  description: Optional metadata JSON
+      responses:
+        '201':
+          description: Media uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Media'
+
+  # Gallery Favorites Endpoints
+  /galleries/{galleryId}/favorites:
+    get:
+      tags: [Favorites]
+      summary: List gallery favorites
+      description: Get all favorites for a gallery
+      parameters:
+        - $ref: '#/components/parameters/GalleryIdPath'
+      responses:
+        '200':
+          description: List of favorites
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GalleryFavorite'
+
+    post:
+      tags: [Favorites]
+      summary: Add favorite
+      description: Add an image to gallery favorites
+      parameters:
+        - $ref: '#/components/parameters/GalleryIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [imageId, imagePath]
+              properties:
+                imageId:
+                  type: string
+                  description: Dropbox file ID or image identifier
+                imagePath:
+                  type: string
+                  description: Dropbox path for reference
+      responses:
+        '201':
+          description: Favorite added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GalleryFavorite'
+
+  /galleries/{galleryId}/favorites/{imageId}:
+    delete:
+      tags: [Favorites]
+      summary: Remove favorite
+      description: Remove an image from gallery favorites
+      parameters:
+        - $ref: '#/components/parameters/GalleryIdPath'
+        - name: imageId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Favorite removed
+
+  # Booking Endpoints
+  /bookings:
+    get:
+      tags: [Bookings]
+      summary: List bookings
+      description: List all bookings for the current tenant
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: clientId
+          in: query
+          schema:
+            type: string
+        - name: propertyId
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/BookingStatus'
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Filter bookings starting from this date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Filter bookings ending before this date
+        - name: includeDeleted
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: List of bookings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingListResponse'
+
+    post:
+      tags: [Bookings]
+      summary: Create booking
+      description: Create a new booking request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingCreate'
+      responses:
+        '201':
+          description: Booking created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+
+  /bookings/{bookingId}:
+    get:
+      tags: [Bookings]
+      summary: Get booking
+      description: Get booking details
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: include
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [client, property, assignments, history]
+      responses:
+        '200':
+          description: Booking details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingWithRelations'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags: [Bookings]
+      summary: Update booking
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingUpdate'
+      responses:
+        '200':
+          description: Booking updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Bookings]
+      summary: Delete booking
+      description: Soft delete a booking
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Booking deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /bookings/{bookingId}/status:
+    patch:
+      tags: [Bookings]
+      summary: Update booking status
+      description: Change booking status (creates history entry)
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  $ref: '#/components/schemas/BookingStatus'
+                note:
+                  type: string
+                  description: Optional note for history
+      responses:
+        '200':
+          description: Booking status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+
+  /bookings/{bookingId}/assignments:
+    get:
+      tags: [Bookings]
+      summary: List booking assignments
+      description: Get all team member assignments for a booking
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of assignments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BookingAssignment'
+
+    post:
+      tags: [Bookings]
+      summary: Assign team member to booking
+      description: Assign a team member to a booking
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [teamMemberId, role]
+              properties:
+                teamMemberId:
+                  type: string
+                role:
+                  $ref: '#/components/schemas/TeamMemberRole'
+      responses:
+        '201':
+          description: Assignment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingAssignment'
+
+    delete:
+      tags: [Bookings]
+      summary: Remove assignment
+      description: Remove a team member assignment
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: teamMemberId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Assignment removed
+
+  /bookings/{bookingId}/history:
+    get:
+      tags: [Bookings]
+      summary: Get booking history
+      description: Get status change history for a booking
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Booking history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BookingHistory'
+
+  # Team Member Endpoints
+  /team-members:
+    get:
+      tags: [Team Members]
+      summary: List team members
+      description: List all team members for the current tenant
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: role
+          in: query
+          schema:
+            $ref: '#/components/schemas/TeamMemberRole'
+        - name: includeDeleted
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: List of team members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TeamMember'
+
+    post:
+      tags: [Team Members]
+      summary: Create team member
+      description: Create a new team member
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamMemberCreate'
+      responses:
+        '201':
+          description: Team member created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamMember'
+
+  /team-members/{teamMemberId}:
+    get:
+      tags: [Team Members]
+      summary: Get team member
+      parameters:
+        - name: teamMemberId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Team member details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamMember'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags: [Team Members]
+      summary: Update team member
+      parameters:
+        - name: teamMemberId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamMemberUpdate'
+      responses:
+        '200':
+          description: Team member updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamMember'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Team Members]
+      summary: Delete team member
+      description: Soft delete a team member
+      parameters:
+        - name: teamMemberId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Team member deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from /auth/login
+
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      description: Page number for pagination
+
+    LimitParam:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Number of items per page
+
+    TenantIdPath:
+      name: tenantId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Tenant identifier
+
+    ClientIdPath:
+      name: clientId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Client identifier
+
+    PropertyIdPath:
+      name: propertyId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Property identifier
+
+    GalleryIdPath:
+      name: galleryId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Gallery identifier
+
+  schemas:
+    # Common Schemas
+    PaginationMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+
+    Error:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        code:
+          type: string
+        details:
+          type: object
+
+    # Enums
+    TenantRole:
+      type: string
+      enum: [TENANT_ADMIN, TEAM_MEMBER, CLIENT, AGENT]
+
+    TeamMemberRole:
+      type: string
+      enum: [PHOTOGRAPHER, EDITOR, OTHER]
+
+    GalleryStatus:
+      type: string
+      enum: [DRAFT, READY, DELIVERED, ARCHIVED]
+
+    BookingStatus:
+      type: string
+      enum: [REQUESTED, APPROVED, DECLINED, CANCELLED, COMPLETED]
+
+    BookingSource:
+      type: string
+      enum: [TENANT, CLIENT]
+
+    MediaProvider:
+      type: string
+      enum: [DROPBOX, DIRECT_UPLOAD, EXTERNAL]
+
+    MediaType:
+      type: string
+      enum: [IMAGE, VIDEO, THREE_SIXTY, DOCUMENT]
+
+    # Authentication Schemas
+    AuthResponse:
+      type: object
+      required: [token, user]
+      properties:
+        token:
+          type: string
+          description: JWT access token
+        refreshToken:
+          type: string
+          description: Refresh token (if applicable)
+        expiresIn:
+          type: integer
+          description: Token expiration in seconds
+        user:
+          $ref: '#/components/schemas/User'
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        image:
+          type: string
+          format: uri
+        isMasterAdmin:
+          type: boolean
+        emailVerified:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    UserWithMemberships:
+      allOf:
+        - $ref: '#/components/schemas/User'
+        - type: object
+          properties:
+            memberships:
+              type: array
+              items:
+                $ref: '#/components/schemas/TenantMembership'
+
+    # Tenant Schemas
+    Tenant:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+          nullable: true
+        logoUrl:
+          type: string
+          format: uri
+          nullable: true
+        contactEmail:
+          type: string
+          format: email
+          nullable: true
+        contactPhone:
+          type: string
+          nullable: true
+        settings:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TenantCreate:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+          pattern: '^[a-z0-9-]+$'
+        description:
+          type: string
+        logoUrl:
+          type: string
+          format: uri
+        contactEmail:
+          type: string
+          format: email
+        contactPhone:
+          type: string
+        settings:
+          type: object
+
+    TenantUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        logoUrl:
+          type: string
+          format: uri
+        contactEmail:
+          type: string
+          format: email
+        contactPhone:
+          type: string
+        settings:
+          type: object
+
+    TenantListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tenant'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    TenantMembership:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        userId:
+          type: string
+        role:
+          $ref: '#/components/schemas/TenantRole'
+        clientId:
+          type: string
+          nullable: true
+        hasFullClientAccess:
+          type: boolean
+        permissions:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    # Client Schemas
+    Client:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        slug:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        settings:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ClientCreate:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+          pattern: '^[a-z0-9-]+$'
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        notes:
+          type: string
+        settings:
+          type: object
+        primaryContactUserId:
+          type: string
+
+    ClientUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+          pattern: '^[a-z0-9-]+$'
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        notes:
+          type: string
+        settings:
+          type: object
+        primaryContactUserId:
+          type: string
+
+    ClientListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Client'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    ClientWithRelations:
+      allOf:
+        - $ref: '#/components/schemas/Client'
+        - type: object
+          properties:
+            properties:
+              type: array
+              items:
+                $ref: '#/components/schemas/Property'
+            galleries:
+              type: array
+              items:
+                $ref: '#/components/schemas/Gallery'
+            bookings:
+              type: array
+              items:
+                $ref: '#/components/schemas/Booking'
+
+    # Property Schemas
+    Property:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        clientId:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        addressLine1:
+          type: string
+          nullable: true
+        addressLine2:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        postcode:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        latitude:
+          type: number
+          format: double
+          nullable: true
+        longitude:
+          type: number
+          format: double
+          nullable: true
+        metadata:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PropertyCreate:
+      type: object
+      required: [clientId, name, slug]
+      properties:
+        clientId:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+          pattern: '^[a-z0-9-]+$'
+        addressLine1:
+          type: string
+        addressLine2:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        postcode:
+          type: string
+        country:
+          type: string
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        metadata:
+          type: object
+
+    PropertyUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+          pattern: '^[a-z0-9-]+$'
+        addressLine1:
+          type: string
+        addressLine2:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        postcode:
+          type: string
+        country:
+          type: string
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        metadata:
+          type: object
+
+    PropertyListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Property'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    PropertyWithRelations:
+      allOf:
+        - $ref: '#/components/schemas/Property'
+        - type: object
+          properties:
+            client:
+              $ref: '#/components/schemas/Client'
+            galleries:
+              type: array
+              items:
+                $ref: '#/components/schemas/Gallery'
+            bookings:
+              type: array
+              items:
+                $ref: '#/components/schemas/Booking'
+            agents:
+              type: array
+              items:
+                $ref: '#/components/schemas/PropertyAgentAssignment'
+
+    PropertyAgentAssignment:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        propertyId:
+          type: string
+        membershipId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    # Gallery Schemas
+    Gallery:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        clientId:
+          type: string
+        propertyId:
+          type: string
+        title:
+          type: string
+        status:
+          $ref: '#/components/schemas/GalleryStatus'
+        publishAt:
+          type: string
+          format: date-time
+          nullable: true
+        deliveredAt:
+          type: string
+          format: date-time
+          nullable: true
+        deliveryEmail:
+          type: string
+          format: email
+          nullable: true
+        deliveryNotes:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    GalleryCreate:
+      type: object
+      required: [clientId, propertyId, title]
+      properties:
+        clientId:
+          type: string
+        propertyId:
+          type: string
+        title:
+          type: string
+        status:
+          $ref: '#/components/schemas/GalleryStatus'
+        publishAt:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+
+    GalleryUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        status:
+          $ref: '#/components/schemas/GalleryStatus'
+        publishAt:
+          type: string
+          format: date-time
+        deliveryEmail:
+          type: string
+          format: email
+        deliveryNotes:
+          type: string
+        metadata:
+          type: object
+
+    GalleryListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Gallery'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    GalleryWithRelations:
+      allOf:
+        - $ref: '#/components/schemas/Gallery'
+        - type: object
+          properties:
+            client:
+              $ref: '#/components/schemas/Client'
+            property:
+              $ref: '#/components/schemas/Property'
+            media:
+              type: array
+              items:
+                $ref: '#/components/schemas/Media'
+            editors:
+              type: array
+              items:
+                $ref: '#/components/schemas/TeamMember'
+            favorites:
+              type: array
+              items:
+                $ref: '#/components/schemas/GalleryFavorite'
+
+    GalleryFavorite:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        galleryId:
+          type: string
+        imageId:
+          type: string
+        imagePath:
+          type: string
+        addedBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    # Media Schemas
+    Media:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        galleryId:
+          type: string
+        type:
+          $ref: '#/components/schemas/MediaType'
+        provider:
+          $ref: '#/components/schemas/MediaProvider'
+        providerId:
+          type: string
+          nullable: true
+        url:
+          type: string
+          format: uri
+        thumbnailUrl:
+          type: string
+          format: uri
+          nullable: true
+        metadata:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    MediaCreate:
+      type: object
+      required: [galleryId, type, provider, url]
+      properties:
+        galleryId:
+          type: string
+        type:
+          $ref: '#/components/schemas/MediaType'
+        provider:
+          $ref: '#/components/schemas/MediaProvider'
+        providerId:
+          type: string
+        url:
+          type: string
+          format: uri
+        thumbnailUrl:
+          type: string
+          format: uri
+        metadata:
+          type: object
+
+    MediaUpdate:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/MediaType'
+        providerId:
+          type: string
+        url:
+          type: string
+          format: uri
+        thumbnailUrl:
+          type: string
+          format: uri
+        metadata:
+          type: object
+
+    # Booking Schemas
+    Booking:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        clientId:
+          type: string
+        propertyId:
+          type: string
+        requestedByUserId:
+          type: string
+          nullable: true
+        source:
+          $ref: '#/components/schemas/BookingSource'
+        status:
+          $ref: '#/components/schemas/BookingStatus'
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+        clientNotes:
+          type: string
+          nullable: true
+        internalNotes:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    BookingCreate:
+      type: object
+      required: [clientId, propertyId, title, startAt, endAt]
+      properties:
+        clientId:
+          type: string
+        propertyId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+          default: Australia/Sydney
+        clientNotes:
+          type: string
+        internalNotes:
+          type: string
+        source:
+          $ref: '#/components/schemas/BookingSource'
+        metadata:
+          type: object
+
+    BookingUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+        clientNotes:
+          type: string
+        internalNotes:
+          type: string
+        metadata:
+          type: object
+
+    BookingListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Booking'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    BookingWithRelations:
+      allOf:
+        - $ref: '#/components/schemas/Booking'
+        - type: object
+          properties:
+            client:
+              $ref: '#/components/schemas/Client'
+            property:
+              $ref: '#/components/schemas/Property'
+            assignments:
+              type: array
+              items:
+                $ref: '#/components/schemas/BookingAssignment'
+            history:
+              type: array
+              items:
+                $ref: '#/components/schemas/BookingHistory'
+
+    BookingAssignment:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        bookingId:
+          type: string
+        teamMemberId:
+          type: string
+        role:
+          $ref: '#/components/schemas/TeamMemberRole'
+        createdAt:
+          type: string
+          format: date-time
+
+    BookingHistory:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        bookingId:
+          type: string
+        actorUserId:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/BookingStatus'
+        note:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    # Team Member Schemas
+    TeamMember:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        membershipId:
+          type: string
+          nullable: true
+        role:
+          $ref: '#/components/schemas/TeamMemberRole'
+        displayName:
+          type: string
+        email:
+          type: string
+          format: email
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+        permissions:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TeamMemberCreate:
+      type: object
+      required: [displayName, role]
+      properties:
+        membershipId:
+          type: string
+        role:
+          $ref: '#/components/schemas/TeamMemberRole'
+        displayName:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        avatarUrl:
+          type: string
+          format: uri
+        permissions:
+          type: object
+
+    TeamMemberUpdate:
+      type: object
+      properties:
+        displayName:
+          type: string
+        role:
+          $ref: '#/components/schemas/TeamMemberRole'
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        avatarUrl:
+          type: string
+          format: uri
+        permissions:
+          type: object
+
+  responses:
+    Unauthorized:
+      description: Authentication required or invalid token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: Unauthorized
+            code: UNAUTHORIZED
+
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: Forbidden
+            code: FORBIDDEN
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: Resource not found
+            code: NOT_FOUND
+
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: Validation error
+            code: VALIDATION_ERROR
+            details:
+              field: name
+              message: Name is required
+
+    Conflict:
+      description: Resource conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: Resource already exists
+            code: CONFLICT
+
+

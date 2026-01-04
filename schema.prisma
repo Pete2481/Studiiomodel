@@ -1,0 +1,793 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id              String             @id @default(cuid())
+  email           String?            @unique
+  emailVerified   DateTime?
+  name            String?
+  image           String?
+  isMasterAdmin   Boolean            @default(false)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  accounts        Account[]
+  bookingRequests Booking[]          @relation("BookingRequestedBy")
+  bookingHistory  BookingHistory[]   @relation("BookingHistoryActor")
+  clientProfiles  Client[]           @relation("ClientOwner")
+  impersonated    ImpersonationLog[] @relation("ImpersonatedUser")
+  impersonations  ImpersonationLog[] @relation("Impersonator")
+  mobileTokens    MobileApiToken[]   @relation("UserMobileTokens")
+  sessions        Session[]
+  memberships     TenantMembership[]
+  galleriesCreated Gallery[]         @relation("GalleryCreatedBy")
+  galleriesUpdated Gallery[]         @relation("GalleryUpdatedBy")
+  mediaCreated     Media[]           @relation("MediaCreatedBy")
+  mediaUpdated     Media[]           @relation("MediaUpdatedBy")
+  bookingsCreated  Booking[]         @relation("BookingCreatedBy")
+  bookingsUpdated  Booking[]         @relation("BookingUpdatedBy")
+  propertiesCreated Property[]       @relation("PropertyCreatedBy")
+  propertiesUpdated Property[]       @relation("PropertyUpdatedBy")
+  clientsCreated   Client[]          @relation("ClientCreatedBy")
+  clientsUpdated   Client[]          @relation("ClientUpdatedBy")
+  editRequests     EditRequest[]     @relation("EditRequestRequestedBy")
+}
+
+model Tenant {
+  id                String             @id @default(cuid())
+  name              String
+  slug              String             @unique
+  description       String?
+  logoUrl           String?
+  contactEmail      String?
+  contactPhone      String?
+  settings          Json               @default("{}")
+  
+  // Invoicing & Branding
+  brandColor        String?            @default("#10b981")
+  invoiceLogoUrl    String?            @db.Text
+  invoiceTerms      String?            @db.Text
+  abn               String?
+  taxLabel          String?            @default("GST")
+  taxRate           Decimal?           @default(0.1) @db.Decimal(5, 4)
+  accountName       String?
+  bsb               String?
+  accountNumber     String?
+  autoInvoiceReminders Boolean         @default(false)
+  invoiceDueDays    Int                @default(7)
+
+  // Additional Contact & Config (NEW FIELDS)
+  accountEmail      String?
+  address           String?
+  city              String?
+  postalCode        String?
+  timezone          String?            @default("Australia/Sydney")
+  currency          String?            @default("AUD")
+  revenueTarget     Decimal?           @default(100000) @db.Decimal(12, 2)
+  
+  // Compliance (NEW FIELDS)
+  privacyPolicyUrl  String?            @db.Text
+  termsOfUseUrl     String?            @db.Text
+  contactStudioUrl  String?            @db.Text
+  
+  // Booking Config (NEW FIELDS)
+  bookingStatuses   String[]           @default(["Tenanted Property", "Owner Occupied", "Empty (Keys at office)"])
+
+  // SMTP Settings
+  smtpHost          String?
+  smtpPort          Int?
+  smtpUser          String?
+  smtpPass          String?
+  smtpSecure        Boolean            @default(true)
+
+  // Dropbox Integration
+  dropboxAccessToken  String?          @db.Text
+  dropboxRefreshToken String?          @db.Text
+  dropboxAccountId    String?
+  dropboxEmail        String?
+  dropboxRootPath     String?          @default("/Production/")
+  dropboxConnectedAt  DateTime?
+
+  // Business Hours (0=Sun, 1=Mon, ..., 6=Sat)
+  businessHours       Json?            @default("{\"0\":{\"open\":false,\"start\":\"09:00\",\"end\":\"17:00\"},\"1\":{\"open\":true,\"start\":\"09:00\",\"end\":\"17:00\"},\"2\":{\"open\":true,\"start\":\"09:00\",\"end\":\"17:00\"},\"3\":{\"open\":true,\"start\":\"09:00\",\"end\":\"17:00\"},\"4\":{\"open\":true,\"start\":\"09:00\",\"end\":\"17:00\"},\"5\":{\"open\":true,\"start\":\"09:00\",\"end\":\"17:00\"},\"6\":{\"open\":true,\"start\":\"09:00\",\"end\":\"17:00\"}}")
+
+  // Special Slot Settings
+  sunriseSlotTime     String?          @default("06:00")
+  duskSlotTime        String?          @default("18:30")
+  sunriseSlotsPerDay  Int              @default(1)
+  duskSlotsPerDay     Int              @default(1)
+
+  // Calendar Subscription Security
+  calendarSecret      String?          @unique @default(cuid())
+
+  // Stripe Subscription Engine
+  stripeCustomerId      String?          @unique
+  stripeSubscriptionId  String?          @unique
+  stripePriceId         String?
+  subscriptionStatus    String?          // active, trialing, past_due, canceled, unpaid
+  trialEndsAt           DateTime?
+  subscriptionEndsAt    DateTime?
+  subscriptionOverwrite Boolean          @default(false)
+
+  deletedAt         DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  bookings          Booking[]
+  clients           Client[]
+  galleries         Gallery[]
+  impersonationLogs ImpersonationLog[] @relation("TenantImpersonations")
+  properties        Property[]
+  teamMembers       TeamMember[]
+  memberships       TenantMembership[]
+  media             Media[]
+  galleryFavorites   GalleryFavorite[]
+  bookingHistory    BookingHistory[]
+  bookingAssignments BookingAssignment[]
+  propertyAgentAssignments PropertyAgentAssignment[]
+  services          Service[]
+  invoices          Invoice[]
+  editRequests      EditRequest[]
+  editTags          EditTag[]
+  agents            Agent[]             // All agents under this tenant
+
+  @@index([slug])
+  @@index([deletedAt])
+}
+
+model TenantMembership {
+  id                  String                    @id @default(cuid())
+  tenantId            String
+  userId              String
+  role                TenantRole
+  clientId            String?
+  hasFullClientAccess Boolean                   @default(false)
+  permissions         Json                      @default("{}")
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+  propertyAssignments PropertyAgentAssignment[] @relation("MembershipPropertyAssignments")
+  teamMember          TeamMember?               @relation("MembershipTeamMember")
+  client              Client?                   @relation("ClientMemberships", fields: [clientId], references: [id])
+  tenant              Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user                User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, role, clientId])
+  @@index([tenantId])
+  @@index([tenantId, role])
+  @@index([userId])
+  @@index([clientId])
+}
+
+model Client {
+  id                   String             @id @default(cuid())
+  tenantId             String
+  slug                 String
+  name                 String             // Contact Name
+  businessName         String?            // Agency / Company Name
+  primaryContactUserId String?
+  email                String?
+  phone                String?
+  avatarUrl            String?            // Profile Image
+  notes                String?
+  status               String             @default("PENDING") // ACTIVE, PENDING, INACTIVE
+  settings             Json               @default("{}")
+  watermarkUrl         String?            @db.Text
+  watermarkSettings    Json?              @default("{}")
+  deletedAt            DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  createdBy            String?
+  updatedBy            String?
+  bookings             Booking[]
+  primaryContact       User?              @relation("ClientOwner", fields: [primaryContactUserId], references: [id])
+  tenant               Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  galleries            Gallery[]
+  properties           Property[]
+  memberships          TenantMembership[] @relation("ClientMemberships")
+  createdByUser        User?              @relation("ClientCreatedBy", fields: [createdBy], references: [id])
+  updatedByUser        User?              @relation("ClientUpdatedBy", fields: [updatedBy], references: [id])
+  invoices             Invoice[]
+  editRequests         EditRequest[]
+  agents               Agent[]            // Multiple agents under this agency
+
+  @@unique([tenantId, slug])
+  @@unique([id, tenantId])
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@index([slug])
+}
+
+model TeamMember {
+  id           String              @id @default(cuid())
+  tenantId     String
+  membershipId String?             @unique
+  role         TeamMemberRole      @default(PHOTOGRAPHER)
+  displayName  String
+  email        String?
+  phone        String?
+  avatarUrl    String?
+  permissions  Json                @default("{}")
+  deletedAt    DateTime?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  bookings     BookingAssignment[]
+  membership   TenantMembership?   @relation("MembershipTeamMember", fields: [membershipId], references: [id])
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  galleries    Gallery[]           @relation("GalleryEditors")
+
+  @@index([tenantId])
+  @@index([tenantId, role])
+  @@index([tenantId, deletedAt])
+  @@index([membershipId])
+}
+
+model Property {
+  id             String                    @id @default(cuid())
+  tenantId       String
+  clientId       String
+  name           String
+  slug           String
+  addressLine1   String?
+  addressLine2   String?
+  city           String?
+  state          String?
+  postcode       String?
+  country        String?
+  latitude       Decimal?                  @db.Decimal(10, 6)
+  longitude      Decimal?                  @db.Decimal(10, 6)
+  metadata       Json                      @default("{}")
+  deletedAt      DateTime?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+  createdBy      String?
+  updatedBy      String?
+  bookings       Booking[]
+  galleries      Gallery[]
+  client         Client                    @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  tenant         Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  propertyAgents PropertyAgentAssignment[]
+  createdByUser  User?                     @relation("PropertyCreatedBy", fields: [createdBy], references: [id])
+  updatedByUser  User?                     @relation("PropertyUpdatedBy", fields: [updatedBy], references: [id])
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@index([tenantId, clientId])
+  @@index([tenantId, deletedAt])
+  @@index([clientId])
+  @@index([slug])
+}
+
+model PropertyAgentAssignment {
+  id           String           @id @default(cuid())
+  tenantId     String
+  propertyId   String
+  membershipId String
+  createdAt    DateTime         @default(now())
+  membership   TenantMembership @relation("MembershipPropertyAssignments", fields: [membershipId], references: [id], onDelete: Cascade)
+  property     Property         @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([propertyId, membershipId])
+  @@index([tenantId])
+  @@index([tenantId, propertyId])
+  @@index([membershipId])
+}
+
+model Gallery {
+  id            String            @id @default(cuid())
+  tenantId      String
+  clientId      String
+  propertyId    String
+  title         String
+  status        GalleryStatus     @default(DRAFT)
+  publishAt     DateTime?
+  deliveredAt   DateTime?
+  deliveryEmail String?
+  deliveryNotes String?
+  bannerImageUrl String?          @db.Text
+  metadata      Json              @default("{}")
+  notifyClient  Boolean           @default(true)
+  isLocked      Boolean           @default(false)
+  watermarkEnabled Boolean         @default(false)
+  deletedAt     DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  createdBy     String?
+  updatedBy     String?
+  client        Client            @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  property      Property          @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  bookingId     String?
+  booking       Booking?          @relation(fields: [bookingId], references: [id])
+  agentId       String?
+  agent         Agent?            @relation(fields: [agentId], references: [id])
+  media         Media[]
+  services      GalleryService[]
+  editors       TeamMember[]      @relation("GalleryEditors")
+  favorites     GalleryFavorite[]
+  createdByUser User?             @relation("GalleryCreatedBy", fields: [createdBy], references: [id])
+  updatedByUser User?             @relation("GalleryUpdatedBy", fields: [updatedBy], references: [id])
+  editRequests  EditRequest[]
+  invoices      Invoice[]
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, clientId])
+  @@index([tenantId, propertyId])
+  @@index([tenantId, deletedAt])
+  @@index([clientId])
+  @@index([propertyId])
+  @@index([status])
+}
+
+model Media {
+  id           String        @id @default(cuid())
+  tenantId     String
+  galleryId    String
+  type         MediaType     @default(IMAGE)
+  provider     MediaProvider @default(DROPBOX)
+  providerId   String?       // Provider-specific ID (e.g., Dropbox file ID) for efficient lookups
+  url          String
+  thumbnailUrl String?
+  metadata     Json          @default("{}")
+  deletedAt    DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  createdBy    String?
+  updatedBy    String?
+  gallery      Gallery       @relation(fields: [galleryId], references: [id], onDelete: Cascade)
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdByUser User?        @relation("MediaCreatedBy", fields: [createdBy], references: [id])
+  updatedByUser User?        @relation("MediaUpdatedBy", fields: [updatedBy], references: [id])
+
+  @@index([tenantId, galleryId])
+  @@index([tenantId, type])
+  @@index([galleryId, type])
+  @@index([galleryId, createdAt])
+  @@index([provider, providerId])
+}
+
+/**
+ * Gallery Favorite
+ * Shared favorites for gallery images (all users see the same favorites)
+ * Used for agent collaboration - agents can see what others like
+ */
+model GalleryFavorite {
+  id        String   @id @default(cuid())
+  tenantId  String
+  galleryId String
+  imageId   String   // Dropbox file ID or image identifier
+  imagePath String   // Dropbox path for reference
+  addedBy   String?  // Optional: who added it (for analytics)
+  createdAt DateTime @default(now())
+  gallery   Gallery  @relation(fields: [galleryId], references: [id], onDelete: Cascade)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([galleryId, imageId])
+  @@index([tenantId])
+  @@index([tenantId, galleryId])
+  @@index([galleryId])
+}
+
+model Booking {
+  id                String              @id @default(cuid())
+  tenantId          String
+  clientId          String?
+  propertyId        String?
+  requestedByUserId String?
+  source            BookingSource       @default(TENANT)
+  status            BookingStatus       @default(REQUESTED)
+  title             String
+  description       String?
+  startAt           DateTime
+  endAt             DateTime
+  timezone          String              @default("Australia/Sydney")
+  clientNotes       String?
+  internalNotes     String?
+  propertyStatus    String?             // New field for property access status (e.g. "Keys at office")
+  metadata          Json                @default("{}")
+
+  // Special Slot Handling
+  isPlaceholder     Boolean             @default(false)
+  slotType          String?             // "SUNRISE", "DUSK", or null for standard
+
+  deletedAt         DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  createdBy         String?
+  updatedBy         String?
+  client            Client?             @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  property          Property?           @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  requestedBy       User?               @relation("BookingRequestedBy", fields: [requestedByUserId], references: [id])
+  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  assignments       BookingAssignment[]
+  history           BookingHistory[]
+  createdByUser     User?               @relation("BookingCreatedBy", fields: [createdBy], references: [id])
+  updatedByUser     User?               @relation("BookingUpdatedBy", fields: [updatedBy], references: [id])
+  services          BookingService[]
+  invoices          Invoice[]
+  editRequests      EditRequest[]
+  galleries         Gallery[]
+  agentId           String?
+  agent             Agent?              @relation(fields: [agentId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, clientId])
+  @@index([tenantId, startAt])
+  @@index([tenantId, deletedAt])
+  @@index([clientId])
+  @@index([propertyId])
+  @@index([status])
+  @@index([startAt])
+}
+
+model BookingAssignment {
+  id           String         @id @default(cuid())
+  tenantId     String
+  bookingId    String
+  teamMemberId String
+  role         TeamMemberRole
+  createdAt    DateTime       @default(now())
+  booking      Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  teamMember   TeamMember     @relation(fields: [teamMemberId], references: [id], onDelete: Cascade)
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, bookingId, teamMemberId])
+  @@index([tenantId])
+  @@index([tenantId, bookingId])
+  @@index([tenantId, teamMemberId])
+  @@index([bookingId])
+  @@index([teamMemberId])
+}
+
+model BookingHistory {
+  id          String        @id @default(cuid())
+  tenantId    String
+  bookingId   String
+  actorUserId String?
+  status      BookingStatus
+  note        String?
+  createdAt   DateTime      @default(now())
+  actor       User?         @relation("BookingHistoryActor", fields: [actorUserId], references: [id])
+  booking     Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, bookingId])
+  @@index([tenantId, createdAt])
+  @@index([bookingId])
+  @@index([status])
+}
+
+model ImpersonationLog {
+  id                 String   @id @default(cuid())
+  impersonatorUserId String
+  impersonatedUserId String
+  tenantId           String?
+  reason             String?
+  createdAt          DateTime @default(now())
+  impersonatedUser   User     @relation("ImpersonatedUser", fields: [impersonatedUserId], references: [id], onDelete: Cascade)
+  impersonator       User     @relation("Impersonator", fields: [impersonatorUserId], references: [id], onDelete: Cascade)
+  tenant             Tenant?  @relation("TenantImpersonations", fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([impersonatorUserId])
+  @@index([impersonatedUserId])
+  @@index([createdAt])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expires])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@index([expires])
+}
+
+model MobileApiToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  createdBy String?
+  user      User     @relation("UserMobileTokens", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([tokenHash])
+}
+
+enum TenantRole {
+  TENANT_ADMIN
+  TEAM_MEMBER
+  CLIENT
+  AGENT
+}
+
+enum TeamMemberRole {
+  PHOTOGRAPHER
+  EDITOR
+  ADMIN
+  ACCOUNTS
+}
+
+enum GalleryStatus {
+  DRAFT
+  READY
+  DELIVERED
+  ARCHIVED
+}
+
+enum BookingStatus {
+  REQUESTED
+  APPROVED
+  PENCILLED
+  DECLINED
+  CANCELLED
+  COMPLETED
+  BLOCKED
+}
+
+enum BookingSource {
+  TENANT
+  CLIENT
+}
+
+enum MediaProvider {
+  DROPBOX
+  DIRECT_UPLOAD
+  EXTERNAL
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  THREE_SIXTY
+  DOCUMENT
+}
+
+model Service {
+  id               String            @id @default(cuid())
+  tenantId         String
+  name             String
+  description      String
+  price            Decimal           @db.Decimal(10, 2)
+  durationMinutes  Int               @default(60)
+  icon             String?
+  active           Boolean           @default(true)
+  clientVisible    Boolean           @default(true)
+  slotType         String?           // "SUNRISE", "DUSK", or null for standard
+  settings         Json              @default("{}")
+  deletedAt        DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  bookingServices  BookingService[]
+  galleryServices  GalleryService[]
+  invoiceLineItems InvoiceLineItem[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, active])
+  @@index([tenantId])
+}
+
+model BookingService {
+  id        String  @id @default(cuid())
+  bookingId String
+  serviceId String
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([bookingId, serviceId])
+  @@index([bookingId])
+  @@index([serviceId])
+}
+
+model GalleryService {
+  id        String  @id @default(cuid())
+  galleryId String
+  serviceId String
+  gallery   Gallery @relation(fields: [galleryId], references: [id], onDelete: Cascade)
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([galleryId, serviceId])
+  @@index([galleryId])
+  @@index([serviceId])
+}
+
+model Invoice {
+  id               String        @id @default(cuid())
+  tenantId         String
+  clientId         String
+  bookingId        String?
+  galleryId        String?
+  number           String
+  status           InvoiceStatus @default(DRAFT)
+  address          String
+  issuedAt         DateTime?
+  dueAt            DateTime?
+  currency         String        @default("AUD")
+  discount         Decimal       @default(0) @db.Decimal(10, 2)
+  taxRate          Decimal       @default(0.1) @db.Decimal(5, 4)
+  paidAmount       Decimal       @default(0) @db.Decimal(10, 2)
+  paymentTerms     String?
+  clientNotes      String?
+  internalNotes    String?
+  sentAt           DateTime?
+  paidAt           DateTime?
+  viewedAt         DateTime?
+  lastReminderSentAt DateTime?
+  invoiceTerms     String?       @db.Text
+  deletedAt        DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  client    Client            @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  booking   Booking?          @relation(fields: [bookingId], references: [id])
+  gallery   Gallery?          @relation(fields: [galleryId], references: [id])
+  lineItems InvoiceLineItem[]
+
+  @@index([tenantId, status])
+  @@index([clientId])
+  @@index([bookingId])
+  @@index([galleryId])
+  @@index([tenantId, deletedAt])
+}
+
+model InvoiceLineItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  description String
+  quantity    Int     @default(1)
+  unitPrice   Decimal @db.Decimal(10, 2)
+  serviceId   String?
+
+  invoice Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  service Service? @relation(fields: [serviceId], references: [id])
+
+  @@index([invoiceId])
+  @@index([serviceId])
+}
+
+model EditRequest {
+  id            String            @id @default(cuid())
+  tenantId      String
+  clientId      String?
+  bookingId     String?
+  galleryId     String
+  requestedById String? // User who created the request
+  title         String? // Optional title/name for the request
+  note          String // Comments/description
+  fileUrl       String? // Link to the original tagged image
+  thumbnailUrl  String? // Thumbnail preview
+  tags          String[] // Array of tag names (historical/manual)
+  selectedTags  EditTagAssignment[] // Link to formal EditTags
+  status        EditRequestStatus @default(NEW)
+  assignedToIds String[] // Array of team member IDs (photographers)
+  crop          Json? // Crop/bounds data if image was cropped
+  metadata      Json              @default("{}") // Additional metadata (coordinates, etc)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  completedAt   DateTime?
+
+  booking     Booking?  @relation(fields: [bookingId], references: [id])
+  tenant      Tenant  @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  client      Client? @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  gallery     Gallery @relation(fields: [galleryId], references: [id], onDelete: Restrict)
+  requestedBy User?   @relation("EditRequestRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@index([clientId])
+  @@index([galleryId])
+  @@index([bookingId])
+  @@index([status, createdAt])
+  @@index([createdAt])
+}
+
+model EditTag {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  cost        Decimal  @db.Decimal(10, 2)
+  specialistType String? // e.g. "PHOTO", "VIDEO", "FLOORPLAN"
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignments EditTagAssignment[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model EditTagAssignment {
+  id            String      @id @default(cuid())
+  editRequestId String
+  editTagId     String
+  costAtTime    Decimal     @db.Decimal(10, 2) // Lock in the cost when requested
+  
+  editRequest   EditRequest @relation(fields: [editRequestId], references: [id], onDelete: Cascade)
+  editTag       EditTag     @relation(fields: [editTagId], references: [id], onDelete: Restrict)
+
+  @@unique([editRequestId, editTagId])
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  OVERDUE
+  PAID
+  CANCELLED
+}
+
+enum EditRequestStatus {
+  NEW
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model Agent {
+  id                String               @id @default(cuid())
+  tenantId          String
+  clientId          String               // The Agency this agent works for
+  name              String
+  email             String?
+  phone             String?
+  avatarUrl         String?
+  status            String               @default("ACTIVE")
+  settings          Json                 @default("{\"seeAll\": false}")
+  deletedAt         DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  tenant            Tenant               @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  client            Client               @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  bookings          Booking[]            // Bookings where this agent is the Lead
+  galleries         Gallery[]            // Galleries owned by this agent
+
+  @@index([tenantId])
+  @@index([clientId])
+  @@unique([tenantId, email])
+}
