@@ -17,7 +17,12 @@ export function MobileTopBar() {
 
   return (
     <div className="fixed top-0 left-0 right-0 z-[50] bg-white/80 backdrop-blur-md border-b border-slate-50 px-6 h-12 flex items-center justify-between">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 relative">
+        {/* Version Tag */}
+        <span className="absolute -top-3 left-0 text-[7px] font-black text-slate-200 uppercase tracking-widest pointer-events-none">
+          ver 2001
+        </span>
+
         <div className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200">
           {session.user.image && session.user.image !== "" ? (
             <img src={session.user.image} className="h-full w-full object-cover" alt="Profile" />
