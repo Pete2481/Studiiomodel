@@ -1,14 +1,14 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect, notFound } from "next/navigation";
-import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { InvoiceEditor } from "@/components/modules/invoices/invoice-editor";
 import { checkSubscriptionStatus } from "@/lib/tenant-guard";
+import { Suspense } from "react";
+import { ShellSettings } from "@/components/layout/shell-settings";
+import { Loader2 } from "lucide-react";
 
 interface EditInvoicePageProps {
-  params: Promise<{
-    invoiceId: string;
-  }>;
+  params: Promise<{ invoiceId: string }>;
 }
 
 export default async function EditInvoicePage({ params }: EditInvoicePageProps) {
@@ -16,9 +16,23 @@ export default async function EditInvoicePage({ params }: EditInvoicePageProps) 
   const session = await auth();
   if (!session?.user?.tenantId) redirect("/login");
 
+  return (
+    <div className="space-y-12">
+      <Suspense fallback={
+        <div className="flex h-[50vh] w-full items-center justify-center">
+          <Loader2 className="h-10 w-10 text-primary animate-spin" />
+        </div>
+      }>
+        <EditInvoiceDataWrapper session={session} invoiceId={invoiceId} />
+      </Suspense>
+    </div>
+  );
+}
+
+async function EditInvoiceDataWrapper({ session, invoiceId }: { session: any, invoiceId: string }) {
   const tenantId = session.user.tenantId;
 
-  const [invoice, clients, services, bookings, tenant] = await Promise.all([
+  const [invoice, clients, services, bookings, tenant, isSubscribed] = await Promise.all([
     prisma.invoice.findFirst({
       where: { id: invoiceId, tenantId },
       include: { lineItems: true }
@@ -33,43 +47,24 @@ export default async function EditInvoicePage({ params }: EditInvoicePageProps) 
     }),
     prisma.booking.findMany({
       where: { tenantId, deletedAt: null },
-      select: { 
-        id: true, 
-        title: true,
-        clientId: true,
-        property: {
-          select: {
-            name: true
-          }
-        }
-      },
+      select: { id: true, title: true, clientId: true, property: { select: { name: true } } },
       orderBy: { startAt: 'desc' }
     }),
     prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { 
-        id: true,
-        name: true, 
-        logoUrl: true, 
-        brandColor: true, 
-        autoInvoiceReminders: true, 
-        invoiceDueDays: true, 
-        abn: true, 
-        taxLabel: true, 
-        taxRate: true, 
-        accountName: true, 
-        bsb: true, 
-        accountNumber: true, 
-        invoiceTerms: true, 
-        invoiceLogoUrl: true, 
+        id: true, name: true, logoUrl: true, brandColor: true, 
+        autoInvoiceReminders: true, invoiceDueDays: true, abn: true, 
+        taxLabel: true, taxRate: true, accountName: true, bsb: true, 
+        accountNumber: true, invoiceTerms: true, invoiceLogoUrl: true, 
         settings: true 
       }
-    })
+    }),
+    checkSubscriptionStatus(tenantId)
   ]);
 
   if (!invoice) notFound();
 
-  // Serialize everything for Client Component
   const serializedInvoice = {
     ...invoice,
     id: String(invoice.id),
@@ -85,16 +80,8 @@ export default async function EditInvoicePage({ params }: EditInvoicePageProps) 
     }))
   };
 
-  const serializedServices = services.map(s => ({
-    ...s,
-    price: Number(s.price)
-  }));
-
-  const serializedClients = clients.map(c => ({
-    ...c,
-    id: String(c.id)
-  }));
-
+  const serializedServices = services.map(s => ({ ...s, price: Number(s.price) }));
+  const serializedClients = clients.map(c => ({ ...c, id: String(c.id) }));
   const serializedBookings = bookings.map(b => ({
     ...b,
     id: String(b.id),
@@ -108,16 +95,12 @@ export default async function EditInvoicePage({ params }: EditInvoicePageProps) 
     taxRate: (tenant as any)?.taxRate ? Number((tenant as any).taxRate) : null
   };
 
-  const isSubscribed = await checkSubscriptionStatus(tenantId);
-
   return (
-    <DashboardShell
-      workspaceName={(tenant as any)?.name || "Studiio Tenant"}
-      logoUrl={(tenant as any)?.logoUrl || undefined}
-      brandColor={(tenant as any)?.brandColor || undefined}
-      title="Edit Invoice"
-      subtitle={`Update invoice #${invoice.number}`}
-    >
+    <>
+      <ShellSettings 
+        title="Edit Invoice" 
+        subtitle={`Update invoice #${invoice.number}`} 
+      />
       <InvoiceEditor 
         clients={serializedClients} 
         services={serializedServices} 
@@ -126,7 +109,6 @@ export default async function EditInvoicePage({ params }: EditInvoicePageProps) 
         tenant={serializedTenant as any}
         isActionLocked={!isSubscribed}
       />
-    </DashboardShell>
+    </>
   );
 }
-

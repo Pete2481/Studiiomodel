@@ -1,52 +1,45 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { ReminderTemplateEditor } from "@/components/reminders/reminder-template-editor";
 import { redirect } from "next/navigation";
-import { UNIFIED_NAV_CONFIG } from "@/lib/nav-config";
-import { permissionService } from "@/lib/permission-service";
-import { headers } from "next/headers";
+import { Suspense } from "react";
+import { ShellSettings } from "@/components/layout/shell-settings";
+import { Loader2 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
 export default async function RemindersPage() {
-  await headers();
   const session = await auth();
   if (!session?.user?.tenantId) {
     redirect("/login");
   }
 
+  return (
+    <div className="space-y-12">
+      <ShellSettings 
+        title="Booking Reminders" 
+        subtitle="Configure automated notifications to keep your clients informed and prepared." 
+      />
+      
+      <Suspense fallback={
+        <div className="flex h-[50vh] w-full items-center justify-center">
+          <Loader2 className="h-10 w-10 text-primary animate-spin" />
+        </div>
+      }>
+        <RemindersDataWrapper session={session} />
+      </Suspense>
+    </div>
+  );
+}
+
+async function RemindersDataWrapper({ session }: { session: any }) {
   const tenant = await prisma.tenant.findUnique({
     where: { id: session.user.tenantId },
-    select: { id: true, name: true, logoUrl: true, settings: true, brandColor: true }
+    select: { settings: true }
   });
 
   const settings = ((tenant as any)?.settings as any) || {};
   const reminderTemplate = settings.reminderTemplate;
 
-  const filteredNav = permissionService.getFilteredNav(
-    { 
-      role: session.user.role as any,
-      permissions: (session.user as any).permissions
-    },
-    UNIFIED_NAV_CONFIG
-  );
-
-  return (
-    <DashboardShell 
-      navSections={filteredNav} 
-      user={{
-        name: session.user.name || "User",
-        role: session.user.role || "TENANT_ADMIN",
-        initials: session.user.name?.split(' ').map(n => n[0]).join('') || "U"
-      }}
-      workspaceName={(tenant as any)?.name || "Studiio Tenant"}
-      logoUrl={(tenant as any)?.logoUrl || undefined}
-      brandColor={(tenant as any)?.brandColor || undefined}
-      title="Booking Reminders"
-      subtitle="Configure automated notifications to keep your clients informed and prepared."
-    >
-      <ReminderTemplateEditor initialTemplate={reminderTemplate} />
-    </DashboardShell>
-  );
+  return <ReminderTemplateEditor initialTemplate={reminderTemplate} />;
 }

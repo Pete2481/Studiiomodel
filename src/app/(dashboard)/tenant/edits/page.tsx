@@ -1,30 +1,13 @@
-import { DashboardShell } from "@/components/layout/dashboard-shell";
-import { permissionService } from "@/lib/permission-service";
-import { UNIFIED_NAV_CONFIG } from "@/lib/nav-config";
-import { 
-  Plus, 
-  Search, 
-  Filter, 
-  MoreHorizontal, 
-  MessageSquare, 
-  Paperclip, 
-  Star, 
-  CheckCircle2, 
-  Clock,
-  ChevronDown,
-  LayoutGrid,
-  List as ListIcon,
-  Tag
-} from "lucide-react";
-import Link from "next/link";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { getTenantPrisma, checkSubscriptionStatus } from "@/lib/tenant-guard";
-import { getNavCounts } from "@/lib/nav-utils";
 import { formatDistanceToNow } from "date-fns";
 import { EditRequestsContent } from "@/components/modules/edits/edit-requests-content";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { Suspense } from "react";
+import { ShellSettings } from "@/components/layout/shell-settings";
+import { Loader2 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -41,12 +24,28 @@ export default async function EditRequestsPage(props: {
   }
 
   const sessionUser = session.user as any;
-  const tenantId = sessionUser.tenantId;
-  if (!tenantId && !sessionUser.isMasterAdmin) {
-    redirect("/login");
-  }
 
+  return (
+    <div className="space-y-12">
+      <ShellSettings 
+        title="Edit Requests" 
+        subtitle="Track client feedback, request revisions, and respond to changes." 
+      />
+      
+      <Suspense fallback={
+        <div className="flex h-[50vh] w-full items-center justify-center">
+          <Loader2 className="h-10 w-10 text-primary animate-spin" />
+        </div>
+      }>
+        <EditDataWrapper sessionUser={sessionUser} isGlobal={isGlobal} />
+      </Suspense>
+    </div>
+  );
+}
+
+async function EditDataWrapper({ sessionUser, isGlobal }: { sessionUser: any, isGlobal: boolean }) {
   const tPrisma = isGlobal && sessionUser.isMasterAdmin ? prisma : await getTenantPrisma();
+  const tenantId = sessionUser.tenantId;
 
   const user = {
     id: sessionUser.id,
@@ -60,24 +59,15 @@ export default async function EditRequestsPage(props: {
     permissions: sessionUser.permissions || {}
   };
 
-  const isSubscribed = tenantId ? await checkSubscriptionStatus(tenantId) : true;
-  const navCounts = tenantId ? await getNavCounts(tenantId, sessionUser.id, user.role, user.agentId, user.clientId, user.permissions) : { bookings: 0, galleries: 0, edits: 0 };
-
-  const filteredNav = permissionService.getFilteredNav(
-    { role: user.role, isMasterMode: false },
-    UNIFIED_NAV_CONFIG
-  );
-
   // Determine where clause based on role
   let whereClause: any = {};
   const isRestrictedRole = user.role === "EDITOR" || user.role === "TEAM_MEMBER";
-  
   if (isRestrictedRole && user.teamMemberId) {
     whereClause.assignedToIds = { has: user.teamMemberId };
   }
 
   // Real data fetching
-  const [dbRequests, dbTags, dbTeam, tenant] = await Promise.all([
+  const [dbRequests, dbTags, dbTeam, isSubscribed] = await Promise.all([
     tPrisma.editRequest.findMany({
       where: whereClause,
       orderBy: { createdAt: 'desc' },
@@ -99,17 +89,9 @@ export default async function EditRequestsPage(props: {
         }
       }
     }),
-    tPrisma.editTag.findMany({
-      orderBy: { name: 'asc' }
-    }),
-    tPrisma.teamMember.findMany({
-      where: { deletedAt: null },
-      orderBy: { displayName: 'asc' }
-    }),
-    tPrisma.tenant.findUnique({
-      where: { id: session.user.tenantId as string },
-      select: { id: true, name: true, logoUrl: true, brandColor: true }
-    })
+    tPrisma.editTag.findMany({ orderBy: { name: 'asc' } }),
+    tPrisma.teamMember.findMany({ where: { deletedAt: null }, orderBy: { displayName: 'asc' } }),
+    checkSubscriptionStatus(tenantId)
   ]);
 
   const requests = dbRequests.map(r => ({
@@ -125,7 +107,7 @@ export default async function EditRequestsPage(props: {
     thumbnailUrl: r.thumbnailUrl || r.fileUrl,
     metadata: r.metadata,
     assignedToIds: r.assignedToIds || [],
-    invoice: r.gallery.invoices[0] || null, // Pass invoice through
+    invoice: r.gallery.invoices[0] || null,
     selectedTags: r.selectedTags.map(st => ({
       id: st.id,
       name: st.editTag.name,
@@ -155,24 +137,12 @@ export default async function EditRequestsPage(props: {
   }));
 
   return (
-    <DashboardShell 
-      navSections={filteredNav} 
-      user={user}
-      workspaceName={(tenant as any)?.name || "Studiio Tenant"}
-      logoUrl={(tenant as any)?.logoUrl || undefined}
-      brandColor={(tenant as any)?.brandColor || undefined}
-      title="Edit Requests"
-      subtitle="Track client feedback, request revisions, and respond to changes."
+    <EditRequestsContent 
+      initialRequests={requests} 
+      initialTags={tags}
+      teamMembers={teamMembers}
+      user={user} 
       isActionLocked={!isSubscribed}
-      navCounts={navCounts}
-    >
-      <EditRequestsContent 
-        initialRequests={requests} 
-        initialTags={tags}
-        teamMembers={teamMembers}
-        user={user} 
-        isActionLocked={!isSubscribed}
-      />
-    </DashboardShell>
+    />
   );
 }
