@@ -72,12 +72,15 @@ class EmailService {
       }
     }
 
-    // Final hardcoded fallbacks if absolutely nothing is set
+    // Final hardcoded fallbacks - NO PASSWORDS HERE
     host = host || "mail.studiio.au";
     port = port || 465;
     user = user || "team@studiio.au";
-    pass = pass || "Media@2026!";
     if (secure === undefined) secure = true;
+
+    if (!pass) {
+      console.error("[EMAIL_SERVICE] No SMTP password found in environment variables!");
+    }
 
     const transporter = nodemailer.createTransport({
       host,
