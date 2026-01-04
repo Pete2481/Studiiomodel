@@ -50,6 +50,8 @@ import { Hint } from "@/components/ui";
 import { SetupChecklist } from "@/components/onboarding/setup-checklist";
 import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
 
+import { APP_VERSION } from "@/lib/version";
+
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
@@ -469,7 +471,7 @@ function DashboardShellContent({
         )}>
           {/* Version Tag */}
           <span className="absolute top-2 left-6 text-[8px] font-black text-slate-200 uppercase tracking-widest pointer-events-none">
-            ver 2001
+            ver {APP_VERSION}
           </span>
           
           <div className="flex h-11 w-11 flex-none items-center justify-center rounded-2xl bg-primary text-white shadow-lg overflow-hidden group-hover:scale-105 transition-transform"

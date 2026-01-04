@@ -3,6 +3,7 @@
 import React from "react";
 import { useSession } from "next-auth/react";
 import { User } from "lucide-react";
+import { APP_VERSION } from "@/lib/version";
 
 export function MobileTopBar() {
   const { data: session } = useSession();
@@ -20,7 +21,7 @@ export function MobileTopBar() {
       <div className="flex items-center gap-3 relative">
         {/* Version Tag */}
         <span className="absolute -top-3 left-0 text-[7px] font-black text-slate-200 uppercase tracking-widest pointer-events-none">
-          ver 2001
+          ver {APP_VERSION}
         </span>
 
         <div className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200">
