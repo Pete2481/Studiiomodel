@@ -10,7 +10,7 @@ import { SlotManagementModal } from "./slot-management-modal";
 import { CalendarSubscriptionModal } from "./calendar-subscription-modal";
 import { upsertBooking, deleteBooking } from "@/app/actions/booking-upsert";
 import { BookingList } from "@/components/dashboard/booking-list";
-import { useSearchParams, usePathname } from "next/navigation";
+import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { permissionService } from "@/lib/permission-service";
 
@@ -55,6 +55,7 @@ export function BookingsPageContent({
 }: BookingsPageContentProps) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
+  const router = useRouter();
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isHoursModalOpen, setIsHoursModalOpen] = useState(false);
   const [isSlotModalOpen, setIsSlotModalOpen] = useState(false);
