@@ -74,6 +74,7 @@ export class GalleryService {
     const galleryData: any = {
       client: { connect: { id: clientId } },
       property: { connect: { id: propertyId } },
+      tenant: { connect: { id: tenantId } },
       booking: bookingId ? { connect: { id: bookingId } } : undefined,
       agent: agentId ? { connect: { id: agentId } } : undefined,
       title,

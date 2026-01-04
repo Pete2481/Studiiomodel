@@ -84,14 +84,15 @@ function createScopedPrisma(tenantId: string) {
                   return newItem;
                 }
 
-                // For regular create, use relation connect (Prisma standard)
+                // For regular create, use scalar tenantId if the field exists
+                // This avoids mixing connection modes (scalars vs relations) which Prisma dislikes
                 if (!newItem.tenant && !newItem.tenantId) {
-                  newItem.tenant = { connect: { id: tenantId } };
+                  newItem.tenantId = tenantId;
                 } else if (newItem.tenantId && !newItem.tenant) {
-                  // If scalar is provided but relation is missing, convert to relation
-                  // to satisfy Prisma's strict relation requirements in some models
-                  newItem.tenant = { connect: { id: newItem.tenantId } };
-                  delete newItem.tenantId;
+                  // Keep it as scalar
+                  newItem.tenantId = tenantId;
+                } else if (newItem.tenant && !newItem.tenantId) {
+                  // If connection is already there, don't touch it
                 }
                 
                 return newItem;
