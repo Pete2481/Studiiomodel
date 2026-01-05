@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, Plus, Trash2, Edit3, Save, DollarSign, User, Tag, Check, ChevronDown } from "lucide-react";
+import { X, Plus, Trash2, Edit3, Save, DollarSign, User, Tag, Check, ChevronDown, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { upsertEditTag, deleteEditTag } from "@/app/actions/edit-tag";
 
@@ -204,7 +204,7 @@ export function EditTagsDrawer({ isOpen, onClose, initialTags, onRefresh }: Edit
                   disabled={isSubmitting}
                   className="flex-1 h-12 rounded-full bg-rose-500 text-white font-bold shadow-lg shadow-rose-500/20 hover:bg-rose-600 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  {isSubmitting ? "Saving..." : (
+                  {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : (
                     <>
                       <Save className="h-4 w-4" />
                       Save Tag

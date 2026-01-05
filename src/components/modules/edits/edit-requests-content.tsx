@@ -491,7 +491,7 @@ export function EditRequestsContent({ initialRequests, initialTags, teamMembers,
         isOpen={isTagsDrawerOpen}
         onClose={() => setIsTagsDrawerOpen(false)}
         initialTags={tags}
-        onRefresh={() => window.location.reload()}
+        onRefresh={() => router.refresh()}
       />
     </div>
   );

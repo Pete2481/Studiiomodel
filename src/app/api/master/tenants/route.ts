@@ -99,7 +99,19 @@ export async function POST(request: Request) {
       })
     ));
 
-    // 5. SEND WELCOME EMAIL
+    // 5. AUTO-SEED DEFAULT EDIT TAGS
+    await prisma.editTag.create({
+      data: {
+        tenantId: tenant.id,
+        name: "AI Item removal",
+        description: "Uses AI tools to remove unwanted items and clean up the image.",
+        cost: 10.00,
+        specialistType: "PHOTO",
+        active: true,
+      }
+    });
+
+    // 6. SEND WELCOME EMAIL
     if (contactEmail) {
       try {
         await notificationService.sendTeamMemberWelcome(contactUserId as string);
