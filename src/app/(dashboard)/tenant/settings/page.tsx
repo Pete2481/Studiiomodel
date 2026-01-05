@@ -63,9 +63,24 @@ async function SettingsDataWrapper({ session, tenantId }: { session: any, tenant
   return (
     <div className="space-y-10">
       <SettingsPageContent 
-        tenant={JSON.parse(JSON.stringify(tenant))} 
+        tenant={{
+          ...tenant,
+          taxRate: tenant.taxRate ? Number(tenant.taxRate) : 0.1,
+          revenueTarget: tenant.revenueTarget ? Number(tenant.revenueTarget) : 100000,
+          createdAt: tenant.createdAt.toISOString(),
+          updatedAt: tenant.updatedAt.toISOString(),
+          trialEndsAt: tenant.trialEndsAt?.toISOString() || null,
+          subscriptionEndsAt: tenant.subscriptionEndsAt?.toISOString() || null,
+          deletedAt: tenant.deletedAt?.toISOString() || null,
+          dropboxConnectedAt: tenant.dropboxConnectedAt?.toISOString() || null,
+        } as any} 
         user={user}
-        teamMember={member ? JSON.parse(JSON.stringify(member)) : null}
+        teamMember={member ? {
+          ...member,
+          createdAt: member.createdAt.toISOString(),
+          updatedAt: member.updatedAt.toISOString(),
+          deletedAt: member.deletedAt?.toISOString() || null,
+        } as any : null}
       />
     </div>
   );

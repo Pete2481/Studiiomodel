@@ -38,6 +38,13 @@ export async function POST(request: Request) {
     );
     
     const tenant = tenantResults[0];
+    
+    // Sanitize tenant for JSON response (convert Decimals/BigInts to plain numbers)
+    const sanitizedTenant = {
+      ...tenant,
+      taxRate: tenant.taxRate ? Number(tenant.taxRate) : 0.1,
+      revenueTarget: tenant.revenueTarget ? Number(tenant.revenueTarget) : 100000,
+    };
 
     // 2. Automatically link the contact email as a TENANT_ADMIN
     let contactUserId = null;
@@ -120,7 +127,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ tenant });
+    return NextResponse.json({ tenant: sanitizedTenant });
   } catch (error: any) {
     console.error("[CreateTenant Error]:", error);
     if (error.code === 'P2002') {

@@ -41,14 +41,20 @@ export default async function MasterTenantsPage() {
   });
 
   const tenants = dbTenants.map(t => {
-    // 1. Convert to plain object to remove Prisma-specific types/methods
-    const plain = JSON.parse(JSON.stringify(t));
-    
-    // 2. Ensure Decimals are treated as numbers for the UI
+    // 1. Manually serialize to avoid BigInt/Decimal issues
     return {
-      ...plain,
+      ...t,
       taxRate: t.taxRate ? Number(t.taxRate) : 0.1,
       revenueTarget: t.revenueTarget ? Number(t.revenueTarget) : 100000,
+      createdAt: t.createdAt.toISOString(),
+      updatedAt: t.updatedAt.toISOString(),
+      trialEndsAt: t.trialEndsAt?.toISOString() || null,
+      subscriptionEndsAt: t.subscriptionEndsAt?.toISOString() || null,
+      deletedAt: t.deletedAt?.toISOString() || null,
+      _count: {
+        bookings: Number(t._count.bookings),
+        memberships: Number(t._count.memberships),
+      }
     };
   });
 
