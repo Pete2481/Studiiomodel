@@ -193,3 +193,32 @@ export async function syncTenantAccessAction(tenantId: string) {
     return { success: false, error: `Failed to sync access: ${error.message || "Unknown error"}` };
   }
 }
+
+export async function updateTenantAction(tenantId: string, data: {
+  name: string;
+  contactEmail: string;
+  contactPhone: string;
+}) {
+  const session = await auth();
+  
+  if (!session?.user?.isMasterAdmin) {
+    throw new Error("Unauthorized: Master Admin only");
+  }
+
+  try {
+    await prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        name: data.name,
+        contactEmail: data.contactEmail,
+        contactPhone: data.contactPhone,
+      }
+    });
+
+    revalidatePath("/master/tenants");
+    return { success: true };
+  } catch (error: any) {
+    console.error("Failed to update tenant:", error);
+    return { success: false, error: error.message || "Failed to update tenant" };
+  }
+}

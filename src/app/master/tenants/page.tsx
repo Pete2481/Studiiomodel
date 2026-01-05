@@ -7,6 +7,7 @@ import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { ImpersonateButton } from "@/components/master/impersonate-button";
+import { TenantActions } from "@/components/master/tenant-actions";
 
 export default async function MasterTenantsPage() {
   const session = await auth();
@@ -115,9 +116,7 @@ export default async function MasterTenantsPage() {
                   <td className="px-8 py-5 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <ImpersonateButton tenantId={tenant.id} />
-                      <button className="h-10 w-10 flex items-center justify-center rounded-xl hover:bg-white hover:border-slate-200 hover:shadow-sm transition-all text-slate-400 hover:text-slate-900 border border-transparent">
-                        <MoreVertical className="h-4.5 w-4.5" />
-                      </button>
+                      <TenantActions tenant={tenant} />
                     </div>
                   </td>
                 </tr>
