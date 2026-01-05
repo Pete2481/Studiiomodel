@@ -179,8 +179,8 @@ export function BookingsPageContent({
       });
       if (result.success) {
         setIsDrawerOpen(false);
-        // Use a hard refresh to ensure the calendar/list renders the new data instantly
-        window.location.reload();
+        // Soft refresh to update data without page flicker
+        router.refresh();
       } else {
         alert(result.error || "Something went wrong while saving the booking.");
       }
@@ -195,8 +195,8 @@ export function BookingsPageContent({
       const result = await deleteBooking(id);
       if (result.success) {
         setIsDrawerOpen(false);
-        // Use a hard refresh to ensure the calendar/list renders the new data instantly
-        window.location.reload();
+        // Soft refresh to update data without page flicker
+        router.refresh();
       } else {
         alert(result.error || "Failed to remove booking.");
       }

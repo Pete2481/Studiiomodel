@@ -49,6 +49,7 @@ import { GuideProvider, useGuide } from "./guide-context";
 import { Hint } from "@/components/ui";
 import { SetupChecklist } from "@/components/onboarding/setup-checklist";
 import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
+import { NavigationPrefetcher } from "./navigation-prefetcher";
 
 import { APP_VERSION } from "@/lib/version";
 
@@ -106,6 +107,7 @@ interface DashboardShellProps {
 export function DashboardShell(props: DashboardShellProps) {
   return (
     <DashboardProvider>
+      <NavigationPrefetcher />
       <GuideProvider>
         <DashboardShellContent {...props} />
       </GuideProvider>

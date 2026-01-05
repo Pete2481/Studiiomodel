@@ -29,13 +29,28 @@ export default async function BookingsPage(props: {
         subtitle="Track upcoming shoots and allocate the right agents in real time." 
       />
       
-      <Suspense fallback={
-        <div className="flex h-[50vh] w-full items-center justify-center">
-          <Loader2 className="h-10 w-10 text-primary animate-spin" />
-        </div>
-      }>
+      <Suspense fallback={<BookingsSkeleton />}>
         <BookingsDataWrapper sessionUser={sessionUser} isGlobal={isGlobal} />
       </Suspense>
+    </div>
+  );
+}
+
+function BookingsSkeleton() {
+  return (
+    <div className="space-y-8 animate-pulse">
+      <div className="flex items-center justify-between gap-4">
+        <div className="h-10 w-64 bg-slate-100 rounded-full" />
+        <div className="flex gap-2">
+          <div className="h-10 w-24 bg-slate-100 rounded-full" />
+          <div className="h-10 w-32 bg-slate-100 rounded-full" />
+        </div>
+      </div>
+      <div className="space-y-4">
+        {[1, 2, 3, 4, 5].map(i => (
+          <div key={i} className="h-20 bg-slate-100 rounded-[32px]" />
+        ))}
+      </div>
     </div>
   );
 }

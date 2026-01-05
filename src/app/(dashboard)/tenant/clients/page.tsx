@@ -28,13 +28,25 @@ export default async function ClientsPage() {
         subtitle="Keep your agencies and key contacts in sync with portal access control." 
       />
       
-      <Suspense fallback={
-        <div className="flex h-[50vh] w-full items-center justify-center">
-          <Loader2 className="h-10 w-10 text-primary animate-spin" />
-        </div>
-      }>
+      <Suspense fallback={<ClientsSkeleton />}>
         <ClientsDataWrapper tenantId={tenantId} />
       </Suspense>
+    </div>
+  );
+}
+
+function ClientsSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse">
+      <div className="flex items-center justify-between gap-4">
+        <div className="h-10 w-64 bg-slate-100 rounded-full" />
+        <div className="h-10 w-32 bg-slate-100 rounded-full" />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {[1, 2, 3, 4, 5, 6].map(i => (
+          <div key={i} className="h-48 bg-slate-100 rounded-[32px]" />
+        ))}
+      </div>
     </div>
   );
 }
