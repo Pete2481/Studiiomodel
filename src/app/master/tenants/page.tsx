@@ -45,7 +45,9 @@ export default async function MasterTenantsPage() {
     return {
       id: String(t.id),
       name: String(t.name),
+      slug: String(t.slug),
       contactEmail: t.contactEmail || null,
+      contactPhone: t.contactPhone || null,
       deletedAt: t.deletedAt ? t.deletedAt.toISOString() : null,
       _count: {
         bookings: Number(t._count.bookings),

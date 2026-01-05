@@ -66,6 +66,7 @@ export default async function MasterDashboardPage() {
     return {
       id: String(t.id),
       name: String(t.name),
+      slug: String(t.slug),
       contactEmail: t.contactEmail || null,
       contactPhone: t.contactPhone || null,
       subscriptionStatus: t.subscriptionStatus || null,
