@@ -54,6 +54,10 @@ export function EditRequestsContent({ initialRequests, initialTags, teamMembers,
   const [isCreatingInvoice, setIsCreatingInvoice] = useState<string | null>(null);
 
   useEffect(() => {
+    setTags(initialTags);
+  }, [initialTags]);
+
+  useEffect(() => {
     const requestId = searchParams.get("requestId");
     if (requestId) {
       const request = requests.find(r => r.id === requestId);
