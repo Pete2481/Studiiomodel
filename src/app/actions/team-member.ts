@@ -108,6 +108,12 @@ export async function upsertTeamMember(data: any) {
 
     let member;
     if (id) {
+      // Fetch current member to check for secret
+      const currentMember = await (tPrisma as any).teamMember.findUnique({
+        where: { id },
+        select: { calendarSecret: true }
+      });
+
       member = await (tPrisma as any).teamMember.update({
         where: { id },
         data: {
@@ -118,8 +124,7 @@ export async function upsertTeamMember(data: any) {
           status: status || "ACTIVE",
           avatarUrl,
           permissions: permissions || DEFAULT_PERMISSIONS[validRole] || {},
-          // Only set if not already set (safety for old records)
-          calendarSecret: data.calendarSecret || undefined
+          calendarSecret: currentMember?.calendarSecret || data.calendarSecret || randomBytes(16).toString("hex")
         },
       });
     } else {

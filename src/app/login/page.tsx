@@ -105,7 +105,9 @@ export default function LoginPage() {
   };
 
   const handleOtpChange = (value: string, index: number) => {
+    // Handle single character input
     if (isNaN(Number(value)) && value !== "") return;
+    
     const newOtp = [...otp];
     newOtp[index] = value.slice(-1);
     setOtp(newOtp);
@@ -113,6 +115,22 @@ export default function LoginPage() {
     if (value && index < 5) {
       otpRefs.current[index + 1]?.focus();
     }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const pastedData = e.clipboardData.getData("text").trim();
+    if (!/^\d+$/.test(pastedData)) return;
+
+    const newOtp = [...otp];
+    pastedData.split("").forEach((char, i) => {
+      if (i < 6) newOtp[i] = char;
+    });
+    setOtp(newOtp);
+
+    // Focus last filled or next empty
+    const lastIndex = Math.min(pastedData.length - 1, 5);
+    otpRefs.current[lastIndex]?.focus();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent, index: number) => {
@@ -196,7 +214,7 @@ export default function LoginPage() {
                 <p className="text-[15px] text-slate-500 font-medium">Please enter your professional identity.</p>
               </div>
 
-              <form onSubmit={handleEmailSubmit} className="space-y-8">
+              <form onSubmit={handleEmailSubmit} noValidate className="space-y-8">
                 <div className="space-y-3">
                   <label className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.25em] ml-1">Identity</label>
                   <div className="relative group">
@@ -206,7 +224,6 @@ export default function LoginPage() {
                     </div>
                     <input 
                       type="email" 
-                      required
                       autoFocus
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
@@ -290,18 +307,20 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <form onSubmit={handleOtpSubmit} className="space-y-10">
+              <form onSubmit={handleOtpSubmit} noValidate className="space-y-10">
                 <div className="grid grid-cols-6 gap-3">
                   {otp.map((digit, i) => (
                     <input 
                       key={i}
                       ref={el => { otpRefs.current[i] = el; }}
-                      type="text" 
+                      type="tel" 
                       inputMode="numeric"
+                      autoComplete="one-time-code"
                       maxLength={1}
                       value={digit}
                       onChange={(e) => handleOtpChange(e.target.value, i)}
                       onKeyDown={(e) => handleKeyDown(e, i)}
+                      onPaste={i === 0 ? handlePaste : undefined}
                       className="w-full aspect-square rounded-[18px] border border-slate-100 bg-slate-50/50 text-center text-xl font-bold text-slate-900 outline-none transition-all focus:border-slate-900 focus:bg-white focus:ring-[10px] focus:ring-slate-900/5"
                     />
                   ))}
