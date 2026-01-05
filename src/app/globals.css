@@ -75,7 +75,12 @@ body {
 }
 
 .fc .fc-timegrid-col {
-  background-color: transparent !important;
+  /* Allow the today background to show if present */
+  background-color: transparent;
+}
+
+.fc .fc-day-today {
+  background-color: #f0fdf4 !important; /* Very light emerald/green */
 }
 
 .fc .fc-timegrid-slots, 

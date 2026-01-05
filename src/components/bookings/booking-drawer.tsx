@@ -193,7 +193,7 @@ export function BookingDrawer({
 
       setFormData(prev => ({
         ...prev,
-        title: booking.isPlaceholder ? `${booking.slotType} SHOOT` : (booking.title || ""),
+        title: (booking.isPlaceholder && isClient) ? "" : (booking.isPlaceholder ? `${booking.slotType} SHOOT` : (booking.title || "")),
         clientId: currentClientId || "",
         address: "",
         date: format(start, "yyyy-MM-dd"),
@@ -813,7 +813,7 @@ export function BookingDrawer({
                     <div className="h-6 w-6 rounded-lg bg-white border border-slate-100 flex items-center justify-center">
                       <User className="h-3 w-3 text-slate-300" />
                     </div>
-                    <span className="text-sm font-bold text-slate-400 uppercase tracking-widest">Assigned by Admin</span>
+                    <span className="text-sm font-bold text-slate-400 uppercase tracking-widest">TBC</span>
                   </div>
                 ) : (
                   <div className="space-y-3 relative">

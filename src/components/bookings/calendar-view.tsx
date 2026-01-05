@@ -118,7 +118,9 @@ export function CalendarView({
           isMasked && 'masked-event',
           b.isPlaceholder && 'placeholder-event'
         ),
-        editable: !isMasked && !b.isPlaceholder
+        editable: !isMasked && !b.isPlaceholder && (user?.role !== "CLIENT" && user?.role !== "AGENT"),
+        startEditable: !isMasked && !b.isPlaceholder && (user?.role !== "CLIENT" && user?.role !== "AGENT"),
+        durationEditable: !isMasked && !b.isPlaceholder && (user?.role !== "CLIENT" && user?.role !== "AGENT")
       });
     });
 
@@ -250,15 +252,29 @@ export function CalendarView({
             list: 'List'
           }}
           dayHeaderContent={(arg) => {
+            const isToday = format(arg.date, "yyyy-MM-dd") === format(new Date(), "yyyy-MM-dd");
             return (
-              <div className="flex flex-col items-center py-1">
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{format(arg.date, "EEE")}</div>
-                <div className="text-sm font-black text-slate-900">{format(arg.date, "d")}</div>
+              <div className={cn(
+                "flex flex-col items-center py-1 px-3 rounded-xl transition-colors",
+                isToday ? "bg-primary/10 ring-1 ring-primary/20" : ""
+              )}>
+                <div className={cn(
+                  "text-[10px] font-bold uppercase tracking-widest",
+                  isToday ? "text-primary" : "text-slate-400"
+                )}>
+                  {format(arg.date, "EEE")}
+                </div>
+                <div className={cn(
+                  "text-sm font-black",
+                  isToday ? "text-primary" : "text-slate-900"
+                )}>
+                  {format(arg.date, "d")}
+                </div>
               </div>
             );
           }}
           events={calendarEvents}
-          editable={!(isRestrictedRole && !canPlaceBookings)}
+          editable={!isRestrictedRole}
           selectable={!(isRestrictedRole && !canPlaceBookings)}
           selectMirror={true}
           dayMaxEvents={true}
@@ -281,7 +297,17 @@ export function CalendarView({
           slotMaxTime={maxTime}
           allDaySlot={false}
           eventClick={(info) => {
-            if (info.event.extendedProps.isMasked) return;
+            // 1. NEVER allow clicking masked events (Someone else's booking)
+            const isMasked = info.event.extendedProps.isMasked;
+            if (isMasked) return;
+
+            // 2. If client, hide placeholders AND block-outs (red cards)
+            if (user?.role === "CLIENT") {
+              const isPlaceholder = info.event.extendedProps.isPlaceholder;
+              const isBlocked = info.event.extendedProps.status === 'BLOCKED';
+              if (isPlaceholder || isBlocked) return;
+            }
+            
             if (info.event.extendedProps.isPlaceholder && !canPlaceBookings) return;
             onSelectEvent(info.event.extendedProps);
           }}
@@ -305,8 +331,16 @@ export function CalendarView({
           height="100%"
           nowIndicator={true}
           eventMouseEnter={(info) => {
-            // Skip hover for background availability or masked/placeholders
-            if (info.event.display === 'background' || info.event.extendedProps.isMasked || info.event.extendedProps.isPlaceholder) return;
+            // Skip hover for background availability
+            if (info.event.display === 'background') return;
+            
+            // Skip hover for masked events (privacy), placeholders, or block-outs for clients
+            const isMasked = info.event.extendedProps.isMasked;
+            const isPlaceholder = info.event.extendedProps.isPlaceholder;
+            const isBlocked = info.event.extendedProps.status === 'BLOCKED';
+            
+            if (isMasked || (user?.role === "CLIENT" && (isPlaceholder || isBlocked))) return;
+
             const rect = info.el.getBoundingClientRect();
             setHoveredEvent({
               event: info.event.extendedProps,
@@ -327,15 +361,23 @@ export function CalendarView({
             const assignments = eventInfo.event.extendedProps.assignments || [];
             const leadMember = assignments[0]?.teamMember;
             
+            const isStatic = isMasked || (user?.role === "CLIENT" && (isPlaceholder || isBlocked));
+
             return (
               <div className={cn(
-                "flex flex-col h-full p-2 px-3 rounded-[20px] border-2 transition-all duration-300 relative group cursor-pointer",
+                "flex flex-col h-full p-2 px-3 rounded-[20px] border-2 transition-all duration-300 relative",
+                !isStatic && "group cursor-pointer",
                 isPlaceholder 
-                  ? "bg-amber-100 border-dashed border-amber-400 hover:bg-amber-200 hover:border-amber-600 hover:shadow-xl hover:shadow-amber-200/50 hover:-translate-y-1" 
+                  ? cn(
+                      "bg-amber-100 border-dashed border-amber-400",
+                      !isStatic && "hover:bg-amber-200 hover:border-amber-600 hover:shadow-xl hover:shadow-amber-200/50 hover:-translate-y-1"
+                    )
                   : config.bg,
                 isPlaceholder ? "" : config.border,
-                isMasked && "cursor-not-allowed opacity-80",
-                isBlocked && "bg-rose-500 border-rose-600 text-white shadow-lg shadow-rose-200/50",
+                isMasked && "opacity-80",
+                isStatic && "cursor-default",
+                isBlocked && "shadow-lg shadow-rose-200/50",
+                isBlocked && (isStatic ? "bg-rose-400 border-rose-500 text-white/90" : "bg-rose-500 border-rose-600 text-white"),
                 isPlaceholder && !canPlaceBookings && "opacity-50 grayscale cursor-not-allowed"
               )}>
                 {/* Book Now Badge - Only for placeholders */}

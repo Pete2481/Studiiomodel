@@ -66,6 +66,8 @@ async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
   };
 
   // Visibility Scoping
+  // We now fetch ALL bookings for the tenant to show "Limited Availability"
+  // but we will mask the data for anything not owned by the current user.
   const bookingWhere: any = { 
     deletedAt: null,
     startAt: {
@@ -77,12 +79,7 @@ async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
   };
 
   const canViewAll = sessionUser.role === "TENANT_ADMIN" || sessionUser.role === "ADMIN";
-  if (!canViewAll) {
-    if (role === "CLIENT") bookingWhere.clientId = clientId;
-    else if (role === "AGENT") bookingWhere.agentId = agentId;
-    else if (teamMemberId) bookingWhere.assignments = { some: { teamMemberId } };
-  }
-
+  
   // Real data fetching
   const [dbBookings, dbClients, dbServices, dbTeamMembers, dbAgents, tenant, currentMember] = await Promise.all([
     tPrisma.booking.findMany({
@@ -154,6 +151,37 @@ async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
     const startAt = b.startAt instanceof Date && !isNaN(b.startAt.getTime()) ? b.startAt.toISOString() : null;
     const endAt = b.endAt instanceof Date && !isNaN(b.endAt.getTime()) ? b.endAt.toISOString() : null;
     if (!startAt || !endAt) return null;
+
+    // 1. Determine Ownership
+    let isOwned = canViewAll;
+    if (!isOwned) {
+      if (role === "CLIENT" && b.clientId === clientId) isOwned = true;
+      else if (role === "AGENT" && b.agentId === agentId) isOwned = true;
+      else if (teamMemberId && b.assignments.some((a: any) => a.teamMemberId === teamMemberId)) isOwned = true;
+    }
+
+    // 2. If NOT owned, mask the data as "LIMITED AVAILABILITY"
+    if (!isOwned && !b.isPlaceholder) {
+      return {
+        id: String(b.id),
+        title: "LIMITED AVAILABILITY",
+        startAt, endAt,
+        status: "blocked" as any, // Grey status
+        propertyStatus: "",
+        clientId: null,
+        agentId: null,
+        client: null,
+        property: { name: "RESTRICTED" },
+        internalNotes: "",
+        clientNotes: "",
+        isPlaceholder: false,
+        slotType: null,
+        services: [],
+        assignments: []
+      };
+    }
+
+    // 3. Standard mapping for owned or admin bookings
     let status = (b.status || "REQUESTED").toLowerCase();
     if (status === 'approved') status = 'confirmed';
     

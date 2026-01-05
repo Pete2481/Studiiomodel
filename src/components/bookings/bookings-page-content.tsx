@@ -151,11 +151,13 @@ export function BookingsPageContent({
     const { start, end, serviceId } = data;
     const service = services.find(s => s.id === serviceId);
     
+    const isClient = user?.role === "CLIENT";
+    
     setSelectedBooking({
       startAt: start.toISOString(),
       endAt: end.toISOString(),
       serviceIds: [serviceId],
-      title: service?.name || "New Shoot",
+      title: isClient ? "" : (service?.name || "New Shoot"),
       duration: service?.durationMinutes ? String(service.durationMinutes / 60) : "1",
     });
     setIsDrawerOpen(true);
