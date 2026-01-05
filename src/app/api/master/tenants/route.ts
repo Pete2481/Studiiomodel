@@ -65,13 +65,40 @@ export async function POST(request: Request) {
 
       contactUserId = contactUser.id;
 
-      await prisma.tenantMembership.create({
+      const membership = await prisma.tenantMembership.create({
         data: {
           tenantId: tenant.id,
           userId: contactUser.id,
           role: "TENANT_ADMIN",
           hasFullClientAccess: true,
         },
+      });
+
+      // AUTO-CREATE TEAM MEMBER PROFILE FOR THE TENANT ADMIN
+      // This ensures they are part of the team from day one
+      await prisma.teamMember.create({
+        data: {
+          tenantId: tenant.id,
+          membershipId: membership.id,
+          displayName: contactName || name,
+          email: normalizedContactEmail,
+          role: "ADMIN",
+          status: "ACTIVE",
+          calendarSecret: `tm_${Math.random().toString(36).substring(2, 15)}`,
+          permissions: {
+            viewCalendar: true,
+            viewBookings: true,
+            viewBlankedBookings: true,
+            viewAllBookings: true,
+            viewAllGalleries: true,
+            deleteGallery: true,
+            viewInvoices: true,
+            manageGalleries: true,
+            manageServices: true,
+            manageClients: true,
+            manageTeam: true,
+          }
+        }
       });
     }
 

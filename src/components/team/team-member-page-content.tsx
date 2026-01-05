@@ -128,20 +128,6 @@ export function TeamMemberPageContent({
         </div>
 
         <div className="flex items-center gap-3">
-          {isAdmin && !isAlreadyInTeam && (
-            <button 
-              onClick={handleJoinTeam}
-              disabled={isJoining}
-              className="h-10 px-6 rounded-xl border border-emerald-100 bg-emerald-50 text-emerald-600 font-bold text-xs flex items-center gap-2 hover:bg-emerald-100 transition-all active:scale-95 disabled:opacity-50"
-            >
-              {isJoining ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <UserCheck className="h-4 w-4" />
-              )}
-              Join Team
-            </button>
-          )}
           <button 
             onClick={handleCreate}
             className={cn(
