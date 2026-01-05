@@ -780,7 +780,7 @@ export function BookingDrawer({
                                       {s.name}
                                     </p>
                                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
-                                      ${Number(s.price).toFixed(2)} • {s.durationMinutes || 60}m
+                                      {(!isClient && role !== "AGENT") && `$${Number(s.price).toFixed(2)} • `}{s.durationMinutes || 60}m
                                     </p>
                                   </div>
                                 </div>

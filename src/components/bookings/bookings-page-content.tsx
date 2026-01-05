@@ -258,7 +258,9 @@ export function BookingsPageContent({
                     <GripHorizontal className="h-3 w-3 text-slate-200 group-hover:text-emerald-400" />
                   </div>
                   <h4 className="text-xs font-bold text-slate-900 leading-tight truncate">{service.name}</h4>
-                  <p className="mt-0.5 text-[10px] font-bold text-primary">${service.price}</p>
+                  {(user?.role !== "CLIENT" && user?.role !== "AGENT") && (
+                    <p className="mt-0.5 text-[10px] font-bold text-primary">${service.price}</p>
+                  )}
                 </div>
               ))}
               <button className="flex-none h-[74px] w-12 flex items-center justify-center rounded-[24px] border-2 border-dashed border-slate-100 text-slate-300 hover:text-slate-500 hover:border-slate-300 transition-colors">
