@@ -162,11 +162,13 @@ function GalleryShellPlaceholder({ gallery, tenant }: any) {
       </header>
 
       {gallery.bannerImageUrl && (
-        <section className="relative h-[60vh] w-full overflow-hidden bg-slate-100 animate-pulse">
-          <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent z-10" />
-          <div className="absolute bottom-12 left-12 text-white space-y-1 z-20">
-            <h2 className="text-4xl font-bold tracking-tight opacity-50">{gallery.title}</h2>
-            <div className="h-4 w-32 bg-white/20 rounded-full" />
+        <section className="px-6 pt-6">
+          <div className="max-w-7xl mx-auto relative h-[60vh] w-full overflow-hidden rounded-[48px] bg-slate-100 animate-pulse border border-slate-50">
+            <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent z-10" />
+            <div className="absolute bottom-12 left-12 text-white space-y-1 z-20">
+              <h2 className="text-4xl font-bold tracking-tight opacity-20">{gallery.title}</h2>
+              <div className="h-4 w-32 bg-slate-200/50 rounded-full" />
+            </div>
           </div>
         </section>
       )}
