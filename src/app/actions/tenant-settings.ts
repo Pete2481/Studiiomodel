@@ -110,32 +110,24 @@ export async function updateTenantInvoicingSettings(data: {
     const dbTaxRate = Number(data.taxRate) / 100;
     const autoReminders = Boolean(data.autoInvoiceReminders);
 
-    // Use Raw SQL to bypass Prisma Client's cache issues for updates
-    await prisma.$executeRawUnsafe(
-      `UPDATE "Tenant" 
-       SET "invoiceLogoUrl" = $1, 
-           "invoiceTerms" = $2, 
-           abn = $3, 
-           "taxLabel" = $4, 
-           "taxRate" = $5, 
-           "accountName" = $6, 
-           bsb = $7, 
-           "accountNumber" = $8,
-           "autoInvoiceReminders" = $9,
-           "invoiceDueDays" = $10
-       WHERE id = $11`,
-      data.invoiceLogoUrl || null,
-      data.invoiceTerms,
-      data.abn,
-      data.taxLabel,
-      dbTaxRate,
-      data.accountName,
-      data.bsb,
-      data.accountNumber,
-      autoReminders,
-      data.invoiceDueDays ? Number(data.invoiceDueDays) : 7,
-      tenantId
-    );
+    console.log("[UpdateSettings] Saving:", { tenantId, autoReminders, dbTaxRate });
+
+    // Standard Prisma update is safer and supports type checking
+    await prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        invoiceLogoUrl: data.invoiceLogoUrl || null,
+        invoiceTerms: data.invoiceTerms,
+        abn: data.abn,
+        taxLabel: data.taxLabel,
+        taxRate: dbTaxRate,
+        accountName: data.accountName,
+        bsb: data.bsb,
+        accountNumber: data.accountNumber,
+        autoInvoiceReminders: autoReminders,
+        invoiceDueDays: data.invoiceDueDays ? Number(data.invoiceDueDays) : 7,
+      }
+    });
 
     revalidatePath("/tenant/settings");
     revalidatePath("/tenant/invoices");

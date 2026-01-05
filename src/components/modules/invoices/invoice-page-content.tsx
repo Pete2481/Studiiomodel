@@ -87,17 +87,24 @@ export function InvoicePageContent({
     const newVal = !autoReminders;
     setAutoReminders(newVal);
     setIsUpdating(true);
-    const result = await updateTenantInvoicingSettings({
-      ...tenantSettings,
-      taxRate: Number(tenantSettings.taxRate) * 100,
-      autoInvoiceReminders: newVal,
-      invoiceDueDays: dueDays
-    });
-    if (!result.success) {
+    try {
+      const result = await updateTenantInvoicingSettings({
+        ...tenantSettings,
+        taxRate: Number(tenantSettings.taxRate) * 100, // Action expects percentage
+        autoInvoiceReminders: newVal,
+        invoiceDueDays: dueDays
+      });
+      if (!result.success) {
+        setAutoReminders(!newVal);
+        alert(result.error);
+      }
+    } catch (err) {
+      console.error("Toggle error:", err);
       setAutoReminders(!newVal);
-      alert(result.error);
+      alert("Failed to update settings. Please try again.");
+    } finally {
+      setIsUpdating(false);
     }
-    setIsUpdating(false);
   };
 
   const handleDueDaysChange = async (days: number) => {
