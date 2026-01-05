@@ -59,9 +59,9 @@ export async function createInvoiceFromGallery(galleryId: string) {
 
     const invoice = await (tPrisma as any).invoice.create({
       data: {
-        clientId: gallery.clientId,
-        galleryId: gallery.id,
-        bookingId: gallery.bookingId,
+        client: { connect: { id: gallery.clientId } },
+        gallery: { connect: { id: gallery.id } },
+        booking: gallery.bookingId ? { connect: { id: gallery.bookingId } } : undefined,
         number,
         address: gallery.property.name,
         status: "DRAFT",
@@ -71,6 +71,7 @@ export async function createInvoiceFromGallery(galleryId: string) {
         currency: "AUD",
         paymentTerms: gallery.tenant.accountName ? `Account Name: ${gallery.tenant.accountName}\nBSB: ${gallery.tenant.bsb || ""}  Account: ${gallery.tenant.accountNumber || ""}` : null,
         invoiceTerms: gallery.tenant.invoiceTerms,
+        tenant: { connect: { id: gallery.tenantId } },
         lineItems: {
           create: gallery.services.map((gs: any) => {
             const overridePrice = priceOverrides[gs.serviceId];
@@ -155,9 +156,9 @@ export async function createInvoiceFromEditRequests(galleryId: string) {
 
     const invoice = await (tPrisma as any).invoice.create({
       data: {
-        clientId: gallery.clientId,
-        galleryId: gallery.id,
-        bookingId: gallery.bookingId,
+        client: { connect: { id: gallery.clientId } },
+        gallery: { connect: { id: gallery.id } },
+        booking: gallery.bookingId ? { connect: { id: gallery.bookingId } } : undefined,
         number,
         address: gallery.property.name,
         status: "DRAFT",
@@ -167,6 +168,7 @@ export async function createInvoiceFromEditRequests(galleryId: string) {
         currency: "AUD",
         paymentTerms: gallery.tenant.accountName ? `Account Name: ${gallery.tenant.accountName}\nBSB: ${gallery.tenant.bsb || ""}  Account: ${gallery.tenant.accountNumber || ""}` : null,
         invoiceTerms: gallery.tenant.invoiceTerms,
+        tenant: { connect: { id: gallery.tenantId } },
         lineItems: {
           create: lineItemsData
         }
@@ -235,10 +237,14 @@ export async function upsertInvoice(data: any) {
     const dueAtDate = dueAt ? new Date(dueAt) : new Date();
 
     if (id) {
+      const { bookingId, galleryId, clientId, tenantId, ...updateRest } = rest;
       await (tPrisma as any).invoice.update({
         where: { id },
         data: {
-          ...rest,
+          ...updateRest,
+          client: clientId ? { connect: { id: clientId } } : undefined,
+          booking: bookingId ? { connect: { id: bookingId } } : { disconnect: true },
+          gallery: galleryId ? { connect: { id: galleryId } } : { disconnect: true },
           issuedAt: issuedAtDate,
           dueAt: dueAtDate,
           discount: Number(discount),
@@ -279,9 +285,13 @@ export async function upsertInvoice(data: any) {
         }
       }
     } else {
+      const { bookingId, galleryId, clientId, tenantId, ...createRest } = rest;
       const newInvoice = await (tPrisma as any).invoice.create({
         data: {
-          ...rest,
+          ...createRest,
+          client: { connect: { id: clientId } },
+          booking: bookingId ? { connect: { id: bookingId } } : undefined,
+          gallery: galleryId ? { connect: { id: galleryId } } : undefined,
           issuedAt: issuedAtDate,
           dueAt: dueAtDate,
           discount: Number(discount),
