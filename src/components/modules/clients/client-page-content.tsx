@@ -20,6 +20,7 @@ import {
 import { cn } from "@/lib/utils";
 import { ClientDrawer } from "./client-drawer";
 import { AgentDrawer } from "./agent-drawer";
+import { ImpersonateClientButton } from "./impersonate-client-button";
 import { upsertClient, deleteClient, resendClientInvite, importClientsCsv } from "@/app/actions/client";
 import { getAgentsByClient } from "@/app/actions/agent";
 import { useSearchParams, usePathname } from "next/navigation";
@@ -328,7 +329,8 @@ export function ClientPageContent({
             </div>
 
             {/* Agents Management */}
-            <div className="flex items-center justify-end">
+            <div className="flex items-center justify-end gap-2">
+              <ImpersonateClientButton clientId={client.id} />
               <button 
                 onClick={(e) => {
                   e.stopPropagation();

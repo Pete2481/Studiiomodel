@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { notificationService } from "@/server/services/notification.service";
 import { auth } from "@/auth";
 import { permissionService } from "@/lib/permission-service";
+import { prisma } from "@/lib/prisma";
+import { randomInt } from "crypto";
 
 export async function upsertClient(data: any, skipNotification = false) {
   try {
@@ -280,5 +282,74 @@ export async function importClientsCsv(formData: FormData) {
   } catch (error: any) {
     console.error("CLIENT CSV IMPORT ERROR:", error);
     return { success: false, error: "Failed to import CSV. Please ensure the format is: Agency Name, Contact Name, Email, Phone" };
+  }
+}
+
+export async function impersonateClientAction(clientId: string) {
+  try {
+    const session = await auth();
+    if (!session?.user?.tenantId || (session.user.role !== "TENANT_ADMIN" && session.user.role !== "ADMIN")) {
+      throw new Error("Unauthorized: Admin only");
+    }
+
+    const tenantId = session.user.tenantId;
+    const userEmail = session.user.email;
+    if (!userEmail) throw new Error("User email not found");
+
+    // 1. Find the user
+    const user = await prisma.user.findUnique({ where: { email: userEmail } });
+    if (!user) throw new Error("User record not found");
+
+    // 2. Find or create a CLIENT membership for this Admin for this specific Client
+    // This allows them to switch into "Client Mode" for this agency.
+    let membership = await prisma.tenantMembership.findFirst({
+      where: {
+        tenantId,
+        userId: user.id,
+        clientId,
+        role: "CLIENT"
+      }
+    });
+
+    if (!membership) {
+      membership = await prisma.tenantMembership.create({
+        data: {
+          tenantId,
+          userId: user.id,
+          clientId,
+          role: "CLIENT",
+          permissions: {
+            canDownloadHighRes: true,
+            canViewAllAgencyGalleries: true,
+            canPlaceBookings: true,
+            canViewInvoices: true,
+            canEditRequests: true,
+          }
+        }
+      });
+    }
+
+    // 3. Generate a one-time token for instant login
+    const otp = randomInt(100000, 999999).toString();
+    const expires = new Date(Date.now() + 60 * 1000); // 1 minute expiry
+    const identifier = `${userEmail.toLowerCase().trim()}:${membership.id}`;
+
+    await prisma.verificationToken.deleteMany({
+      where: { identifier }
+    });
+    
+    await prisma.verificationToken.create({
+      data: { identifier, token: otp, expires }
+    });
+
+    return { 
+      success: true, 
+      otp, 
+      email: userEmail, 
+      membershipId: membership.id 
+    };
+  } catch (error: any) {
+    console.error("Failed to prepare client impersonation:", error);
+    return { success: false, error: error.message || "Failed to prepare switch" };
   }
 }
