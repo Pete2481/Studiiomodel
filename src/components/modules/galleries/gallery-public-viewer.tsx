@@ -401,27 +401,27 @@ export function GalleryPublicViewer({
 
       {/* Hero Section: Banner First */}
       {gallery.bannerImageUrl ? (
-        <section className="relative h-[60vh] w-full overflow-hidden">
-          <img 
-            src={gallery.bannerImageUrl} 
-            alt={gallery.title}
-            className="h-full w-full object-cover"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent z-10" />
-          <div className="absolute bottom-12 left-12 text-white space-y-1 z-20">
-            <h2 className="text-4xl font-bold tracking-tight">{gallery.title}</h2>
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/80">By {gallery.teamMembers}</p>
+        <section className="px-6 pt-6">
+          <div className="max-w-7xl mx-auto relative h-[50vh] w-full overflow-hidden rounded-[48px] shadow-2xl shadow-slate-200">
+            <img 
+              src={gallery.bannerImageUrl} 
+              alt={gallery.title}
+              className="h-full w-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent z-10" />
           </div>
         </section>
       ) : videos.length > 0 ? (
-        <section className="bg-black relative aspect-video w-full max-h-[80vh] overflow-hidden group">
-          <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
-            <iframe 
-              src={formatVideoUrl(videos[0].url)}
-              className="w-full h-full border-0"
-              allow="autoplay; fullscreen; picture-in-picture"
-              allowFullScreen
-            />
+        <section className="px-6 pt-6">
+          <div className="max-w-7xl mx-auto bg-black relative aspect-video w-full max-h-[70vh] overflow-hidden rounded-[48px] shadow-2xl group">
+            <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+              <iframe 
+                src={formatVideoUrl(videos[0].url)}
+                className="w-full h-full border-0"
+                allow="autoplay; fullscreen; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
           </div>
         </section>
       ) : null}
@@ -429,22 +429,29 @@ export function GalleryPublicViewer({
       {/* Main Content */}
       <main className="flex-1 bg-white">
         <div className="max-w-7xl mx-auto px-6 py-12">
-          {/* Sub Header / Filters */}
-          <div className="flex flex-col md:flex-row items-center justify-between mb-12 gap-6">
-            <div className="flex bg-slate-50 p-1 rounded-2xl border border-slate-100 flex-wrap justify-center">
-              <FilterTab active={activeFilter === "all"} onClick={() => setActiveFilter("all")} label="Everything" count={assets.length + videos.length} />
-              <FilterTab active={activeFilter === "images"} onClick={() => setActiveFilter("images")} label="Images" count={assets.length} />
-              <FilterTab active={activeFilter === "videos"} onClick={() => setActiveFilter("videos")} label="Films" count={videos.length} />
-              <FilterTab 
-                active={activeFilter === "favorites"} 
-                onClick={() => setActiveFilter("favorites")} 
-                label="Favourites" 
-                count={favorites.length}
-                isSpecial={true}
-              />
+          {/* Sub Header / Title & Filters */}
+          <div className="flex flex-col md:flex-row items-end justify-between mb-12 gap-8">
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-5xl font-black text-slate-900 tracking-tightest uppercase">{gallery.title}</h2>
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mt-2">By {gallery.teamMembers}</p>
+              </div>
+
+              <div className="flex bg-slate-50 p-1 rounded-2xl border border-slate-100 flex-wrap">
+                <FilterTab active={activeFilter === "all"} onClick={() => setActiveFilter("all")} label="Everything" count={assets.length + videos.length} />
+                <FilterTab active={activeFilter === "images"} onClick={() => setActiveFilter("images")} label="Images" count={assets.length} />
+                <FilterTab active={activeFilter === "videos"} onClick={() => setActiveFilter("videos")} label="Films" count={videos.length} />
+                <FilterTab 
+                  active={activeFilter === "favorites"} 
+                  onClick={() => setActiveFilter("favorites")} 
+                  label="Favourites" 
+                  count={favorites.length}
+                  isSpecial={true}
+                />
+              </div>
             </div>
             
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 pb-2">
               <div className="flex -space-x-2">
                 {/* Visual indicator of multiple folders */}
                 {Array.from(new Set(assets.map(a => a.folderName))).map((folder, i) => (
@@ -461,10 +468,12 @@ export function GalleryPublicViewer({
 
           {/* Grid */}
           {isLoading ? (
-            <div className="py-32 text-center">
-              <Loader2 className="h-10 w-10 text-primary animate-spin mx-auto mb-6" />
-              <p className="text-sm font-bold text-slate-900 tracking-tight">Syncing your production vault...</p>
-              <p className="text-xs font-medium text-slate-400 mt-2">Aggregating multiple asset folders from Dropbox Business</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+              {[1, 2, 3, 4, 5, 6].map(i => (
+                <div key={i} className="aspect-[4/3] rounded-[32px] bg-slate-50 animate-pulse border border-slate-100 flex items-center justify-center">
+                  <ImageIcon className="h-8 w-8 text-slate-100" />
+                </div>
+              ))}
             </div>
           ) : error ? (
             <div className="py-32 text-center max-w-md mx-auto">
