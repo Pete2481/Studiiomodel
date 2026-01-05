@@ -203,14 +203,16 @@ model Client {
 }
 
 model TeamMember {
-  id           String              @id @default(cuid())
-  tenantId     String
-  membershipId String?             @unique
-  role         TeamMemberRole      @default(PHOTOGRAPHER)
+  id             String              @id @default(cuid())
+  tenantId       String
+  membershipId   String?             @unique
+  calendarSecret String?             @unique @default(cuid())
+  role           TeamMemberRole      @default(PHOTOGRAPHER)
   displayName  String
   email        String?
   phone        String?
   avatarUrl    String?
+  status       String              @default("ACTIVE")
   permissions  Json                @default("{}")
   deletedAt    DateTime?
   createdAt    DateTime            @default(now())

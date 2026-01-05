@@ -73,20 +73,44 @@ async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
   }
 
   // Real data fetching
-  const [dbBookings, dbClients, dbServices, dbTeamMembers, dbAgents, tenant] = await Promise.all([
+  const [dbBookings, dbClients, dbServices, dbTeamMembers, dbAgents, tenant, currentMember] = await Promise.all([
     tPrisma.booking.findMany({
       where: bookingWhere,
-      include: {
+      select: {
+        id: true,
+        title: true,
+        startAt: true,
+        endAt: true,
+        status: true,
+        propertyStatus: true,
+        clientId: true,
+        agentId: true,
+        isPlaceholder: true,
+        slotType: true,
+        internalNotes: true,
+        clientNotes: true,
         client: { select: { id: true, name: true, businessName: true } },
         property: { select: { id: true, name: true } },
-        services: { include: { service: { select: { name: true } } } },
-        assignments: { include: { teamMember: { select: { id: true, displayName: true, avatarUrl: true } } } },
+        services: { select: { serviceId: true, service: { select: { name: true } } } },
+        assignments: { select: { teamMemberId: true, teamMember: { select: { id: true, displayName: true, avatarUrl: true } } } },
       }
     }),
-    tPrisma.client.findMany({ where: { deletedAt: null }, select: { id: true, name: true, businessName: true, avatarUrl: true } }),
-    tPrisma.service.findMany({ where: { active: true } }),
-    tPrisma.teamMember.findMany({ where: { deletedAt: null } }),
-    tPrisma.agent.findMany({ where: { deletedAt: null } }),
+    tPrisma.client.findMany({ 
+      where: { deletedAt: null }, 
+      select: { id: true, name: true, businessName: true, avatarUrl: true } 
+    }),
+    tPrisma.service.findMany({ 
+      where: { active: true },
+      select: { id: true, name: true, price: true, durationMinutes: true, icon: true, slotType: true, clientVisible: true, settings: true }
+    }),
+    tPrisma.teamMember.findMany({ 
+      where: { deletedAt: null },
+      select: { id: true, displayName: true, avatarUrl: true }
+    }),
+    tPrisma.agent.findMany({ 
+      where: { deletedAt: null },
+      select: { id: true, name: true, clientId: true, avatarUrl: true }
+    }),
     tPrisma.tenant.findUnique({
       where: { id: sessionUser.tenantId as string },
       select: { 
@@ -100,8 +124,14 @@ async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
         calendarSecret: true,
         settings: true
       }
-    })
+    }),
+    sessionUser.teamMemberId ? prisma.teamMember.findUnique({
+      where: { id: sessionUser.teamMemberId },
+      select: { calendarSecret: true }
+    }) : null
   ]);
+
+  const calendarSecret = currentMember?.calendarSecret || (tenant as any)?.calendarSecret || null;
 
   const customStatuses = (tenant as any)?.bookingStatuses || (tenant as any)?.settings?.bookingStatuses || [
     "Tenanted Property", "Owner Occupied", "Empty (Keys at office)"
@@ -147,7 +177,7 @@ async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
       agents={agents}
       customStatuses={customStatuses}
       businessHours={(tenant as any)?.businessHours || null}
-      calendarSecret={(tenant as any)?.calendarSecret || null}
+      calendarSecret={calendarSecret}
       slotSettings={{
         sunriseSlotTime: (tenant as any)?.sunriseSlotTime || "06:00",
         duskSlotTime: (tenant as any)?.duskSlotTime || "18:30",

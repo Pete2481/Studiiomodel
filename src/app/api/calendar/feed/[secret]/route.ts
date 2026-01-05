@@ -7,28 +7,50 @@ export async function GET(
 ) {
   const { secret } = await params;
 
-  // 1. Verify the Secret
-  const tenant = await prisma.tenant.findUnique({
-    where: { calendarSecret: secret },
-    select: { id: true, name: true }
-  });
+  // 1. Verify the Secret (Check Tenant OR TeamMember)
+  const [tenant, member] = await Promise.all([
+    prisma.tenant.findUnique({
+      where: { calendarSecret: secret },
+      select: { id: true, name: true }
+    }),
+    prisma.teamMember.findUnique({
+      where: { calendarSecret: secret },
+      include: { tenant: { select: { id: true, name: true } } }
+    })
+  ]);
 
-  if (!tenant) {
+  if (!tenant && !member) {
     return new NextResponse("Invalid calendar feed link", { status: 401 });
   }
 
-  // 2. Fetch all real bookings (excluding placeholders)
+  const activeTenant = tenant || member?.tenant;
+  const teamMemberId = member?.id;
+
+  if (!activeTenant) {
+    return new NextResponse("Invalid calendar feed link", { status: 401 });
+  }
+
+  // 2. Fetch bookings
   // We fetch bookings from 30 days ago to 90 days in the future for a healthy rolling window
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - 30);
   
+  const where: any = {
+    tenantId: activeTenant.id,
+    isPlaceholder: false,
+    deletedAt: null,
+    startAt: { gte: startDate }
+  };
+
+  // If it's a Team Member's secret, filter ONLY for their assignments
+  if (teamMemberId) {
+    where.assignments = {
+      some: { teamMemberId }
+    };
+  }
+
   const bookings = await prisma.booking.findMany({
-    where: {
-      tenantId: tenant.id,
-      isPlaceholder: false,
-      deletedAt: null,
-      startAt: { gte: startDate }
-    },
+    where,
     include: {
       property: true,
       client: true,
@@ -41,11 +63,15 @@ export async function GET(
   const now = new Date().toISOString().replace(/-|:|\.\d\d\d/g, "");
 
   // 3. Construct VCALENDAR header
+  const calName = member 
+    ? `${member.displayName} - ${activeTenant.name}`
+    : `${activeTenant.name} - Studiio`;
+
   const icsLines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
     "PRODID:-//Studiio//Calendar Feed//EN",
-    `X-WR-CALNAME:${tenant.name} - Studiio`,
+    `X-WR-CALNAME:${calName}`,
     "X-WR-TIMEZONE:Australia/Sydney",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH"

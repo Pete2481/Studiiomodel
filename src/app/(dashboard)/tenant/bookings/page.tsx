@@ -60,17 +60,41 @@ async function BookingsDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
       where: { deletedAt: null },
       orderBy: { startAt: 'desc' },
       take: 50,
-      include: {
+      select: {
+        id: true,
+        title: true,
+        startAt: true,
+        endAt: true,
+        status: true,
+        propertyStatus: true,
+        clientId: true,
+        agentId: true,
+        isPlaceholder: true,
+        slotType: true,
+        internalNotes: true,
+        clientNotes: true,
         client: { select: { id: true, name: true, businessName: true } },
         property: { select: { id: true, name: true } },
-        services: { include: { service: { select: { name: true } } } },
-        assignments: { include: { teamMember: { select: { id: true, displayName: true, avatarUrl: true } } } },
+        services: { select: { serviceId: true, service: { select: { name: true } } } },
+        assignments: { select: { teamMemberId: true, teamMember: { select: { id: true, displayName: true, avatarUrl: true } } } },
       }
     }),
-    tPrisma.client.findMany({ where: { deletedAt: null }, select: { id: true, name: true, businessName: true, avatarUrl: true } }),
-    tPrisma.service.findMany({ where: { active: true } }),
-    tPrisma.teamMember.findMany({ where: { deletedAt: null } }),
-    tPrisma.agent.findMany({ where: { deletedAt: null } }),
+    tPrisma.client.findMany({ 
+      where: { deletedAt: null }, 
+      select: { id: true, name: true, businessName: true, avatarUrl: true } 
+    }),
+    tPrisma.service.findMany({ 
+      where: { active: true },
+      select: { id: true, name: true, price: true, durationMinutes: true, icon: true, slotType: true, clientVisible: true, settings: true }
+    }),
+    tPrisma.teamMember.findMany({ 
+      where: { deletedAt: null },
+      select: { id: true, displayName: true, avatarUrl: true }
+    }),
+    tPrisma.agent.findMany({ 
+      where: { deletedAt: null },
+      select: { id: true, name: true, clientId: true, avatarUrl: true }
+    }),
     tPrisma.tenant.findUnique({
       where: { id: tenantId },
       select: { id: true, businessHours: true, settings: true, sunriseSlotTime: true, duskSlotTime: true, sunriseSlotsPerDay: true, duskSlotsPerDay: true }

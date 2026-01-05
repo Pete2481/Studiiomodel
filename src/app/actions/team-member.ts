@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { TeamMemberRole } from "@prisma/client";
 import { notificationService } from "@/server/services/notification.service";
 import { permissionService } from "@/lib/permission-service";
+import { randomBytes } from "crypto";
 
 // Default permission sets for each role (aligned with UI toggles)
 const DEFAULT_PERMISSIONS: Record<TeamMemberRole, any> = {
@@ -74,16 +75,27 @@ export async function upsertTeamMember(data: any) {
     }
 
     const tPrisma = await getTenantPrisma();
-
+    
+    // MOVE DATA READING ABOVE LOGS
     const { 
       id, 
       displayName, 
       email, 
       phone, 
       role, 
+      status,
       avatarUrl,
       permissions
     } = data;
+
+    const newSecret = randomBytes(16).toString("hex");
+    console.log("[TURBO-DEBUG] UPSERT ATTEMPT:", { 
+      name: displayName, 
+      email, 
+      status,
+      hasSecret: !!newSecret,
+      avatarSize: avatarUrl?.length || 0 
+    });
 
     const normalizedRole = role.toUpperCase();
     
@@ -103,8 +115,11 @@ export async function upsertTeamMember(data: any) {
           email,
           phone,
           role: validRole,
+          status: status || "ACTIVE",
           avatarUrl,
           permissions: permissions || DEFAULT_PERMISSIONS[validRole] || {},
+          // Only set if not already set (safety for old records)
+          calendarSecret: data.calendarSecret || undefined
         },
       });
     } else {
@@ -121,8 +136,10 @@ export async function upsertTeamMember(data: any) {
             email,
             phone,
             role: validRole,
+            status: status || "ACTIVE",
             avatarUrl,
             permissions: permissions || DEFAULT_PERMISSIONS[validRole] || {},
+            calendarSecret: existingMember.calendarSecret || randomBytes(16).toString("hex")
           }
         });
       } else {
@@ -132,60 +149,74 @@ export async function upsertTeamMember(data: any) {
             email,
             phone,
             role: validRole,
+            status: status || "ACTIVE",
             avatarUrl,
             permissions: permissions || DEFAULT_PERMISSIONS[validRole] || {},
+            calendarSecret: newSecret
           },
         });
       }
+    }
 
-      // 2. Also create a TenantMembership for this user (if email exists)
-      if (email) {
-        let user = await (tPrisma as any).user.findUnique({ where: { email } });
-        if (!user) {
-          user = await (tPrisma as any).user.create({
-            data: {
-              email,
-              name: displayName,
-            }
-          });
-        }
-
-        const tenantRole = role === "ADMIN" ? "TENANT_ADMIN" : "TEAM_MEMBER";
-
-        let membership = await (tPrisma as any).tenantMembership.findFirst({
-          where: { 
-            userId: user.id,
-            role: tenantRole as any
+    // 2. Keep the linked User record in sync (if email exists)
+    if (email) {
+      const existingUser = await (tPrisma as any).user.findUnique({ where: { email } });
+      let user = existingUser;
+      
+      if (!user) {
+        user = await (tPrisma as any).user.create({
+          data: {
+            email,
+            name: displayName,
+            image: avatarUrl,
           }
         });
-
-        if (!membership) {
-          membership = await (tPrisma as any).tenantMembership.create({
-            data: {
-              user: { connect: { id: user.id } },
-              role: tenantRole as any,
-            }
-          });
-        }
-
-        // 3. Link membership back to TeamMember
-        if (membership) {
-          const conflictingMember = await (tPrisma as any).teamMember.findFirst({
-            where: { membershipId: membership.id, NOT: { id: member.id } }
-          });
-
-          if (conflictingMember) {
-            await (tPrisma as any).teamMember.update({
-              where: { id: conflictingMember.id },
-              data: { membershipId: null }
-            });
+      } else {
+        // Update existing user to match team member profile
+        user = await (tPrisma as any).user.update({
+          where: { id: existingUser.id },
+          data: {
+            name: displayName,
+            image: avatarUrl,
           }
+        });
+      }
 
+      const tenantRole = role === "ADMIN" ? "TENANT_ADMIN" : "TEAM_MEMBER";
+
+      let membership = await (tPrisma as any).tenantMembership.findFirst({
+        where: { 
+          userId: user.id,
+          role: tenantRole as any
+        }
+      });
+
+      if (!membership) {
+        membership = await (tPrisma as any).tenantMembership.create({
+          data: {
+            user: { connect: { id: user.id } },
+            role: tenantRole as any,
+          }
+        });
+      }
+
+      // 3. Link membership back to TeamMember
+      if (membership) {
+        const conflictingMember = await (tPrisma as any).teamMember.findFirst({
+          where: { membershipId: membership.id, NOT: { id: member.id } }
+        });
+
+        if (conflictingMember) {
           await (tPrisma as any).teamMember.update({
-            where: { id: member.id },
-            data: { membershipId: membership.id }
+            where: { id: conflictingMember.id },
+            data: { membershipId: null }
           });
         }
+
+        await (tPrisma as any).teamMember.update({
+          where: { id: member.id },
+          data: { membershipId: membership.id }
+        });
       }
     }
 
@@ -234,4 +265,3 @@ export async function deleteTeamMember(id: string) {
     return { success: false, error: error.message || "Failed to delete team member." };
   }
 }
-

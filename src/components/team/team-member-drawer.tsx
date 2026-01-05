@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { X, ChevronDown, Camera, ShieldCheck, Mail, Phone, User, Globe, Trash2, Plus } from "lucide-react";
+import { X, ChevronDown, Camera, ShieldCheck, Mail, Phone, User, Globe, Trash2, Plus, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface TeamMemberDrawerProps {
@@ -44,6 +44,7 @@ export function TeamMemberDrawer({
     role: "PHOTOGRAPHER",
     avatarUrl: "",
     status: "ACTIVE",
+    calendarSecret: "",
     permissions: {} as Record<string, boolean>,
   });
 
@@ -61,6 +62,9 @@ export function TeamMemberDrawer({
 
   useEffect(() => {
     if (member && member.id) {
+      // Auto-generate a secret for existing members who don't have one yet
+      const secret = member.calendarSecret || Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      
       setFormData({
         id: member.id,
         displayName: member.name || "",
@@ -69,6 +73,7 @@ export function TeamMemberDrawer({
         role: member.role || "PHOTOGRAPHER",
         avatarUrl: member.avatar || "",
         status: member.status || "ACTIVE",
+        calendarSecret: secret,
         permissions: member.permissions || {},
       });
       setPreviewUrl(member.avatar || null);
@@ -81,6 +86,7 @@ export function TeamMemberDrawer({
         role: "PHOTOGRAPHER",
         avatarUrl: "",
         status: "ACTIVE",
+        calendarSecret: Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15),
         permissions: {
           viewCalendar: true,
           viewBookings: true,
@@ -267,6 +273,46 @@ export function TeamMemberDrawer({
                 </div>
               </div>
             </div>
+
+            {/* Calendar Subscription */}
+            {formData.id && (
+              <div className="space-y-4 border-t border-slate-100 pt-8">
+                <div className="flex flex-col gap-1">
+                  <h4 className="text-sm font-bold text-slate-900">Calendar Subscription</h4>
+                  <p className="text-xs text-slate-500">Sync only this member's assignments to their external calendar (Google, Outlook, Apple).</p>
+                </div>
+                
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 px-4 py-3 rounded-2xl bg-slate-50 border border-slate-100 font-mono text-[10px] text-slate-500 truncate select-all">
+                    {typeof window !== "undefined" ? `${window.location.origin}/api/calendar/feed/${formData.calendarSecret}` : ""}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const url = `${window.location.origin}/api/calendar/feed/${formData.calendarSecret}`;
+                      navigator.clipboard.writeText(url);
+                      alert("Subscription link copied to clipboard!");
+                    }}
+                    className="h-10 px-4 flex items-center justify-center gap-2 rounded-xl bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:text-emerald-500 hover:border-emerald-200 transition-all active:scale-95 shadow-sm"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    Copy Link
+                  </button>
+                  <a
+                    href={`webcal://${typeof window !== "undefined" ? window.location.host : ""}/api/calendar/feed/${formData.calendarSecret}`}
+                    className="h-10 px-4 rounded-xl border border-slate-200 bg-white text-[10px] font-black uppercase tracking-widest text-slate-600 flex items-center gap-2 hover:border-emerald-200 transition-all active:scale-95 shadow-sm"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Subscribe
+                  </a>
+                </div>
+                {(!member || !member.calendarSecret) && (
+                  <p className="text-[9px] text-amber-600 font-bold italic animate-pulse">
+                    * This is a new link. Click "Save Changes" to activate it forever.
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Permissions Section */}
             <div className="space-y-6 border-t border-slate-100 pt-8">

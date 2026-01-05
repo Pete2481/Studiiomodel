@@ -71,11 +71,18 @@ export function TeamMemberPageContent({
     }
   };
 
-  const filteredMembers = members.filter(m => 
-    m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (m.email && m.email.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    (m.role && m.role.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const filteredMembers = (members || []).filter(m => {
+    const name = m.name || m.displayName || "";
+    const email = m.email || "";
+    const role = m.role || "";
+    const query = searchQuery.toLowerCase();
+
+    return (
+      name.toLowerCase().includes(query) ||
+      email.toLowerCase().includes(query) ||
+      role.toLowerCase().includes(query)
+    );
+  });
 
   return (
     <div className="space-y-6">

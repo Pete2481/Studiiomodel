@@ -43,6 +43,7 @@ async function EditorsDataWrapper({ session }: { session: any }) {
 
   const dbEditors = await prisma.teamMember.findMany({
     where: { tenantId, role: 'EDITOR', deletedAt: null },
+    select: { id: true, displayName: true, email: true, phone: true, status: true, avatarUrl: true },
     orderBy: { displayName: 'asc' }
   });
 
@@ -51,7 +52,7 @@ async function EditorsDataWrapper({ session }: { session: any }) {
     name: e.displayName, 
     email: e.email || "No email", 
     phone: e.phone || "No phone", 
-    status: "ACTIVE", 
+    status: e.status || "ACTIVE", 
     edits: 0,
     avatar: e.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(e.displayName)}&background=random`
   }));

@@ -67,6 +67,22 @@ export function ClientPageContent({
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const downloadTemplate = () => {
+    const headers = ["Agency Name", "Contact Name", "Email", "Phone"];
+    const row = ["Ray White HQ", "John Doe", "john@agency.com", "0412 345 678"];
+    const csvContent = [headers, row].map(e => e.join(",")).join("\n");
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", "studiio_client_import_template.csv");
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   useEffect(() => {
     const action = searchParams.get("action");
     if (action === "new") {
@@ -191,6 +207,12 @@ export function ClientPageContent({
         </div>
 
         <div className="flex items-center gap-3">
+          <button 
+            onClick={downloadTemplate}
+            className="flex h-10 px-4 items-center justify-center rounded-full border border-slate-200 bg-white text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-emerald-500 hover:border-emerald-200 transition-all shadow-sm gap-2"
+          >
+            <ExternalLink className="h-3 w-3" /> Template
+          </button>
           <input 
             type="file" 
             ref={fileInputRef} 

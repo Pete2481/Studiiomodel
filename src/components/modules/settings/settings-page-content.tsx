@@ -28,7 +28,9 @@ import {
   Clock,
   Link as LinkIcon,
   Copy,
-  Check
+  Check,
+  User,
+  Plus
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AddressAutocomplete } from "@/components/ui/address-autocomplete";
@@ -39,6 +41,7 @@ import { format, differenceInDays } from "date-fns";
 interface SettingsPageContentProps {
   tenant: any;
   user: any;
+  teamMember?: any;
 }
 
 const TIMEZONES = [
@@ -87,9 +90,9 @@ const TIMEZONES = [
 
 const DEFAULT_INVOICE_TERMS = "All services are provided in accordance with standard industry practice. Payment is due within 7 days of the invoice date unless otherwise agreed in writing. Late payments may incur additional fees or suspension of services until the account is brought up to date. All imagery, video, and creative assets remain the property of the service provider until full payment has received, after which usage rights are granted to the client for their intended purpose. Revisions outside the agreed scope, additional services, or re-shoots may be charged separately. Cancellations made within 24 hours of a scheduled booking may incur a cancellation fee. By engaging our services, the client agrees to these terms and conditions.";
 
-export function SettingsPageContent({ tenant, user }: SettingsPageContentProps) {
+export function SettingsPageContent({ tenant, user, teamMember }: SettingsPageContentProps) {
   const searchParams = useSearchParams();
-  const [activeTab, setActiveTab] = useState("branding");
+  const [activeTab, setActiveTab] = useState(teamMember ? "profile" : "branding");
 
   useEffect(() => {
     const tab = searchParams.get("tab");
@@ -248,61 +251,71 @@ export function SettingsPageContent({ tenant, user }: SettingsPageContentProps) 
     <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-12">
       {/* Sidebar Nav */}
       <div className="space-y-2">
-        <SettingsTab 
-          label="Studio Branding" 
-          icon={<Palette className="h-4 w-4" />} 
-          active={activeTab === "branding"} 
-          onClick={() => setActiveTab("branding")}
-        />
-        <SettingsTab 
-          label="Contact Info" 
-          icon={<Globe className="h-4 w-4" />} 
-          active={activeTab === "contact"} 
-          onClick={() => setActiveTab("contact")}
-        />
-        <SettingsTab 
-          label="Invoicing & Terms" 
-          icon={<Receipt className="h-4 w-4" />} 
-          active={activeTab === "invoicing"} 
-          onClick={() => setActiveTab("invoicing")}
-        />
-        <SettingsTab 
-          label="Data & Storage" 
-          icon={<Database className="h-4 w-4" />} 
-          active={activeTab === "data"} 
-          onClick={() => setActiveTab("data")}
-        />
-        <SettingsTab 
-          label="Integrations" 
-          icon={<Cloud className="h-4 w-4" />} 
-          active={activeTab === "integrations"} 
-          onClick={() => setActiveTab("integrations")}
-        />
-        <SettingsTab 
-          label="Notifications" 
-          icon={<Bell className="h-4 w-4" />} 
-          active={activeTab === "notifications"} 
-          onClick={() => setActiveTab("notifications")}
-        />
-        <SettingsTab 
-          label="Security" 
-          icon={<Shield className="h-4 w-4" />} 
-          active={activeTab === "security"} 
-          onClick={() => setActiveTab("security")}
-        />
-        <SettingsTab 
-          label="Plan & Billing" 
-          icon={<CreditCard className="h-4 w-4" />} 
-          active={activeTab === "billing"} 
-          onClick={() => setActiveTab("billing")}
-        />
-        {user.role !== "CLIENT" && user.role !== "AGENT" && user.role !== "EDITOR" && (
+        {teamMember && (
           <SettingsTab 
-            label="Public Booking" 
-            icon={<LinkIcon className="h-4 w-4" />} 
-            active={activeTab === "booking-link"} 
-            onClick={() => setActiveTab("booking-link")}
+            label="Personal Profile" 
+            icon={<User className="h-4 w-4" />} 
+            active={activeTab === "profile"} 
+            onClick={() => setActiveTab("profile")}
           />
+        )}
+        {(user.role === "TENANT_ADMIN" || user.role === "ADMIN") && (
+          <>
+            <SettingsTab 
+              label="Studio Branding" 
+              icon={<Palette className="h-4 w-4" />} 
+              active={activeTab === "branding"} 
+              onClick={() => setActiveTab("branding")}
+            />
+            <SettingsTab 
+              label="Contact Info" 
+              icon={<Globe className="h-4 w-4" />} 
+              active={activeTab === "contact"} 
+              onClick={() => setActiveTab("contact")}
+            />
+            <SettingsTab 
+              label="Invoicing & Terms" 
+              icon={<Receipt className="h-4 w-4" />} 
+              active={activeTab === "invoicing"} 
+              onClick={() => setActiveTab("invoicing")}
+            />
+            <SettingsTab 
+              label="Data & Storage" 
+              icon={<Database className="h-4 w-4" />} 
+              active={activeTab === "data"} 
+              onClick={() => setActiveTab("data")}
+            />
+            <SettingsTab 
+              label="Integrations" 
+              icon={<Cloud className="h-4 w-4" />} 
+              active={activeTab === "integrations"} 
+              onClick={() => setActiveTab("integrations")}
+            />
+            <SettingsTab 
+              label="Notifications" 
+              icon={<Bell className="h-4 w-4" />} 
+              active={activeTab === "notifications"} 
+              onClick={() => setActiveTab("notifications")}
+            />
+            <SettingsTab 
+              label="Security" 
+              icon={<Shield className="h-4 w-4" />} 
+              active={activeTab === "security"} 
+              onClick={() => setActiveTab("security")}
+            />
+            <SettingsTab 
+              label="Plan & Billing" 
+              icon={<CreditCard className="h-4 w-4" />} 
+              active={activeTab === "billing"} 
+              onClick={() => setActiveTab("billing")}
+            />
+            <SettingsTab 
+              label="Public Booking" 
+              icon={<LinkIcon className="h-4 w-4" />} 
+              active={activeTab === "booking-link"} 
+              onClick={() => setActiveTab("booking-link")}
+            />
+          </>
         )}
       </div>
 
@@ -322,6 +335,79 @@ export function SettingsPageContent({ tenant, user }: SettingsPageContentProps) 
             <button onClick={() => setMessage(null)} className="p-1 hover:bg-black/5 rounded-full transition-colors">
               <X className="h-4 w-4" />
             </button>
+          </div>
+        )}
+
+        {activeTab === "profile" && teamMember && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="ui-card space-y-10 border-slate-100 p-10">
+              <div className="flex items-start justify-between border-b border-slate-50 pb-8">
+                <div className="space-y-1">
+                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">Personal Profile</h2>
+                  <p className="text-sm font-medium text-slate-500">Manage your account details and calendar preferences.</p>
+                </div>
+                <div className="h-14 w-14 rounded-[20px] bg-slate-900 flex items-center justify-center text-white">
+                  {teamMember.avatarUrl ? (
+                    <img src={teamMember.avatarUrl} className="h-full w-full object-cover rounded-[20px]" alt={teamMember.displayName} />
+                  ) : (
+                    <User className="h-7 w-7" />
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                <div className="space-y-8">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Full Name</label>
+                    <input type="text" readOnly value={teamMember.displayName} className="ui-input-tight bg-slate-50 cursor-not-allowed opacity-70" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Email Address</label>
+                    <input type="text" readOnly value={teamMember.email} className="ui-input-tight bg-slate-50 cursor-not-allowed opacity-70" />
+                  </div>
+                </div>
+
+                <div className="space-y-8">
+                  <div className="p-8 rounded-[32px] bg-slate-900 text-white space-y-6 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-6 opacity-10">
+                      <Clock className="h-12 w-12" />
+                    </div>
+                    <div>
+                      <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Your Calendar Feed</h4>
+                      <p className="text-xs font-medium leading-relaxed opacity-80 mt-2">
+                        Subscribe to your personal assignments. This will ONLY show bookings assigned to you.
+                      </p>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3 p-2 bg-white/10 rounded-2xl border border-white/10 group hover:border-primary/30 transition-all">
+                        <div className="flex-1 px-4 font-mono text-[10px] text-white/60 truncate">
+                          {typeof window !== 'undefined' ? `${window.location.origin}/api/calendar/feed/${teamMember.calendarSecret}` : `.../api/calendar/feed/${teamMember.calendarSecret}`}
+                        </div>
+                        <button 
+                          onClick={() => {
+                            const url = `${window.location.origin}/api/calendar/feed/${teamMember.calendarSecret}`;
+                            navigator.clipboard.writeText(url);
+                            setMessage({ type: 'success', text: 'Personal feed link copied!' });
+                          }}
+                          className="h-10 px-4 rounded-xl bg-white text-slate-900 text-[10px] font-black uppercase tracking-widest border border-slate-200 hover:border-primary hover:text-primary transition-all shadow-sm flex items-center gap-2 active:scale-95"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          Copy
+                        </button>
+                      </div>
+                      <a 
+                        href={`webcal://${typeof window !== "undefined" ? window.location.host : ""}/api/calendar/feed/${teamMember.calendarSecret}`}
+                        className="w-full h-12 bg-primary hover:opacity-90 text-white rounded-2xl flex items-center justify-center gap-3 text-xs font-black uppercase tracking-widest transition-all active:scale-95"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Subscribe to Calendar
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

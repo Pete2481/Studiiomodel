@@ -43,16 +43,24 @@ async function TeamDataWrapper({ tenantId }: { tenantId: string }) {
 
   const members = await tPrisma.teamMember.findMany({
     where: { deletedAt: null },
-    orderBy: { displayName: 'asc' }
+    orderBy: { displayName: 'asc' },
+    include: {
+      _count: {
+        select: { bookings: true }
+      }
+    }
   });
 
   const initialMembers = members.map(m => ({
     id: String(m.id),
-    displayName: String(m.displayName),
-    email: String(m.email || ""),
-    phone: String(m.phone || ""),
+    name: m.displayName || "",
+    email: m.email || "",
+    phone: m.phone || "",
     role: String(m.role || "PHOTOGRAPHER"),
-    avatarUrl: m.avatarUrl || null,
+    status: m.status || "ACTIVE",
+    avatar: m.avatarUrl || null,
+    shoots: m._count.bookings,
+    calendarSecret: m.calendarSecret || "",
     permissions: m.permissions || {}
   }));
 
