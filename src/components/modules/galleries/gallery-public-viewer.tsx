@@ -402,13 +402,17 @@ export function GalleryPublicViewer({
       {/* Hero Section: Banner First */}
       {gallery.bannerImageUrl ? (
         <section className="px-6 pt-6">
-          <div className="max-w-7xl mx-auto relative h-[50vh] w-full overflow-hidden rounded-[48px] shadow-2xl shadow-slate-200">
+          <div className="max-w-7xl mx-auto relative h-[60vh] w-full overflow-hidden rounded-[48px] shadow-2xl shadow-slate-200">
             <img 
               src={gallery.bannerImageUrl} 
               alt={gallery.title}
               className="h-full w-full object-cover"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent z-10" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent z-10" />
+            <div className="absolute bottom-12 left-12 text-white space-y-1 z-20">
+              <h2 className="text-4xl font-bold tracking-tight">{gallery.title}</h2>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/80">By {gallery.teamMembers}</p>
+            </div>
           </div>
         </section>
       ) : videos.length > 0 ? (
@@ -429,29 +433,22 @@ export function GalleryPublicViewer({
       {/* Main Content */}
       <main className="flex-1 bg-white">
         <div className="max-w-7xl mx-auto px-6 py-12">
-          {/* Sub Header / Title & Filters */}
-          <div className="flex flex-col md:flex-row items-end justify-between mb-12 gap-8">
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-5xl font-black text-slate-900 tracking-tightest uppercase">{gallery.title}</h2>
-                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mt-2">By {gallery.teamMembers}</p>
-              </div>
-
-              <div className="flex bg-slate-50 p-1 rounded-2xl border border-slate-100 flex-wrap">
-                <FilterTab active={activeFilter === "all"} onClick={() => setActiveFilter("all")} label="Everything" count={assets.length + videos.length} />
-                <FilterTab active={activeFilter === "images"} onClick={() => setActiveFilter("images")} label="Images" count={assets.length} />
-                <FilterTab active={activeFilter === "videos"} onClick={() => setActiveFilter("videos")} label="Films" count={videos.length} />
-                <FilterTab 
-                  active={activeFilter === "favorites"} 
-                  onClick={() => setActiveFilter("favorites")} 
-                  label="Favourites" 
-                  count={favorites.length}
-                  isSpecial={true}
-                />
-              </div>
+          {/* Sub Header / Filters */}
+          <div className="flex flex-col md:flex-row items-center justify-between mb-12 gap-6">
+            <div className="flex bg-slate-50 p-1 rounded-2xl border border-slate-100 flex-wrap justify-center">
+              <FilterTab active={activeFilter === "all"} onClick={() => setActiveFilter("all")} label="Everything" count={assets.length + videos.length} />
+              <FilterTab active={activeFilter === "images"} onClick={() => setActiveFilter("images")} label="Images" count={assets.length} />
+              <FilterTab active={activeFilter === "videos"} onClick={() => setActiveFilter("videos")} label="Films" count={videos.length} />
+              <FilterTab 
+                active={activeFilter === "favorites"} 
+                onClick={() => setActiveFilter("favorites")} 
+                label="Favourites" 
+                count={favorites.length}
+                isSpecial={true}
+              />
             </div>
             
-            <div className="flex items-center gap-3 pb-2">
+            <div className="flex items-center gap-3">
               <div className="flex -space-x-2">
                 {/* Visual indicator of multiple folders */}
                 {Array.from(new Set(assets.map(a => a.folderName))).map((folder, i) => (
