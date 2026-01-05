@@ -36,7 +36,7 @@ export async function GET(
     }
 
     // 2. Validate size
-    const validSizes = ["w32h32", "w64h64", "w128h128", "w640h480", "w1024h768", "w2048h1536"];
+    const validSizes = ["w32h32", "w64h64", "w128h128", "w640h480", "w960h640", "w1024h768", "w2048h1536"];
     const thumbnailSize = validSizes.includes(size) ? size : "w640h480";
 
     // 3. Resolve Gallery & Permissions

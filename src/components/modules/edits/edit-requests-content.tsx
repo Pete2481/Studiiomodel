@@ -574,20 +574,32 @@ function RequestDetailDrawer({
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
       
-      request.metadata.drawing.forEach((path: any) => {
-        if (path.points.length < 2) return;
-        ctx.beginPath();
-        ctx.strokeStyle = path.tool === "eraser" ? "rgba(0,0,0,1)" : "rgba(255, 0, 0, 0.8)";
-        ctx.globalCompositeOperation = path.tool === "eraser" ? "destination-out" : "source-over";
-        ctx.lineWidth = path.tool === "eraser" ? 20 : 4;
-        
-        ctx.moveTo(path.points[0].x * dWidth, path.points[0].y * dHeight);
-        for (let i = 1; i < path.points.length; i++) {
-          ctx.lineTo(path.points[i].x * dWidth, path.points[i].y * dHeight);
+      const drawingData = Array.isArray(request.metadata.drawing) ? request.metadata.drawing : [];
+      
+      drawingData.forEach((item: any) => {
+        if (item.type === "path" || !item.type) {
+          // Backward compatibility: old data was just an array of paths
+          const path = item.points ? item : { points: item.points, tool: item.tool };
+          if (path.points && path.points.length >= 2) {
+            ctx.beginPath();
+            ctx.strokeStyle = path.tool === "eraser" ? "rgba(0,0,0,1)" : "rgba(255, 0, 0, 0.8)";
+            ctx.globalCompositeOperation = path.tool === "eraser" ? "destination-out" : "source-over";
+            ctx.lineWidth = path.tool === "eraser" ? 20 : 4;
+            
+            ctx.moveTo(path.points[0].x * dWidth, path.points[0].y * dHeight);
+            for (let i = 1; i < path.points.length; i++) {
+              ctx.lineTo(path.points[i].x * dWidth, path.points[i].y * dHeight);
+            }
+            ctx.stroke();
+          }
         }
-        ctx.stroke();
       });
     };
+  }, [request]);
+
+  const textAnnotations = React.useMemo(() => {
+    if (!request.metadata?.drawing || !Array.isArray(request.metadata.drawing)) return [];
+    return request.metadata.drawing.filter((item: any) => item.type === "text");
   }, [request]);
 
   return (
@@ -636,6 +648,27 @@ function RequestDetailDrawer({
                 <>
                   <img src={request.fileUrl} className="max-h-full max-w-full object-contain opacity-80" />
                   <canvas ref={canvasRef} className="absolute z-10 pointer-events-none" />
+                  
+                  {/* Text Annotations Overlay */}
+                  {textAnnotations.map((t: any) => (
+                    <div
+                      key={t.id}
+                      style={{
+                        position: "absolute",
+                        left: `${t.x * 100}%`,
+                        top: `${t.y * 100}%`,
+                        transform: "translate(-50%, -50%)",
+                      }}
+                      className="z-20 pointer-events-auto"
+                    >
+                      <div className="bg-white/90 backdrop-blur-sm rounded-lg border border-slate-200 shadow-lg p-2 min-w-[60px] max-w-[150px]">
+                        <p className="text-[10px] font-bold text-slate-900 leading-tight break-words">
+                          {t.content}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+
                   <div className="absolute bottom-6 right-6 px-4 py-2 bg-black/40 backdrop-blur-md rounded-full border border-white/10">
                     <p className="text-[9px] font-black text-white/80 uppercase tracking-widest flex items-center gap-2">
                       <Eye className="h-3 w-3" />

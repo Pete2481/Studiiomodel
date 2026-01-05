@@ -1,8 +1,15 @@
 "use client";
 
 import React, { useRef, useEffect, useState } from "react";
-import { X, RotateCcw, PenTool, Eraser, Check } from "lucide-react";
+import { X, RotateCcw, PenTool, Eraser, Check, Type, Trash2, Move } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+interface TextAnnotation {
+  id: string;
+  x: number; // normalized
+  y: number; // normalized
+  content: string;
+}
 
 interface DrawingCanvasProps {
   imageUrl: string;
@@ -14,10 +21,15 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel }: DrawingCanvasProps
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [tool, setTool] = useState<"pen" | "eraser">("pen");
+  const [tool, setTool] = useState<"pen" | "eraser" | "text">("pen");
   const [paths, setPaths] = useState<any[]>([]);
   const [currentPath, setCurrentPath] = useState<any[]>([]);
   const [scale, setScale] = useState({ x: 1, y: 1 });
+  
+  const [texts, setTexts] = useState<TextAnnotation[]>([]);
+  const [draggingTextId, setDraggingTextId] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const CHARACTER_LIMIT = 100;
 
   // Initialize canvas size based on image and container
   useEffect(() => {
@@ -123,16 +135,66 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel }: DrawingCanvasProps
 
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
-    setIsDrawing(true);
     const pos = getPointerPos(e);
+
+    if (tool === "text") {
+      // Create new text annotation
+      const newText: TextAnnotation = {
+        id: Math.random().toString(36).substring(2, 9),
+        x: pos.x / canvasRef.current!.width,
+        y: pos.y / canvasRef.current!.height,
+        content: "Tap to edit"
+      };
+      setTexts(prev => [...prev, newText]);
+      return;
+    }
+
+    setIsDrawing(true);
     setCurrentPath([pos]);
   };
 
-  const draw = (e: React.MouseEvent | React.TouchEvent) => {
-    if (!isDrawing) return;
-    const pos = getPointerPos(e);
-    setCurrentPath(prev => [...prev, pos]);
-    redraw();
+  const handleTextChange = (id: string, content: string) => {
+    setTexts(prev => prev.map(t => t.id === id ? { ...t, content: content.slice(0, CHARACTER_LIMIT) } : t));
+  };
+
+  const handleDeleteText = (id: string) => {
+    setTexts(prev => prev.filter(t => t.id !== id));
+  };
+
+  const handleTextMouseDown = (e: React.MouseEvent | React.TouchEvent, id: string) => {
+    e.stopPropagation();
+    setDraggingTextId(id);
+    const text = texts.find(t => t.id === id);
+    if (text && canvasRef.current) {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+      const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+      
+      const currentX = text.x * rect.width;
+      const currentY = text.y * rect.height;
+      
+      setDragOffset({
+        x: clientX - rect.left - currentX,
+        y: clientY - rect.top - currentY
+      });
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
+    if (draggingTextId && canvasRef.current) {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+      const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+      
+      const newX = (clientX - rect.left - dragOffset.x) / rect.width;
+      const newY = (clientY - rect.top - dragOffset.y) / rect.height;
+      
+      setTexts(prev => prev.map(t => t.id === draggingTextId ? { ...t, x: newX, y: newY } : t));
+    } else if (isDrawing) {
+      const pos = getPointerPos(e);
+      setCurrentPath(prev => [...prev, pos]);
+      redraw();
+    }
   };
 
   const stopDrawing = () => {
@@ -144,15 +206,24 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel }: DrawingCanvasProps
     setCurrentPath([]);
   };
 
+  const handleMouseUp = () => {
+    if (draggingTextId) {
+      setDraggingTextId(null);
+    } else if (isDrawing) {
+      stopDrawing();
+    }
+  };
+
   const handleUndo = () => {
     setPaths(prev => prev.slice(0, -1));
   };
 
   const handleSave = () => {
-    if (paths.length === 0) return;
+    if (paths.length === 0 && texts.length === 0) return;
     
     // Save as normalized coordinates relative to image size
-    const normalizedData = paths.map(path => ({
+    const drawingPaths = paths.map(path => ({
+      type: "path",
       tool: path.tool,
       points: path.points.map((p: any) => ({
         x: p.x / canvasRef.current!.width,
@@ -160,7 +231,15 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel }: DrawingCanvasProps
       }))
     }));
 
-    onSave(normalizedData);
+    const textAnnotations = texts.map(t => ({
+      type: "text",
+      id: t.id,
+      x: t.x,
+      y: t.y,
+      content: t.content
+    }));
+
+    onSave([...drawingPaths, ...textAnnotations]);
   };
 
   return (
@@ -183,8 +262,19 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel }: DrawingCanvasProps
                 "h-10 w-10 rounded-xl flex items-center justify-center transition-all",
                 tool === "pen" ? "bg-primary text-white shadow-lg shadow-primary/20" : "text-white/60 hover:text-white hover:bg-white/10"
               )}
+              title="Pen Tool"
             >
               <PenTool className="h-4 w-4" />
+            </button>
+            <button 
+              onClick={() => setTool("text")}
+              className={cn(
+                "h-10 w-10 rounded-xl flex items-center justify-center transition-all",
+                tool === "text" ? "bg-primary text-white shadow-lg shadow-primary/20" : "text-white/60 hover:text-white hover:bg-white/10"
+              )}
+              title="Add Text"
+            >
+              <Type className="h-4 w-4" />
             </button>
             <button 
               onClick={() => setTool("eraser")}
@@ -192,6 +282,7 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel }: DrawingCanvasProps
                 "h-10 w-10 rounded-xl flex items-center justify-center transition-all",
                 tool === "eraser" ? "bg-primary text-white shadow-lg shadow-primary/20" : "text-white/60 hover:text-white hover:bg-white/10"
               )}
+              title="Eraser"
             >
               <Eraser className="h-4 w-4" />
             </button>
@@ -222,7 +313,14 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel }: DrawingCanvasProps
         {/* Drawing Area */}
         <div 
           ref={containerRef}
-          className="flex-1 relative rounded-3xl overflow-hidden bg-slate-900 border border-white/5 flex items-center justify-center cursor-crosshair"
+          className={cn(
+            "flex-1 relative rounded-3xl overflow-hidden bg-slate-900 border border-white/5 flex items-center justify-center",
+            tool === "text" ? "cursor-text" : "cursor-crosshair"
+          )}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onTouchMove={handleMouseMove}
+          onTouchEnd={handleMouseUp}
         >
           {/* Base Image & Canvas Container */}
           <div className="relative flex items-center justify-center pointer-events-none">
@@ -237,14 +335,66 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel }: DrawingCanvasProps
             <canvas
               ref={canvasRef}
               onMouseDown={startDrawing}
-              onMouseMove={draw}
-              onMouseUp={stopDrawing}
-              onMouseLeave={stopDrawing}
               onTouchStart={startDrawing}
-              onTouchMove={draw}
+              onTouchMove={(e) => {
+                if (isDrawing) {
+                  const pos = getPointerPos(e);
+                  setCurrentPath(prev => [...prev, pos]);
+                  redraw();
+                }
+              }}
               onTouchEnd={stopDrawing}
               className="absolute inset-0 z-20 pointer-events-auto"
             />
+
+            {/* Text Annotations Layer */}
+            {texts.map((t) => (
+              <div
+                key={t.id}
+                style={{
+                  position: "absolute",
+                  left: `${t.x * 100}%`,
+                  top: `${t.y * 100}%`,
+                  transform: "translate(-50%, -50%)",
+                }}
+                className="z-30 pointer-events-auto group"
+              >
+                <div className="relative bg-white/90 backdrop-blur-sm rounded-lg border border-slate-200 shadow-xl p-2 min-w-[80px]">
+                  <div 
+                    className="absolute -top-3 -left-3 h-6 w-6 bg-slate-900 text-white rounded-full flex items-center justify-center cursor-move shadow-lg opacity-100 transition-opacity z-[40]"
+                    onMouseDown={(e) => handleTextMouseDown(e, t.id)}
+                    onTouchStart={(e) => handleTextMouseDown(e, t.id)}
+                  >
+                    <Move className="h-3 w-3" />
+                  </div>
+                  <button
+                    onClick={() => handleDeleteText(t.id)}
+                    className="absolute -bottom-3 -right-3 h-6 w-6 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-lg opacity-100 transition-opacity z-[40]"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                  <textarea
+                    value={t.content}
+                    onChange={(e) => handleTextChange(t.id, e.target.value)}
+                    className="w-full bg-transparent border-none focus:ring-0 text-xs font-bold text-slate-900 resize-none p-0 overflow-hidden leading-tight"
+                    rows={Math.max(1, t.content.split('\n').length)}
+                    maxLength={CHARACTER_LIMIT}
+                    placeholder="Type..."
+                    autoFocus={t.content === "Tap to edit"}
+                    onFocus={(e) => {
+                      if (t.content === "Tap to edit") {
+                        handleTextChange(t.id, "");
+                      }
+                    }}
+                  />
+                  <div className="mt-1 flex justify-end">
+                    <span className="text-[8px] font-bold text-slate-400">
+                      {t.content.length}/{CHARACTER_LIMIT}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>

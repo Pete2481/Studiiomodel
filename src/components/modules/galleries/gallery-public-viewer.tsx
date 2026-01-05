@@ -759,7 +759,7 @@ export function GalleryPublicViewer({
             <div className="relative group/main">
               <img 
                 ref={imgRef}
-                src={`${selectedAsset.url}&size=w2048h1536`} 
+                src={`${selectedAsset.url}&size=w1024h768`} 
                 alt={selectedAsset.name}
                 onLoad={() => {
                   setIsAssetLoading(false);
@@ -773,11 +773,12 @@ export function GalleryPublicViewer({
               />
               
               {/* Image Info Overlay on hover in Lightbox */}
-              <div className="absolute bottom-8 left-1/2 -translate-x-1/2 px-4 py-2 bg-black/40 backdrop-blur-md rounded-full border border-white/10 opacity-0 group-hover/main:opacity-100 transition-opacity">
+              <div className="absolute bottom-8 left-1/2 -translate-x-1/2 px-4 py-2 bg-black/40 backdrop-blur-md rounded-full border border-white/10 opacity-0 group-hover/main:opacity-100 transition-opacity text-center">
                 <p className="text-[9px] font-black text-white/80 uppercase tracking-widest flex items-center gap-2">
                   <Monitor className="h-3 w-3" />
-                  Original Resolution Asset
+                  High Definition Preview (1024px)
                 </p>
+                <p className="text-[7px] font-bold text-white/40 uppercase mt-0.5 tracking-tight">Full resolution available via download</p>
               </div>
             </div>
 
