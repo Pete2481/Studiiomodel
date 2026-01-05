@@ -148,21 +148,26 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         // Fetch specific permissions for the membership
         if (token.tenantId) {
-          const dbRole = (token.role === "EDITOR" || token.role === "PHOTOGRAPHER") 
-            ? "TEAM_MEMBER" 
-            : token.role;
+          try {
+            const dbRole = (token.role === "EDITOR" || token.role === "PHOTOGRAPHER") 
+              ? "TEAM_MEMBER" 
+              : token.role;
 
-          const membership = await prisma.tenantMembership.findFirst({
-            where: { 
-              tenantId: token.tenantId as string,
-              userId: token.id as string,
-              role: dbRole as any,
-              clientId: token.clientId as string | null
-            },
-            select: { permissions: true }
-          });
-          if (membership) {
-            token.permissions = membership.permissions;
+            const membership = await prisma.tenantMembership.findFirst({
+              where: { 
+                tenantId: token.tenantId as string,
+                userId: token.id as string,
+                role: dbRole as any,
+                clientId: (token.clientId as string | null) || null
+              },
+              select: { permissions: true }
+            });
+            if (membership) {
+              token.permissions = membership.permissions;
+            }
+          } catch (permissionError) {
+            console.error("[AUTH_JWT_PERMISSIONS_ERROR]:", permissionError);
+            // Non-blocking, continue with default permissions
           }
         }
       }

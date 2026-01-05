@@ -54,13 +54,14 @@ export async function POST(request: Request) {
     });
 
     // 4. Send Email via Notification Service
+    // Use the actual tenant ID for branding, not the membership ID
+    const actualTenantId = (tenantId === "MASTER" || !membership) ? "MASTER" : membership.tenantId;
+    
     try {
-      await notificationService.sendOTP(normalizedEmail, otp, tenantId);
-      console.log(`[OTP SENT] To: ${normalizedEmail}, Tenant: ${tenantId}`);
+      await notificationService.sendOTP(normalizedEmail, otp, actualTenantId);
+      console.log(`[OTP SENT] To: ${normalizedEmail}, Tenant: ${actualTenantId}`);
     } catch (notifError) {
       console.error("[OTP Email Error]:", notifError);
-      // Don't fail the request if email fails in dev, but in production we probably should?
-      // For now, let's just log it.
     }
     
     return NextResponse.json({ success: true });
