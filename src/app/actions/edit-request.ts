@@ -44,9 +44,9 @@ export async function createEditRequest(data: {
 
     const editRequest = await (tPrisma as any).editRequest.create({
       data: {
-        galleryId,
-        clientId: gallery.clientId,
-        requestedById: session?.user?.id || null,
+        gallery: { connect: { id: galleryId } },
+        client: gallery.clientId ? { connect: { id: gallery.clientId } } : undefined,
+        requestedBy: session?.user?.id ? { connect: { id: session.user.id } } : undefined,
         note,
         status: "NEW",
         fileUrl,

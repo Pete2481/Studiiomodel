@@ -25,7 +25,7 @@ export async function createBooking(formData: FormData) {
   if (!property && address) {
     property = await (tPrisma as any).property.create({
       data: {
-        clientId: clientId,
+        client: { connect: { id: clientId } },
         name: address,
         slug: address.toLowerCase().replace(/\s+/g, '-'),
       }
@@ -37,8 +37,8 @@ export async function createBooking(formData: FormData) {
 
   const booking = await (tPrisma as any).booking.create({
     data: {
-      clientId: client.id, // Use verified client.id
-      propertyId: property?.id || "",
+      client: { connect: { id: client.id } },
+      property: property?.id ? { connect: { id: property.id } } : undefined,
       title: title || `Shoot for ${client.name}`,
       status: "REQUESTED",
       startAt,
