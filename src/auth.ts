@@ -144,7 +144,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: displayName,
           image: safeImage,
           tenantId: membership.tenantId,
-          tenantSlug: membership.tenant.slug, // Added slug
+          tenantSlug: membership.tenant.slug,
+          membershipId: membership.id,
           role: sessionRole,
           clientId: membership.clientId ?? undefined,
           agentId: agentId ?? undefined,
@@ -159,7 +160,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         token.id = user.id;
         token.tenantId = user.tenantId;
-        token.tenantSlug = user.tenantSlug; // Added slug
+        token.tenantSlug = user.tenantSlug;
+        token.membershipId = user.membershipId;
         token.role = user.role;
         token.clientId = user.clientId;
         token.agentId = user.agentId;
@@ -197,7 +199,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (token) {
         session.user.id = token.id;
         session.user.tenantId = token.tenantId;
-        session.user.tenantSlug = token.tenantSlug; // Added slug
+        session.user.tenantSlug = token.tenantSlug;
+        session.user.membershipId = token.membershipId;
         session.user.role = token.role;
         session.user.clientId = token.clientId;
         session.user.agentId = token.agentId;

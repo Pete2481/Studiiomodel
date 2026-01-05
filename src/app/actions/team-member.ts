@@ -297,3 +297,41 @@ export async function deleteTeamMember(id: string) {
     return { success: false, error: error.message || "Failed to delete team member." };
   }
 }
+
+export async function joinTeamAction() {
+  try {
+    const session = await auth();
+    const user = session?.user as any;
+    if (!user?.email || !user.tenantId) return { success: false, error: "Unauthorized" };
+
+    const tPrisma = await getTenantPrisma();
+
+    // 1. Check if they already exist as a team member
+    const existing = await (tPrisma as any).teamMember.findFirst({
+      where: { email: user.email, deletedAt: null }
+    });
+
+    if (existing) return { success: true, memberId: existing.id };
+
+    // 2. Create the record
+    const member = await (tPrisma as any).teamMember.create({
+      data: {
+        displayName: user.name || "Admin",
+        email: user.email,
+        role: "ADMIN", // Default to admin role within the team too
+        status: "ACTIVE",
+        avatarUrl: user.image,
+        calendarSecret: randomBytes(16).toString("hex"),
+        // Link to the membership that let them in
+        membershipId: user.membershipId || null
+      }
+    });
+
+    revalidatePath("/tenant/photographers");
+    revalidatePath("/mobile/team");
+    return { success: true, memberId: member.id };
+  } catch (error: any) {
+    console.error("JOIN TEAM ERROR:", error);
+    return { success: false, error: error.message };
+  }
+}

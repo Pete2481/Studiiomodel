@@ -51,6 +51,7 @@ function TeamSkeleton() {
 }
 
 async function TeamDataWrapper({ tenantId }: { tenantId: string }) {
+  const session = await auth();
   const tPrisma = await getTenantPrisma();
 
   const members = await tPrisma.teamMember.findMany({
@@ -76,5 +77,10 @@ async function TeamDataWrapper({ tenantId }: { tenantId: string }) {
     permissions: m.permissions || {}
   }));
 
-  return <TeamMemberPageContent initialMembers={initialMembers} />;
+  const user = {
+    email: session?.user?.email,
+    role: (session?.user as any)?.role,
+  };
+
+  return <TeamMemberPageContent initialMembers={initialMembers} user={user} />;
 }

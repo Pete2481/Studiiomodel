@@ -17,6 +17,7 @@ export async function getOnboardingProgress() {
           select: {
             clients: true,
             services: true,
+            teamMembers: true,
           }
         }
       }
@@ -29,7 +30,7 @@ export async function getOnboardingProgress() {
         id: "branding",
         title: "Studio Branding",
         description: "Upload your logo and set your brand color.",
-        isCompleted: !!tenant.logoUrl || tenant.brandColor !== "#10b981",
+        isCompleted: !!tenant.logoUrl || tenant.brandColor !== "#94a3b8",
         link: "/tenant/settings?tab=branding"
       },
       {
@@ -59,6 +60,13 @@ export async function getOnboardingProgress() {
         description: "Add your first real estate agency or client.",
         isCompleted: tenant._count.clients > 0,
         link: "/tenant/clients"
+      },
+      {
+        id: "team",
+        title: "First Team Member",
+        description: "Add a photographer or editor to your crew.",
+        isCompleted: tenant._count.teamMembers > 0,
+        link: "/tenant/photographers"
       }
     ];
 

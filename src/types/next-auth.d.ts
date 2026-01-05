@@ -6,6 +6,7 @@ declare module "next-auth" {
       id: string;
       tenantId?: string;
       tenantSlug?: string;
+      membershipId?: string;
       role?: string;
       clientId?: string;
       isMasterAdmin: boolean;
@@ -16,6 +17,7 @@ declare module "next-auth" {
     id: string;
     tenantId?: string;
     tenantSlug?: string;
+    membershipId?: string;
     role?: string;
     clientId?: string;
     isMasterAdmin: boolean;
@@ -27,6 +29,7 @@ declare module "next-auth/jwt" {
     id: string;
     tenantId?: string;
     tenantSlug?: string;
+    membershipId?: string;
     role?: string;
     clientId?: string;
     isMasterAdmin: boolean;

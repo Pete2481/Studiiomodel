@@ -17,27 +17,50 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TeamMemberDrawer } from "./team-member-drawer";
-import { upsertTeamMember, deleteTeamMember } from "@/app/actions/team-member";
+import { upsertTeamMember, deleteTeamMember, joinTeamAction } from "@/app/actions/team-member";
+import { UserCheck, Loader2 } from "lucide-react";
 
 interface TeamMemberPageContentProps {
   initialMembers: any[];
   isActionLocked?: boolean;
+  user?: any;
 }
 
 export function TeamMemberPageContent({ 
   initialMembers,
-  isActionLocked = false 
+  isActionLocked = false,
+  user
 }: TeamMemberPageContentProps) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState<any>(null);
   const [members, setMembers] = useState(initialMembers);
   const [searchQuery, setSearchQuery] = useState("");
   const [isActionsOpen, setIsActionsOpen] = useState<string | null>(null);
+  const [isJoining, setIsJoining] = useState(false);
+
+  const isAdmin = user?.role === "TENANT_ADMIN" || user?.role === "ADMIN";
+  const isAlreadyInTeam = members.some(m => m.email === user?.email);
 
   const handleEdit = (member: any) => {
     setSelectedMember(member);
     setIsDrawerOpen(true);
     setIsActionsOpen(null);
+  };
+
+  const handleJoinTeam = async () => {
+    setIsJoining(true);
+    try {
+      const res = await joinTeamAction();
+      if (res.success) {
+        window.location.reload();
+      } else {
+        alert(res.error);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsJoining(false);
+    }
   };
 
   const handleCreate = () => {
@@ -105,6 +128,20 @@ export function TeamMemberPageContent({
         </div>
 
         <div className="flex items-center gap-3">
+          {isAdmin && !isAlreadyInTeam && (
+            <button 
+              onClick={handleJoinTeam}
+              disabled={isJoining}
+              className="h-10 px-6 rounded-xl border border-emerald-100 bg-emerald-50 text-emerald-600 font-bold text-xs flex items-center gap-2 hover:bg-emerald-100 transition-all active:scale-95 disabled:opacity-50"
+            >
+              {isJoining ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <UserCheck className="h-4 w-4" />
+              )}
+              Join Team
+            </button>
+          )}
           <button 
             onClick={handleCreate}
             className={cn(
