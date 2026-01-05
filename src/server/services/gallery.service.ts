@@ -27,10 +27,13 @@ export class GalleryService {
       isLocked = false,
       watermarkEnabled = false,
       deliveryNotes, 
-      bannerImageUrl, 
+      bannerImageUrl: rawBannerImageUrl, 
       serviceIds = [], 
       metadata 
     } = data;
+
+    // SAFETY: Never store massive base64 images in the DB.
+    const bannerImageUrl = (rawBannerImageUrl && rawBannerImageUrl.length > 5000) ? null : rawBannerImageUrl;
 
     // 1. Resolve Property
     let propertyId = "";

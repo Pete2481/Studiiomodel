@@ -22,19 +22,20 @@ export async function POST(request: Request) {
     const trialEndsAt = addDays(new Date(), 90); // 3-month free trial
     const slugLower = slug.toLowerCase().trim();
     const settingsJson = settings ? JSON.parse(settings) : {};
+    const calendarSecret = `t_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
 
     const tenantResults: any[] = await prisma.$queryRawUnsafe(`
       INSERT INTO "Tenant" (
         id, name, slug, "contactEmail", "contactPhone", settings, 
-        "subscriptionStatus", "trialEndsAt", "brandColor", "createdAt", "updatedAt"
+        "subscriptionStatus", "trialEndsAt", "brandColor", "calendarSecret", "createdAt", "updatedAt"
       )
       VALUES (
-        $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, NOW(), NOW()
+        $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, NOW(), NOW()
       )
       RETURNING *
     `, 
       `cm${Math.random().toString(36).substring(2, 11)}`,
-      name, slugLower, contactEmail, contactPhone, JSON.stringify(settingsJson), "trialing", trialEndsAt, "#94a3b8"
+      name, slugLower, contactEmail, contactPhone, JSON.stringify(settingsJson), "trialing", trialEndsAt, "#94a3b8", calendarSecret
     );
     
     const tenant = tenantResults[0];

@@ -254,7 +254,10 @@ export function DashboardGalleries({
         agents={agents}
         services={services}
         initialGallery={selectedGallery}
-        onRefresh={() => window.location.reload()}
+        onRefresh={() => {
+          // Use a hard refresh to ensure the dashboard renders the new data instantly
+          window.location.reload();
+        }}
       />
     </section>
   );

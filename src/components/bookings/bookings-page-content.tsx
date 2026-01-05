@@ -64,6 +64,11 @@ export function BookingsPageContent({
   const [bookings, setBookings] = useState(initialBookings);
   const [currentDate, setCurrentDate] = useState(new Date());
 
+  // Sync state when props update (crucial for router.refresh() to work)
+  useEffect(() => {
+    setBookings(initialBookings);
+  }, [initialBookings]);
+
   const statusFilter = searchParams.get("status");
   const canPlaceBookings = permissionService.can(user, "canPlaceBookings");
 
@@ -174,7 +179,8 @@ export function BookingsPageContent({
       });
       if (result.success) {
         setIsDrawerOpen(false);
-        router.refresh();
+        // Use a hard refresh to ensure the calendar/list renders the new data instantly
+        window.location.reload();
       } else {
         alert(result.error || "Something went wrong while saving the booking.");
       }
@@ -189,7 +195,8 @@ export function BookingsPageContent({
       const result = await deleteBooking(id);
       if (result.success) {
         setIsDrawerOpen(false);
-        router.refresh();
+        // Use a hard refresh to ensure the calendar/list renders the new data instantly
+        window.location.reload();
       } else {
         alert(result.error || "Failed to remove booking.");
       }

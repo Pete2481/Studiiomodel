@@ -54,6 +54,7 @@ async function DashboardDataWrapper({ session, tenantId }: { session: any, tenan
     clientId: (session.user as any).clientId || null,
     agentId: (session.user as any).agentId || null,
     initials: session.user.name?.split(' ').map((n: string) => n[0]).join('') || "U",
+    avatarUrl: (session.user.image && session.user.image.length < 5000) ? session.user.image : null,
     permissions: (session.user as any).permissions || {}
   };
 
@@ -128,9 +129,28 @@ async function DashboardDataWrapper({ session, tenantId }: { session: any, tenan
   const galleries = dbGalleries.map(g => {
     const galleryMedia = g.media.map(m => formatDropboxUrl(String(m.thumbnailUrl || m.url)));
     const bannerUrl = g.bannerImageUrl ? formatDropboxUrl(g.bannerImageUrl) : null;
+    
+    // Safety: ensure metadata is serializable
+    const safeMetadata = g.metadata ? JSON.parse(JSON.stringify(g.metadata)) : {};
+
     return {
-      id: String(g.id), title: String(g.title), clientId: String(g.clientId), bookingId: g.bookingId ? String(g.bookingId) : undefined, agentId: g.agentId ? String(g.agentId) : undefined,
-      property: String(g.property?.name || g.title), client: String(g.client?.businessName || g.client?.name || "Unknown"), status: String(g.status), isLocked: g.isLocked, watermarkEnabled: g.watermarkEnabled, bannerImageUrl: g.bannerImageUrl, metadata: g.metadata, serviceIds: g.services.map(s => s.service.id), mediaCount: Number((g.metadata as any)?.imageCount || 0), videoCount: (g.metadata as any)?.videoLinks?.length || 0, favoriteCount: g.favorites.length, photographers: g.booking?.assignments?.map(a => a.teamMember.displayName).join(", ") || "No team assigned",
+      id: String(g.id), 
+      title: String(g.title), 
+      clientId: String(g.clientId), 
+      bookingId: g.bookingId ? String(g.bookingId) : undefined, 
+      agentId: g.agentId ? String(g.agentId) : undefined,
+      property: String(g.property?.name || g.title), 
+      client: String(g.client?.businessName || g.client?.name || "Unknown"), 
+      status: String(g.status), 
+      isLocked: !!g.isLocked, 
+      watermarkEnabled: !!g.watermarkEnabled, 
+      bannerImageUrl: g.bannerImageUrl || null, 
+      metadata: safeMetadata, 
+      serviceIds: g.services.map(s => String(s.service.id)), 
+      mediaCount: Number(safeMetadata.imageCount || 0), 
+      videoCount: Number(safeMetadata.videoLinks?.length || 0), 
+      favoriteCount: Number(g.favorites.length), 
+      photographers: g.booking?.assignments?.map(a => String(a.teamMember.displayName)).join(", ") || "No team assigned",
       cover: bannerUrl || galleryMedia[0] || "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80",
       allMedia: [bannerUrl, ...galleryMedia].filter(Boolean) as string[]
     };
@@ -138,16 +158,23 @@ async function DashboardDataWrapper({ session, tenantId }: { session: any, tenan
 
   const dbBookingsList = await prisma.booking.findMany({
     where: bookingWhere, orderBy: { startAt: 'asc' }, take: 5,
-    include: { client: { select: { name: true, businessName: true, settings: true } }, property: { select: { name: true } }, services: { include: { service: { select: { name: true } } } }, assignments: { include: { teamMember: { select: { displayName: true } } } } }
+    include: { client: { select: { name: true, businessName: true, settings: true } }, property: { select: { name: true } }, services: { include: { service: { select: { id: true, name: true } } } }, assignments: { include: { teamMember: { select: { displayName: true } } } } }
   });
 
   const bookings: BookingListBooking[] = dbBookingsList.map(b => {
     let status = b.status.toLowerCase();
     if (status === 'approved') status = 'confirmed';
     return {
-      id: String(b.id), title: String(b.title), address: String(b.property?.name || b.title), clientName: String(b.client?.name || "Unknown"), clientBusinessName: String((b.client as any)?.businessName || b.client?.name || "Unknown"),
-      serviceNames: b.services.map(s => String(s.service.name)), photographers: b.assignments.map(a => String(a.teamMember.displayName)).join(", "),
-      status: (status as any), startAt: b.startAt.toISOString(), endAt: b.endAt.toISOString()
+      id: String(b.id), 
+      title: String(b.title), 
+      address: String(b.property?.name || b.title), 
+      clientName: String(b.client?.name || "Unknown"), 
+      clientBusinessName: String(b.client?.businessName || b.client?.name || "Unknown"),
+      serviceNames: b.services.map(s => String(s.service.name)), 
+      photographers: b.assignments.map(a => String(a.teamMember.displayName)).join(", "),
+      status: (status as any), 
+      startAt: b.startAt.toISOString(), 
+      endAt: b.endAt.toISOString()
     };
   });
 
@@ -160,7 +187,20 @@ async function DashboardDataWrapper({ session, tenantId }: { session: any, tenan
       <DashboardGalleries 
         initialGalleries={galleries}
         clients={dbClients.map(c => ({ id: String(c.id), name: String(c.name) }))}
-        bookings={dbBookings.map(b => ({ id: String(b.id), title: String(b.title), clientId: String(b.clientId), property: b.property, services: b.services.map(s => ({ ...s, service: { ...s.service, price: Number(s.service.price) } })) }))}
+        bookings={dbBookings.map(b => ({ 
+          id: String(b.id), 
+          title: String(b.title), 
+          clientId: String(b.clientId), 
+          property: { name: String(b.property?.name || "") }, 
+          services: b.services.map(s => ({ 
+            id: String(s.id),
+            service: { 
+              id: String(s.service.id),
+              name: String(s.service.name),
+              price: Number(s.service.price) 
+            } 
+          })) 
+        }))}
         agents={dbAgents.map(a => ({ id: String(a.id), name: String(a.name), clientId: String(a.clientId) }))}
         services={dbServices.map(s => ({ id: String(s.id), name: String(s.name), price: Number(s.price), icon: s.icon }))}
         user={user}

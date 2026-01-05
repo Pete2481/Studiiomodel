@@ -28,7 +28,7 @@ export default async function DashboardLayout({
     clientId: sessionUser.clientId || null,
     agentId: sessionUser.agentId || null,
     initials: sessionUser.name?.split(' ').map((n: string) => n[0]).join('') || "U",
-    avatarUrl: sessionUser.image || null,
+    avatarUrl: (sessionUser.image && sessionUser.image.length < 5000) ? sessionUser.image : null,
     permissions: sessionUser.permissions || {}
   };
 

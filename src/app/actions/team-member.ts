@@ -84,9 +84,13 @@ export async function upsertTeamMember(data: any) {
       phone, 
       role, 
       status,
-      avatarUrl,
+      avatarUrl: rawAvatarUrl,
       permissions
     } = data;
+
+    // SAFETY: Never store massive base64 images in the DB.
+    // They crash the Next.js serialization engine.
+    const avatarUrl = (rawAvatarUrl && rawAvatarUrl.length > 5000) ? null : rawAvatarUrl;
 
     const newSecret = randomBytes(16).toString("hex");
     console.log("[TURBO-DEBUG] UPSERT ATTEMPT:", { 
@@ -257,10 +261,33 @@ export async function deleteTeamMember(id: string) {
 
     const tPrisma = await getTenantPrisma();
 
+    // 1. Fetch the team member to find the linked membership
+    const member = await (tPrisma as any).teamMember.findUnique({
+      where: { id },
+      select: { membershipId: true }
+    });
+
+    // 2. Soft delete the team member and disconnect membership
     await (tPrisma as any).teamMember.update({
       where: { id },
-      data: { deletedAt: new Date() }
+      data: { 
+        deletedAt: new Date(),
+        membershipId: null // Disconnect so the membership can be deleted
+      }
     });
+
+    // 3. Delete the associated membership if it exists
+    // This will remove it from the workspace selection screen immediately
+    if (member?.membershipId) {
+      try {
+        await (tPrisma as any).tenantMembership.delete({
+          where: { id: member.membershipId }
+        });
+      } catch (e) {
+        console.error("Failed to delete membership (might be linked to other data):", e);
+        // Not a fatal error, the UI filter in tenant-lookup will still hide it
+      }
+    }
 
     revalidatePath("/tenant/photographers");
     revalidatePath("/mobile/team");

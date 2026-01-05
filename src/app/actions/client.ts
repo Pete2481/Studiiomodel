@@ -27,13 +27,16 @@ export async function upsertClient(data: any, skipNotification = false) {
       email, 
       businessName, 
       phone, 
-      avatarUrl,
+      avatarUrl: rawAvatarUrl,
       status, 
       permissions,
       priceOverrides,
       watermarkUrl,
       watermarkSettings
     } = data;
+
+    // SAFETY: Never store massive base64 images in the DB.
+    const avatarUrl = (rawAvatarUrl && rawAvatarUrl.length > 5000) ? null : rawAvatarUrl;
     
     console.log(`[ACTION_CLIENT] Upserting client. ID provided: "${id}"`);
 

@@ -131,7 +131,9 @@ async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
     }) : null
   ]);
 
-  const calendarSecret = currentMember?.calendarSecret || (tenant as any)?.calendarSecret || null;
+  const calendarSecret = (sessionUser.role === "TENANT_ADMIN" || sessionUser.role === "ADMIN")
+    ? ((tenant as any)?.calendarSecret || currentMember?.calendarSecret || null)
+    : (currentMember?.calendarSecret || (tenant as any)?.calendarSecret || null);
 
   const customStatuses = (tenant as any)?.bookingStatuses || (tenant as any)?.settings?.bookingStatuses || [
     "Tenanted Property", "Owner Occupied", "Empty (Keys at office)"

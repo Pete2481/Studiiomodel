@@ -62,20 +62,23 @@ export default async function MasterDashboardPage() {
   `;
 
   const tenants = dbTenants.map(t => {
-    // 1. Convert BigInts and Decimals to Numbers before any serialization
-    // This prevents the "Do not know how to serialize a BigInt" error
+    // 1. Manually map each field to ensure NO BigInts or Decimals are leaked
     return {
-      ...t,
+      id: String(t.id),
+      name: String(t.name),
+      contactEmail: t.contactEmail || null,
+      contactPhone: t.contactPhone || null,
+      subscriptionStatus: t.subscriptionStatus || null,
+      subscriptionOverwrite: !!t.subscriptionOverwrite,
       bookingCount: Number(t.bookingCount || 0),
       membershipCount: Number(t.membershipCount || 0),
       galleryCount: Number(t.galleryCount || 0),
       taxRate: t.taxRate ? Number(t.taxRate) : 0.1,
       revenueTarget: t.revenueTarget ? Number(t.revenueTarget) : 100000,
-      createdAt: t.createdAt instanceof Date ? t.createdAt.toISOString() : t.createdAt,
-      updatedAt: t.updatedAt instanceof Date ? t.updatedAt.toISOString() : t.updatedAt,
-      trialEndsAt: t.trialEndsAt instanceof Date ? t.trialEndsAt.toISOString() : t.trialEndsAt,
-      subscriptionEndsAt: t.subscriptionEndsAt instanceof Date ? t.subscriptionEndsAt.toISOString() : t.subscriptionEndsAt,
-      deletedAt: t.deletedAt instanceof Date ? t.deletedAt.toISOString() : t.deletedAt,
+      settings: t.settings || {},
+      createdAt: t.createdAt instanceof Date ? t.createdAt.toISOString() : String(t.createdAt),
+      trialEndsAt: t.trialEndsAt instanceof Date ? t.trialEndsAt.toISOString() : (t.trialEndsAt ? String(t.trialEndsAt) : null),
+      deletedAt: t.deletedAt ? (t.deletedAt instanceof Date ? t.deletedAt.toISOString() : String(t.deletedAt)) : null,
     };
   });
 

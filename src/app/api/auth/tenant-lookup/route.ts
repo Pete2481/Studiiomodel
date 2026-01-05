@@ -19,6 +19,7 @@ export async function POST(request: Request) {
           include: {
             tenant: true,
             client: true,
+            teamMember: true,
           },
         },
       },
@@ -29,22 +30,36 @@ export async function POST(request: Request) {
     }
 
     // 2. Map memberships to a clean format for the UI
-    const tenants = user.memberships.map((m) => {
-      // For AGENT or CLIENT roles, use the Agency/Client name as the workspace name
-      const isAgentOrClient = m.role === "AGENT" || m.role === "CLIENT";
-      const workspaceName = isAgentOrClient && m.client 
-        ? (m.client.businessName || m.client.name) 
-        : m.tenant.name;
+    // Filter out memberships where the tenant is deleted or the linked team member is deleted
+    const tenants = user.memberships
+      .filter((m) => {
+        // 1. Ensure tenant exists and is not deleted
+        if (!m.tenant || m.tenant.deletedAt) return false;
 
-      return {
-        id: m.id, // Use membership ID to uniquely identify this role/workspace
-        tenantId: m.tenant.id, // Keep tenantId for logic if needed
-        name: workspaceName,
-        slug: m.tenant.slug,
-        logoUrl: isAgentOrClient && m.client?.avatarUrl ? m.client.avatarUrl : m.tenant.logoUrl,
-        role: m.role,
-      };
-    });
+        // 2. If it's a team member role, check if the linked team member record is deleted
+        // Note: For TEAM_MEMBER or TENANT_ADMIN, there should be a TeamMember record
+        if (m.role === "TEAM_MEMBER" || m.role === "TENANT_ADMIN") {
+          if (m.teamMember?.deletedAt) return false;
+        }
+
+        return true;
+      })
+      .map((m) => {
+        // For AGENT or CLIENT roles, use the Agency/Client name as the workspace name
+        const isAgentOrClient = m.role === "AGENT" || m.role === "CLIENT";
+        const workspaceName = isAgentOrClient && m.client 
+          ? (m.client.businessName || m.client.name) 
+          : m.tenant.name;
+
+        return {
+          id: m.id, // Use membership ID to uniquely identify this role/workspace
+          tenantId: m.tenant.id, // Keep tenantId for logic if needed
+          name: workspaceName,
+          slug: m.tenant.slug,
+          logoUrl: isAgentOrClient && m.client?.avatarUrl ? m.client.avatarUrl : m.tenant.logoUrl,
+          role: m.role,
+        };
+      });
 
     // 3. Add Master Admin option if applicable
     if (user.isMasterAdmin) {

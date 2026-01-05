@@ -12,18 +12,23 @@ export async function POST(request: Request) {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
+    let membership = null;
 
     // 1. Verify membership exists (unless Master Admin login)
     if (tenantId !== "MASTER") {
-      const membership = await prisma.tenantMembership.findFirst({
+      membership = await prisma.tenantMembership.findFirst({
         where: {
           id: tenantId, // tenantId is now the membershipId
-          user: { email: normalizedEmail }
+          user: { email: normalizedEmail },
+          tenant: { deletedAt: null } // Ensure tenant is not deleted
         },
-        include: { tenant: true }
+        include: { 
+          tenant: true,
+          teamMember: true // Include to check for team member deletion
+        }
       });
 
-      if (!membership) {
+      if (!membership || membership.teamMember?.deletedAt) {
         return NextResponse.json({ error: "No membership found for this workspace" }, { status: 403 });
       }
     } else {

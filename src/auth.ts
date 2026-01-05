@@ -50,8 +50,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           where: { email },
           include: {
             memberships: {
-              where: tenantId === "MASTER" ? undefined : { id: tenantId },
-              include: { tenant: true }
+              where: tenantId === "MASTER" ? undefined : { 
+                id: tenantId,
+                tenant: { deletedAt: null } // Ensure tenant isn't deleted
+              },
+              include: { 
+                tenant: true,
+                teamMember: true // Include teamMember to check deletion
+              }
             }
           }
         });
@@ -78,6 +84,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const membership = user.memberships[0];
 
+        // Ensure the membership isn't for a deleted team member
+        if (membership.teamMember?.deletedAt) {
+          return null;
+        }
+
         // 4. Contextual Name: Use Agent/TeamMember name if applicable
         let displayName = user.name;
         let agentId = null;
@@ -89,7 +100,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             where: { 
               clientId: membership.clientId,
               tenantId: membership.tenantId,
-              email: user.email
+              email: user.email,
+              deletedAt: null // Ensure agent isn't deleted
             },
             select: { id: true, name: true }
           });
@@ -97,11 +109,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             displayName = agent.name;
             agentId = agent.id;
           }
-        } else if (membership.role === "TEAM_MEMBER") {
+        } else if (membership.role === "TEAM_MEMBER" || membership.role === "TENANT_ADMIN") {
           const member = await prisma.teamMember.findFirst({
             where: { 
               tenantId: membership.tenantId,
-              email: user.email
+              email: user.email,
+              deletedAt: null // Ensure team member isn't deleted
             },
             select: { id: true, displayName: true, role: true }
           });
@@ -114,15 +127,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             } else if (member.role === "PHOTOGRAPHER") {
               sessionRole = "PHOTOGRAPHER";
             }
+          } else if (membership.role === "TEAM_MEMBER") {
+            // If we're here, it means we have a TEAM_MEMBER membership but no non-deleted TeamMember record
+            return null;
           }
         }
 
         // 5. Return User object for JWT
+        // SAFETY: Only return what is NECESSARY for the session.
+        // We strip the 'image' if it's too large to prevent header/cookie overflow.
+        const safeImage = (user.image && user.image.length > 2000) ? null : user.image;
+
         return {
           id: user.id,
           email: user.email,
           name: displayName,
-          image: user.image,
+          image: safeImage,
           tenantId: membership.tenantId,
           tenantSlug: membership.tenant.slug, // Added slug
           role: sessionRole,
