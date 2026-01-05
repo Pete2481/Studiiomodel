@@ -145,6 +145,7 @@ async function MetricCardsWrapper({ tenantId, editWhere, galleryWhere, bookingWh
 }
 
 async function GalleriesWrapper({ tenantId, galleryWhere, user }: any) {
+  const canViewAll = user.role === "TENANT_ADMIN" || user.role === "ADMIN";
   const [dbGalleries, dbClients, dbBookings, dbAgents, dbServices, isSubscribed] = await Promise.all([
     prisma.gallery.findMany({ 
       where: galleryWhere, 
@@ -159,9 +160,12 @@ async function GalleriesWrapper({ tenantId, galleryWhere, user }: any) {
         booking: { include: { assignments: { include: { teamMember: { select: { displayName: true } } } } } } 
       } 
     }),
-    prisma.client.findMany({ where: { tenantId, deletedAt: null }, select: { id: true, name: true } }),
+    prisma.client.findMany({ 
+      where: !canViewAll && user.clientId ? { id: user.clientId, deletedAt: null } : { tenantId, deletedAt: null }, 
+      select: { id: true, name: true } 
+    }),
     prisma.booking.findMany({ 
-      where: { tenantId, deletedAt: null }, 
+      where: { ...galleryWhere, tenantId, deletedAt: null }, // Reuse the scoping for galleries
       select: { 
         id: true, 
         title: true, 
@@ -170,7 +174,10 @@ async function GalleriesWrapper({ tenantId, galleryWhere, user }: any) {
         services: { include: { service: { select: { id: true, name: true, price: true } } } } 
       } 
     }),
-    prisma.agent.findMany({ where: { tenantId, deletedAt: null }, select: { id: true, name: true, clientId: true } }),
+    prisma.agent.findMany({ 
+      where: !canViewAll && user.clientId ? { clientId: user.clientId, deletedAt: null } : { tenantId, deletedAt: null }, 
+      select: { id: true, name: true, clientId: true } 
+    }),
     prisma.service.findMany({ where: { tenantId, deletedAt: null }, select: { id: true, name: true, price: true, icon: true } }),
     checkSubscriptionStatus(tenantId)
   ]);

@@ -107,7 +107,7 @@ async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
       }
     }),
     tPrisma.client.findMany({ 
-      where: { deletedAt: null }, 
+      where: !canViewAll && clientId ? { id: clientId, deletedAt: null } : { deletedAt: null }, 
       select: { id: true, name: true, businessName: true, avatarUrl: true } 
     }),
     tPrisma.service.findMany({ 
@@ -119,7 +119,7 @@ async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
       select: { id: true, displayName: true, avatarUrl: true }
     }),
     tPrisma.agent.findMany({ 
-      where: { deletedAt: null },
+      where: !canViewAll && clientId ? { clientId, deletedAt: null } : { deletedAt: null },
       select: { id: true, name: true, clientId: true, avatarUrl: true }
     }),
     tPrisma.tenant.findUnique({

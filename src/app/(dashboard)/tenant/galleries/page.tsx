@@ -90,9 +90,18 @@ async function GalleriesDataWrapper({ sessionUser, isGlobal, page }: { sessionUs
       }
     }),
     tPrisma.gallery.count({ where: galleryWhere }),
-    tPrisma.client.findMany({ where: { deletedAt: null }, select: { id: true, name: true, businessName: true, avatarUrl: true } }),
-    tPrisma.booking.findMany({ where: { deletedAt: null }, select: { id: true, title: true, clientId: true, property: { select: { name: true } }, services: { include: { service: true } } } }),
-    tPrisma.agent.findMany({ where: { deletedAt: null }, select: { id: true, name: true, clientId: true, avatarUrl: true } }),
+    tPrisma.client.findMany({ 
+      where: !canViewAll && clientId ? { id: clientId, deletedAt: null } : { deletedAt: null }, 
+      select: { id: true, name: true, businessName: true, avatarUrl: true } 
+    }),
+    tPrisma.booking.findMany({ 
+      where: !canViewAll && clientId ? { clientId, deletedAt: null } : { deletedAt: null },
+      select: { id: true, title: true, clientId: true, property: { select: { name: true } }, services: { include: { service: true } } } 
+    }),
+    tPrisma.agent.findMany({ 
+      where: !canViewAll && clientId ? { clientId, deletedAt: null } : { deletedAt: null },
+      select: { id: true, name: true, clientId: true, avatarUrl: true } 
+    }),
     tPrisma.service.findMany({ where: { deletedAt: null }, select: { id: true, name: true, price: true, icon: true } })
   ]);
 

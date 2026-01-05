@@ -62,8 +62,17 @@ async function EditDataWrapper({ sessionUser, isGlobal }: { sessionUser: any, is
   // Determine where clause based on role
   let whereClause: any = {};
   const isRestrictedRole = user.role === "EDITOR" || user.role === "TEAM_MEMBER";
+  
   if (isRestrictedRole && user.teamMemberId) {
     whereClause.assignedToIds = { has: user.teamMemberId };
+  } else if (user.role === "CLIENT") {
+    whereClause.clientId = user.clientId;
+  } else if (user.role === "AGENT") {
+    if (user.permissions?.canViewAllAgencyGalleries) {
+      whereClause.clientId = user.clientId;
+    } else {
+      whereClause.gallery = { agentId: user.agentId };
+    }
   }
 
   // Real data fetching

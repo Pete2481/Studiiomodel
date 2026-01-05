@@ -50,6 +50,8 @@ export default async function ReportsPage(props: {
 async function ReportsDataWrapper({ session, searchParams }: { session: any, searchParams: any }) {
   const tenantId = session.user.tenantId;
   const tPrisma = await getTenantPrisma();
+  const user = session.user as any;
+  const canViewAll = user.role === "TENANT_ADMIN" || user.role === "ADMIN";
 
   // 1. Get Filters from Query
   const now = new Date();
@@ -60,14 +62,30 @@ async function ReportsDataWrapper({ session, searchParams }: { session: any, sea
   const periodStart = view === "month" ? startOfMonth(baseDate) : startOfWeek(baseDate, { weekStartsOn: 1 });
   const periodEnd = view === "month" ? endOfMonth(baseDate) : endOfWeek(baseDate, { weekStartsOn: 1 });
 
+  // Scoping
+  const invoiceWhere: any = { deletedAt: null, status: { in: ['SENT', 'PAID', 'OVERDUE'] } };
+  const galleryWhere: any = { deletedAt: null, status: 'DELIVERED' };
+  const clientWhere: any = { deletedAt: null };
+
+  if (!canViewAll) {
+    if (user.role === "CLIENT" || user.role === "AGENT") {
+      invoiceWhere.clientId = user.clientId;
+      galleryWhere.clientId = user.clientId;
+      clientWhere.id = user.clientId;
+    } else {
+      // restricted team members shouldn't see reports at all, but if they get here:
+      return <div className="py-20 text-center text-slate-400">You do not have permission to view reports.</div>;
+    }
+  }
+
   // 2. Fetch Base Data
   const [invoices, galleries, tenant, services, clients] = await Promise.all([
     tPrisma.invoice.findMany({
-      where: { deletedAt: null, status: { in: ['SENT', 'PAID', 'OVERDUE'] } },
+      where: invoiceWhere,
       include: { lineItems: { include: { service: true } }, client: true }
     }),
     tPrisma.gallery.findMany({
-      where: { deletedAt: null, status: 'DELIVERED' },
+      where: galleryWhere,
       select: { createdAt: true, deliveredAt: true, tenantId: true }
     }),
     tPrisma.tenant.findUnique({
@@ -79,7 +97,7 @@ async function ReportsDataWrapper({ session, searchParams }: { session: any, sea
       include: { _count: { select: { bookingServices: true } } }
     }),
     tPrisma.client.findMany({
-      where: { deletedAt: null },
+      where: clientWhere,
       include: {
         bookings: { where: { deletedAt: null, status: { in: ['APPROVED', 'PENCILLED', 'COMPLETED'] } }, select: { id: true, startAt: true } },
         invoices: { where: { deletedAt: null, status: { in: ['SENT', 'PAID', 'OVERDUE'] } }, select: { lineItems: true, discount: true, taxRate: true, issuedAt: true } }

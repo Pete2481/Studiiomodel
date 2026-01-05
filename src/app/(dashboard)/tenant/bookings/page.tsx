@@ -69,10 +69,22 @@ async function BookingsDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
     permissions: sessionUser.permissions || {}
   };
 
+  // Visibility Scoping
+  const bookingWhere: any = { 
+    deletedAt: null
+  };
+
+  const canViewAll = sessionUser.role === "TENANT_ADMIN" || sessionUser.role === "ADMIN";
+  if (!canViewAll) {
+    if (sessionUser.role === "CLIENT") bookingWhere.clientId = sessionUser.clientId;
+    else if (sessionUser.role === "AGENT") bookingWhere.agentId = sessionUser.agentId;
+    else if (sessionUser.teamMemberId) bookingWhere.assignments = { some: { teamMemberId: sessionUser.teamMemberId } };
+  }
+
   // Real data fetching
   const [dbBookings, dbClients, dbServices, dbTeamMembers, dbAgents, tenant] = await Promise.all([
     tPrisma.booking.findMany({
-      where: { deletedAt: null },
+      where: bookingWhere,
       orderBy: { startAt: 'desc' },
       take: 50,
       select: {
@@ -95,7 +107,7 @@ async function BookingsDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
       }
     }),
     tPrisma.client.findMany({ 
-      where: { deletedAt: null }, 
+      where: !canViewAll && sessionUser.clientId ? { id: sessionUser.clientId, deletedAt: null } : { deletedAt: null }, 
       select: { id: true, name: true, businessName: true, avatarUrl: true } 
     }),
     tPrisma.service.findMany({ 
