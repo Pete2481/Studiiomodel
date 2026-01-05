@@ -121,11 +121,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           if (member) {
             displayName = member.displayName;
             teamMemberId = member.id;
-            // Promote sub-role to session role if it's an EDITOR
-            if (member.role === "EDITOR") {
-              sessionRole = "EDITOR";
-            } else if (member.role === "PHOTOGRAPHER") {
-              sessionRole = "PHOTOGRAPHER";
+            
+            // Promote sub-role to session role ONLY if the user isn't already a TENANT_ADMIN or ADMIN
+            // This prevents downgrading an admin who happens to have a team member record for assignments.
+            if (membership.role !== "TENANT_ADMIN" && membership.role !== "ADMIN") {
+              if (member.role === "EDITOR") {
+                sessionRole = "EDITOR";
+              } else if (member.role === "PHOTOGRAPHER") {
+                sessionRole = "PHOTOGRAPHER";
+              }
             }
           } else if (membership.role === "TEAM_MEMBER") {
             // If we're here, it means we have a TEAM_MEMBER membership but no non-deleted TeamMember record
