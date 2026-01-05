@@ -51,7 +51,7 @@ export default async function MasterDashboardPage() {
 
   // FETCH REAL DATA FROM PRISMA
   // Use raw query for Master Dashboard to ensure we get subscription data even if Prisma Client is cached
-  const tenants: any[] = await prisma.$queryRaw`
+  const dbTenants: any[] = await prisma.$queryRaw`
     SELECT 
       t.*,
       (SELECT COUNT(*) FROM "Booking" b WHERE b."tenantId" = t.id) as "bookingCount",
@@ -60,6 +60,18 @@ export default async function MasterDashboardPage() {
     FROM "Tenant" t
     ORDER BY t."createdAt" DESC
   `;
+
+  const tenants = dbTenants.map(t => {
+    // 1. Convert to plain object to remove Prisma-specific types/methods
+    const plain = JSON.parse(JSON.stringify(t));
+
+    // 2. Ensure Decimals are treated as numbers for the UI
+    return {
+      ...plain,
+      taxRate: t.taxRate ? Number(t.taxRate) : 0.1,
+      revenueTarget: t.revenueTarget ? Number(t.revenueTarget) : 100000,
+    };
+  });
 
   // Calculate real metrics
   const totalTenants = tenants.length;

@@ -28,7 +28,7 @@ export default async function MasterTenantsPage() {
   );
 
   // FETCH REAL DATA
-  const tenants = await prisma.tenant.findMany({
+  const dbTenants = await prisma.tenant.findMany({
     include: {
       _count: {
         select: {
@@ -38,6 +38,18 @@ export default async function MasterTenantsPage() {
       }
     },
     orderBy: { createdAt: 'desc' }
+  });
+
+  const tenants = dbTenants.map(t => {
+    // 1. Convert to plain object to remove Prisma-specific types/methods
+    const plain = JSON.parse(JSON.stringify(t));
+    
+    // 2. Ensure Decimals are treated as numbers for the UI
+    return {
+      ...plain,
+      taxRate: t.taxRate ? Number(t.taxRate) : 0.1,
+      revenueTarget: t.revenueTarget ? Number(t.revenueTarget) : 100000,
+    };
   });
 
   return (
