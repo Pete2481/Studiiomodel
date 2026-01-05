@@ -126,10 +126,10 @@ export function SettingsPageContent({ tenant, user, teamMember }: SettingsPageCo
     invoiceLogoUrl: tenant.invoiceLogoUrl || "",
     invoiceTerms: tenant.invoiceTerms || DEFAULT_INVOICE_TERMS,
     // SMTP Settings
-    smtpHost: tenant.smtpHost || "mediadrive.com.au",
+    smtpHost: tenant.smtpHost || "",
     smtpPort: tenant.smtpPort || 465,
-    smtpUser: tenant.smtpUser || "systems@mediadrive.com.au",
-    smtpPass: tenant.smtpPass || "Password@2026",
+    smtpUser: tenant.smtpUser || "",
+    smtpPass: tenant.smtpPass || "",
     smtpSecure: tenant.smtpSecure !== null ? tenant.smtpSecure : true,
     // Security & Compliance
     privacyPolicyUrl: tenant.privacyPolicyUrl || "",
