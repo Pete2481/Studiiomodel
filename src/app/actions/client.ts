@@ -97,7 +97,8 @@ export async function upsertClient(data: any, skipNotification = false) {
           watermarkUrl,
           watermarkSettings: watermarkSettings || {},
           settings: {
-            permissions: permissions || {}
+            permissions: permissions || {},
+            priceOverrides: priceOverrides || {}
           },
           slug: (businessName || name).toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
         }

@@ -69,7 +69,7 @@ async function ClientsDataWrapper({ tenantId }: { tenantId: string }) {
     }),
     tPrisma.service.findMany({
       where: { active: true },
-      select: { id: true, name: true }
+      select: { id: true, name: true, price: true }
     })
   ]);
 
@@ -83,12 +83,17 @@ async function ClientsDataWrapper({ tenantId }: { tenantId: string }) {
     status: String(c.status || "ACTIVE"),
     bookingCount: c._count.bookings,
     galleryCount: c._count.galleries,
+    priceOverrides: (c.settings as any)?.priceOverrides || {},
+    permissions: (c.settings as any)?.permissions || {},
+    watermarkUrl: c.watermarkUrl || null,
+    watermarkSettings: c.watermarkSettings || {},
     createdAt: c.createdAt.toISOString()
   }));
 
   const services = dbServices.map(s => ({
     id: String(s.id),
-    name: String(s.name)
+    name: String(s.name),
+    price: Number(s.price)
   }));
 
   return <ClientPageContent initialClients={initialClients} services={services} />;
