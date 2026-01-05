@@ -11,7 +11,8 @@ import {
   AlertCircle,
   Settings2,
   ChevronDown,
-  Bell
+  Bell,
+  Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { InvoiceList } from "./invoice-list";
@@ -184,14 +185,18 @@ export function InvoicePageContent({
                     onClick={handleToggleAutoReminders}
                     disabled={isUpdating}
                     className={cn(
-                      "h-5 w-9 rounded-full transition-all relative shrink-0",
+                      "h-5 w-9 rounded-full transition-all relative shrink-0 flex items-center justify-center",
                       autoReminders ? "bg-primary shadow-[0_0_8px_var(--primary-soft)]" : "bg-slate-200"
                     )}
                   >
-                    <div className={cn(
-                      "absolute top-1 left-1 h-3 w-3 bg-white rounded-full transition-transform",
-                      autoReminders ? "translate-x-4" : "translate-x-0"
-                    )} />
+                    {isUpdating ? (
+                      <Loader2 className="h-3 w-3 animate-spin text-white" />
+                    ) : (
+                      <div className={cn(
+                        "absolute top-1 left-1 h-3 w-3 bg-white rounded-full transition-transform",
+                        autoReminders ? "translate-x-4" : "translate-x-0"
+                      )} />
+                    )}
                   </button>
                 </div>
                 <div className="flex flex-col -space-y-0.5">

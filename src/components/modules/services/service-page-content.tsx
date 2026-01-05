@@ -20,7 +20,8 @@ import {
   Plane,
   Moon,
   Trash2,
-  Edit2
+  Edit2,
+  Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ServiceDrawer } from "./service-drawer";
@@ -52,9 +53,10 @@ export function ServicePageContent({
   const pathname = usePathname();
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedService, setSelectedService] = useState<any>(null);
-  const [services, setMembers] = useState(initialServices);
+  const [services, setServices] = useState(initialServices);
   const [searchQuery, setSearchQuery] = useState("");
   const [isActionsOpen, setIsActionsOpen] = useState<string | null>(null);
+  const [togglingFavId, setTogglingFavId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -99,11 +101,18 @@ export function ServicePageContent({
   };
 
   const handleToggleFavorite = async (id: string, current: boolean) => {
-    const result = await toggleServiceFavorite(id, !current);
-    if (result.success) {
-      window.location.reload();
-    } else {
-      alert(result.error);
+    setTogglingFavId(id);
+    try {
+      const result = await toggleServiceFavorite(id, !current);
+      if (result.success) {
+        window.location.reload();
+      } else {
+        alert(result.error);
+      }
+    } catch (err) {
+      console.error("Toggle Fav Error:", err);
+    } finally {
+      setTogglingFavId(null);
     }
   };
 
@@ -279,12 +288,17 @@ export function ServicePageContent({
                     e.stopPropagation(); 
                     handleToggleFavorite(service.id, service.isFavorite);
                   }}
+                  disabled={togglingFavId === service.id}
                   className={cn(
                     "h-8 w-8 flex items-center justify-center rounded-full transition-colors",
                     service.isFavorite ? "text-amber-400" : "text-slate-200 hover:text-slate-400"
                   )}
                 >
-                  <Star className={cn("h-5 w-5", service.isFavorite && "fill-current")} />
+                  {togglingFavId === service.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                  ) : (
+                    <Star className={cn("h-5 w-5", service.isFavorite && "fill-current")} />
+                  )}
                 </button>
               </div>
 

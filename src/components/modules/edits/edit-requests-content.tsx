@@ -25,7 +25,8 @@ import {
   X,
   Video,
   FileJson,
-  Download
+  Download,
+  Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EditTagsDrawer } from "./edit-tags-drawer";
@@ -52,6 +53,7 @@ export function EditRequestsContent({ initialRequests, initialTags, teamMembers,
   const [expandedGalleries, setExpandedGalleries] = useState<string[]>([]);
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
   const [isCreatingInvoice, setIsCreatingInvoice] = useState<string | null>(null);
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
 
   useEffect(() => {
     setTags(initialTags);
@@ -133,6 +135,7 @@ export function EditRequestsContent({ initialRequests, initialTags, teamMembers,
   };
 
   const handleStatusUpdate = async (id: string, newStatus: string) => {
+    setUpdatingStatusId(id);
     try {
       const res = await updateEditRequestStatus(id, newStatus);
       if (res.success) {
@@ -144,6 +147,8 @@ export function EditRequestsContent({ initialRequests, initialTags, teamMembers,
       }
     } catch (err) {
       console.error("Status update error:", err);
+    } finally {
+      setUpdatingStatusId(null);
     }
   };
 
@@ -359,28 +364,30 @@ export function EditRequestsContent({ initialRequests, initialTags, teamMembers,
                       onClick={() => setSelectedRequest(request)}
                     >
                       <div className="h-24 w-32 rounded-2xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200 relative">
-                         {request.thumbnailUrl ? (
-                           <img src={request.thumbnailUrl} className="h-full w-full object-cover" />
-                         ) : request.metadata?.videoTimestamp !== null ? (
-                           <div className="h-full w-full flex flex-col items-center justify-center bg-slate-900 text-white gap-2">
-                             <Video className="h-6 w-6 text-primary" />
-                             <span className="text-[9px] font-black uppercase tracking-widest">Video Edit</span>
-                           </div>
-                         ) : (
-                           <div className="h-full w-full flex items-center justify-center text-slate-300">
-                             <ImageIcon className="h-8 w-8" />
-                           </div>
-                         )}
-                         {request.metadata?.drawing && (
-                           <div className="absolute inset-0 bg-primary/20 flex items-center justify-center">
-                             <PenTool className="h-5 w-5 text-primary" />
-                           </div>
-                         )}
-                         {request.metadata?.videoTimestamp !== null && (
-                           <div className="absolute bottom-2 right-2 px-2 py-0.5 bg-black/60 backdrop-blur-md rounded text-[8px] font-black text-white uppercase tracking-widest">
-                             {Math.floor(request.metadata.videoTimestamp / 60)}:{(request.metadata.videoTimestamp % 60).toString().padStart(2, '0')}
-                           </div>
-                         )}
+                        {request.thumbnailUrl ? (
+                          <img src={request.thumbnailUrl} className="h-full w-full object-cover" />
+                        ) : (request.metadata?.videoTimestamp !== undefined && request.metadata?.videoTimestamp !== null) || request.metadata?.isBundled ? (
+                          <div className="h-full w-full flex flex-col items-center justify-center bg-slate-900 text-white gap-2">
+                            <Video className="h-6 w-6 text-primary" />
+                            <span className="text-[9px] font-black uppercase tracking-widest">
+                              {request.metadata?.isBundled ? "Video Review" : "Video Edit"}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="h-full w-full flex items-center justify-center text-slate-300">
+                            <ImageIcon className="h-8 w-8" />
+                          </div>
+                        )}
+                        {request.metadata?.drawing && (
+                          <div className="absolute inset-0 bg-primary/20 flex items-center justify-center">
+                            <PenTool className="h-5 w-5 text-primary" />
+                          </div>
+                        )}
+                        {request.metadata?.videoTimestamp !== undefined && request.metadata?.videoTimestamp !== null && (
+                          <div className="absolute bottom-2 right-2 px-2 py-0.5 bg-black/60 backdrop-blur-md rounded text-[8px] font-black text-white uppercase tracking-widest">
+                            {Math.floor(Number(request.metadata.videoTimestamp) / 60)}:{(Number(request.metadata.videoTimestamp) % 60).toString().padStart(2, '0')}
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex-1 space-y-3">
@@ -429,7 +436,7 @@ export function EditRequestsContent({ initialRequests, initialTags, teamMembers,
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3 shrink-0 self-center opacity-0 group-hover/item:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-3 shrink-0 self-center">
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
@@ -446,9 +453,12 @@ export function EditRequestsContent({ initialRequests, initialTags, teamMembers,
                               e.stopPropagation();
                               handleStatusUpdate(request.id, 'COMPLETED');
                             }}
-                            className="h-10 px-6 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition-all shadow-lg shadow-slate-200"
+                            disabled={updatingStatusId === request.id}
+                            className="h-10 px-6 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition-all shadow-lg shadow-slate-200 flex items-center justify-center gap-2"
                           >
-                            Mark Done
+                            {updatingStatusId === request.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : "Mark Done"}
                           </button>
                         ) : (
                           showFinancials && (
@@ -457,9 +467,12 @@ export function EditRequestsContent({ initialRequests, initialTags, teamMembers,
                                 e.stopPropagation();
                                 handleStatusUpdate(request.id, 'IN_PROGRESS');
                               }}
-                              className="h-10 px-6 rounded-xl bg-slate-100 text-slate-400 text-xs font-bold hover:bg-slate-200 hover:text-slate-900 transition-all"
+                              disabled={updatingStatusId === request.id}
+                              className="h-10 px-6 rounded-xl bg-slate-100 text-slate-400 text-xs font-bold hover:bg-slate-200 hover:text-slate-900 transition-all flex items-center justify-center gap-2"
                             >
-                              Undo
+                              {updatingStatusId === request.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : "Undo"}
                             </button>
                           )
                         )}

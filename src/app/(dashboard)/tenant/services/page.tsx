@@ -59,7 +59,8 @@ async function ServicesDataWrapper() {
     price: Number(s.price),
     durationMinutes: Number(s.durationMinutes),
     icon: String(s.icon || "CAMERA"),
-    active: !!s.active,
+    status: s.active ? 'ACTIVE' : 'INACTIVE',
+    isFavorite: (s.settings as any)?.isFavorite || false,
     slotType: s.slotType || null,
     clientVisible: s.clientVisible !== false,
     settings: s.settings || {}

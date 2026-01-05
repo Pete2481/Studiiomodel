@@ -186,14 +186,14 @@ export function GalleryPublicViewer({
     }
   };
 
-  const submitVideoComments = async (comments: any[]) => {
+  const submitVideoComments = async (comments: any[], tagIds: string[] = []) => {
     setIsSubmittingEdit(true);
     try {
       // Create a SINGLE bundled edit request for the entire video
       await createEditRequest({
         galleryId: gallery.id,
         note: comments.map(c => `[${Math.floor(c.timestamp / 60)}:${(c.timestamp % 60).toString().padStart(2, '0')}] ${c.note}`).join(" - "),
-        tagIds: [], 
+        tagIds: tagIds, 
         fileUrl: selectedVideo.url,
         thumbnailUrl: undefined,
         metadata: {
@@ -1174,14 +1174,15 @@ export function GalleryPublicViewer({
             setIsVideoEditing(false);
             setVideoComments([]);
           }}
-          onSend={(comments) => {
+          onSend={(comments, tagIds) => {
             // We need to set comments AND then trigger submission.
             // Since setVideoComments is async, we can pass it to handleSubmitEditRequest 
             // if we refactor it slightly.
-            submitVideoComments(comments);
+            submitVideoComments(comments, tagIds);
           }}
           isSubmitting={isSubmittingEdit}
           editSuccess={editSuccess}
+          editTags={editTags}
         />
       )}
 

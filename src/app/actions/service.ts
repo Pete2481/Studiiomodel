@@ -19,6 +19,23 @@ export async function upsertService(data: any) {
 
     const { id, name, description, price, durationMinutes, icon, active, clientVisible, includeTax, slotType } = data;
 
+    let settings = {
+      includeTax: includeTax ?? true,
+    };
+
+    if (id) {
+      const existing = await (tPrisma as any).service.findFirst({
+        where: { id }
+      });
+      if (!existing) return { success: false, error: "Service not found" };
+      
+      // Preserve existing settings (like isFavorite)
+      settings = {
+        ...((existing.settings as any) || {}),
+        ...settings
+      };
+    }
+
     const serviceData = {
       name,
       description,
@@ -28,18 +45,10 @@ export async function upsertService(data: any) {
       active: active ?? true,
       clientVisible: clientVisible ?? true,
       slotType: slotType || null,
-      settings: {
-        includeTax: includeTax ?? true,
-      }
+      settings
     };
 
     if (id) {
-      // Use findFirst + update by id to avoid composite key issues
-      const existing = await (tPrisma as any).service.findFirst({
-        where: { id }
-      });
-      if (!existing) return { success: false, error: "Service not found" };
-
       await (tPrisma as any).service.update({
         where: { id },
         data: serviceData,
