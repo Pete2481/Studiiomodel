@@ -138,18 +138,16 @@ export async function toggleFavorite(galleryId: string, imageId: string, imagePa
 
     if (!gallery) return { success: false, error: "Gallery not found" };
 
-    // 2. Get Scoped Client
-    const tPrisma = await getTenantPrisma(gallery.tenantId);
-
-    const existing = await (tPrisma as any).galleryFavorite.findFirst({
+    const existing = await prisma.galleryFavorite.findFirst({
       where: {
         galleryId,
-        imageId
+        imageId,
+        tenantId: gallery.tenantId
       }
     });
 
     if (existing) {
-      await (tPrisma as any).galleryFavorite.delete({
+      await prisma.galleryFavorite.delete({
         where: { id: existing.id }
       });
       
@@ -158,11 +156,12 @@ export async function toggleFavorite(galleryId: string, imageId: string, imagePa
       revalidatePath("/");
       return { success: true, action: "removed" };
     } else {
-      await (tPrisma as any).galleryFavorite.create({
+      await prisma.galleryFavorite.create({
         data: {
           galleryId,
           imageId,
-          imagePath
+          imagePath,
+          tenantId: gallery.tenantId
         }
       });
 
