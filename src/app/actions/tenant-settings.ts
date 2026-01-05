@@ -108,7 +108,7 @@ export async function updateTenantInvoicingSettings(data: {
 
     // IMPORTANT: taxRate from UI is percentage (e.g. 10), DB column expects decimal (e.g. 0.1)
     const dbTaxRate = Number(data.taxRate) / 100;
-    const autoReminders = data.autoInvoiceReminders === true || data.autoInvoiceReminders === 'true';
+    const autoReminders = Boolean(data.autoInvoiceReminders);
 
     // Use Raw SQL to bypass Prisma Client's cache issues for updates
     await prisma.$executeRawUnsafe(
