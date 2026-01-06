@@ -4,7 +4,6 @@ import { UNIFIED_NAV_CONFIG } from "@/lib/nav-config";
 import { 
   Building2, 
   RefreshCw, 
-  Eye, 
   Pause, 
   ArrowLeftRight, 
   Trash2,
@@ -13,8 +12,9 @@ import {
   Calendar as CalendarIcon,
   Image as ImageIcon,
   Plus,
-  CreditCard,
-  Clock
+  Clock,
+  Activity,
+  Zap
 } from "lucide-react";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
@@ -99,42 +99,10 @@ export default async function MasterDashboardPage() {
       subtitle="Monitor network growth, subscriptions, and system performance."
       isMasterMode={true}
     >
-      <div className="animate-in fade-in duration-700 space-y-12 pb-20">
-        {/* Mobile-Style Hero Section for Master Admin */}
-        <section className="relative h-[320px] w-full rounded-[40px] overflow-hidden shadow-2xl shadow-slate-200 border border-slate-100 group">
-          <div className="absolute inset-0 bg-slate-950">
-            <div className="absolute inset-0 opacity-30 bg-[url('https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1200&q=80')] bg-cover bg-center group-hover:scale-105 transition-transform duration-[10s]" />
-            <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
-          </div>
-          
-          <div className="absolute bottom-10 left-10 right-10 flex items-end justify-between">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="px-3 py-1 bg-indigo-500 text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-full shadow-lg">
-                  Master Control
-                </span>
-                <span className="px-3 py-1 bg-white/10 backdrop-blur-md text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-full border border-white/20">
-                  v2.0 Beta
-                </span>
-              </div>
-              <h1 className="text-4xl font-black text-white italic tracking-tighter uppercase">
-                System Oversight
-              </h1>
-              <p className="text-slate-400 text-sm font-medium">
-                {payingTenants} Paying Studios • {trialingTenants} In Trial • {totalUsers} Active Users
-              </p>
-            </div>
-            
-            <Link href="/master/tenants/new" className="h-14 bg-white hover:scale-105 active:scale-95 text-slate-950 rounded-2xl px-8 font-black text-xs uppercase tracking-widest transition-all shadow-xl flex items-center gap-3">
-              <Plus className="h-4 w-4" /> 
-              Onboard Studio
-            </Link>
-          </div>
-        </section>
-
+      <div className="animate-in fade-in duration-700 space-y-12 pb-20 pt-8">
         {/* Real-time Metrics Grid (Mobile Style) */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <MasterStatCard title="Total Revenue" value={`$${payingTenants * 30}`} label="Estimated MRR" icon={<CreditCard className="h-5 w-5" />} color="indigo" />
+          <MasterStatCard title="Traffic Volume" value="--" label="Network Hits (24h)" icon={<Activity className="h-5 w-5" />} color="indigo" />
           <MasterStatCard title="Network Load" value={totalBookings.toLocaleString()} label="Total Bookings" icon={<CalendarIcon className="h-5 w-5" />} color="emerald" />
           <MasterStatCard title="Active Studios" value={activeTenants.toString()} label="Total Platforms" icon={<Building2 className="h-5 w-5" />} color="amber" />
           <MasterStatCard title="Asset Velocity" value={totalGalleries.toLocaleString()} label="Live Galleries" icon={<ImageIcon className="h-5 w-5" />} color="rose" />
