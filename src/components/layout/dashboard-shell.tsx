@@ -232,58 +232,6 @@ function DashboardShellContent({
     signOut({ callbackUrl: "/login" });
   };
 
-  async function handleFormSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setIsSubmitting(true);
-    const formData = new FormData(e.currentTarget);
-
-    try {
-      if (activeModal === "gallery") {
-        await upsertGallery({
-          title: formData.get("title") as string,
-          clientId: formData.get("clientId") as string,
-          agentId: formData.get("agentId") as string,
-          status: (formData.get("status") as string) || "DRAFT"
-        });
-      } else if (activeModal === "appointment") {
-        await upsertBooking({
-          title: formData.get("title"),
-          clientId: formData.get("clientId"),
-          address: formData.get("address"),
-          startAt: formData.get("date") ? `${formData.get("date")}T09:00:00` : new Date().toISOString(),
-          status: "PENCILLED"
-        });
-      } else if (activeModal === "client") {
-        await upsertClient({
-          name: formData.get("name"),
-          businessName: formData.get("businessName"),
-          email: formData.get("email"),
-          status: "PENDING"
-        });
-      } else if (activeModal === "service") {
-        await upsertService({
-          name: formData.get("name") as string,
-          description: formData.get("description") as string,
-          price: formData.get("price") as string,
-          durationMinutes: formData.get("duration") as string,
-        });
-      } else if (activeModal === "edit") {
-        await createEditRequest({
-          galleryId: formData.get("galleryId") as string,
-          note: formData.get("note") as string,
-          tagIds: [], // Tags handled differently in production
-          fileUrl: "TBD", // Requires upload flow
-        });
-      }
-      setActiveModal(null);
-    } catch (error) {
-      console.error("Action failed:", error);
-      alert("Failed to create. Please check the details.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
   const sidebarContent = useMemo(() => {
     return filteredNav.map((section: any, idx: number) => (
       <div key={section.heading || idx} className="flex flex-col gap-3">
