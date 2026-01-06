@@ -7,6 +7,7 @@ import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { TenantActions } from "@/components/master/tenant-actions";
+import { cn } from "@/lib/utils";
 
 export default async function MasterTenantsPage() {
   const session = await auth();
@@ -33,14 +34,21 @@ export default async function MasterTenantsPage() {
         select: {
           bookings: true,
           memberships: true,
+          galleries: true,
+          editRequests: {
+            where: { status: { in: ["NEW", "IN_PROGRESS"] } }
+          }
         }
+      },
+      galleries: {
+        where: { status: "DELIVERED" },
+        select: { id: true }
       }
     },
     orderBy: { createdAt: 'desc' }
   });
 
   const tenants = dbTenants.map(t => {
-    // 1. Manually map each field to ensure NO BigInts or Decimals are leaked
     return {
       id: String(t.id),
       name: String(t.name),
@@ -51,7 +59,10 @@ export default async function MasterTenantsPage() {
       _count: {
         bookings: Number(t._count.bookings),
         memberships: Number(t._count.memberships),
-      }
+        totalGalleries: Number(t._count.galleries),
+        activeEdits: Number(t._count.editRequests),
+      },
+      deliveredGalleries: t.galleries.length
     };
   });
 
@@ -88,14 +99,15 @@ export default async function MasterTenantsPage() {
               <tr className="bg-slate-50/50">
                 <th className="px-8 py-5 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Studio Name</th>
                 <th className="px-8 py-5 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Status</th>
-                <th className="px-8 py-5 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Usage</th>
+                <th className="px-8 py-5 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Activity</th>
+                <th className="px-8 py-5 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Engagement</th>
                 <th className="px-8 py-5 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {tenants.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-8 py-20 text-center">
+                  <td colSpan={5} className="px-8 py-20 text-center">
                     <p className="text-sm font-bold text-slate-400">No tenants registered yet.</p>
                   </td>
                 </tr>
@@ -119,8 +131,22 @@ export default async function MasterTenantsPage() {
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-6">
                       <div className="flex flex-col">
+                        <span className="text-[13px] font-bold text-slate-900">{tenant.deliveredGalleries}/{tenant._count.totalGalleries}</span>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Galleries</span>
+                      </div>
+                      <div className="flex flex-col">
                         <span className="text-[13px] font-bold text-slate-900">{tenant._count.bookings}</span>
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Bookings</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-8 py-5">
+                    <div className="flex items-center gap-6">
+                      <div className="flex flex-col">
+                        <span className={cn("text-[13px] font-bold", tenant._count.activeEdits > 0 ? "text-rose-500" : "text-slate-900")}>
+                          {tenant._count.activeEdits}
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Open Edits</span>
                       </div>
                       <div className="flex flex-col">
                         <span className="text-[13px] font-bold text-slate-900">{tenant._count.memberships}</span>

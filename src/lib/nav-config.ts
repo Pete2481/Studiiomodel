@@ -46,6 +46,7 @@ export const UNIFIED_NAV_CONFIG: NavSection[] = [
     items: [
       { label: "Master Dashboard", href: "/master", icon: "LayoutDashboard", module: "dashboard" },
       { label: "All Studios", href: "/master/tenants", icon: "Building2", module: "tenants" },
+      { label: "Network Analytics", href: "/master/reports", icon: "TrendingUp", module: "dashboard" },
       { label: "New Studio", href: "/master/tenants/new", icon: "Plus", module: "tenants" },
     ],
   },
