@@ -345,7 +345,6 @@ export function CalendarView({
             
             return !isOverlappingBlocked;
           }}
-          height="100%"
           nowIndicator={true}
           eventMouseEnter={(info) => {
             // Skip hover for background availability
