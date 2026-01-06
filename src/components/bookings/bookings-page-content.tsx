@@ -274,7 +274,7 @@ export function BookingsPageContent({
           {/* Main Calendar View */}
           <div className="relative mt-2">
             {user?.role === "TENANT_ADMIN" && (
-              <div className="absolute -top-10 right-0 flex items-center gap-3 z-10">
+              <div className="flex flex-wrap items-center justify-end gap-2 md:gap-3 mb-4 md:absolute md:-top-12 md:right-0 z-10">
                 <button 
                   onClick={() => {
                     if (isActionLocked) {
@@ -290,26 +290,26 @@ export function BookingsPageContent({
                     setIsDrawerOpen(true);
                   }}
                   className={cn(
-                    "flex items-center gap-2 px-4 py-2.5 bg-rose-50 text-rose-600 rounded-full border border-rose-200 text-[10px] font-black uppercase tracking-widest hover:bg-white hover:text-rose-700 transition-all shadow-sm",
+                    "flex-1 md:flex-none flex items-center justify-center gap-2 px-3 md:px-4 py-2 bg-rose-50 text-rose-600 rounded-full border border-rose-200 text-[9px] md:text-[10px] font-black uppercase tracking-widest hover:bg-white transition-all shadow-sm",
                     isActionLocked && "opacity-50 grayscale hover:grayscale-0 transition-all"
                   )}
                 >
                   <Lock className="h-3 w-3" />
-                  {isActionLocked ? "SUB REQUIRED" : "Time Blocker"}
+                  <span className="whitespace-nowrap">{isActionLocked ? "SUB REQUIRED" : "Time Blocker"}</span>
                 </button>
                 <button 
                   onClick={() => setIsSubscriptionModalOpen(true)}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 text-slate-500 rounded-full border border-slate-200 text-[10px] font-black uppercase tracking-widest hover:bg-white hover:text-primary transition-all shadow-sm"
+                  className="flex-1 md:flex-none flex items-center justify-center gap-2 px-3 md:px-4 py-2 bg-slate-50 text-slate-500 rounded-full border border-slate-200 text-[9px] md:text-[10px] font-black uppercase tracking-widest hover:bg-white transition-all shadow-sm"
                 >
                   <CalendarIcon className="h-3 w-3" />
-                  Subscription
+                  <span className="whitespace-nowrap">Sub</span>
                 </button>
                 <button 
                   onClick={() => setIsHoursModalOpen(true)}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 text-slate-500 rounded-full border border-slate-200 text-[10px] font-black uppercase tracking-widest hover:bg-white hover:text-slate-900 transition-all shadow-sm"
+                  className="flex-1 md:flex-none flex items-center justify-center gap-2 px-3 md:px-4 py-2 bg-slate-50 text-slate-500 rounded-full border border-slate-200 text-[9px] md:text-[10px] font-black uppercase tracking-widest hover:bg-white transition-all shadow-sm"
                 >
                   <Settings className="h-3 w-3" />
-                  Business Hours
+                  <span className="whitespace-nowrap">Hours</span>
                 </button>
                 <button 
                   onClick={() => {
@@ -321,12 +321,13 @@ export function BookingsPageContent({
                     setIsDrawerOpen(true);
                   }}
                   className={cn(
-                    "flex items-center gap-2 px-6 py-2.5 bg-emerald-500 text-white rounded-full border border-emerald-400 text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-200/50",
+                    "flex-[2] md:flex-none flex items-center justify-center gap-2 px-4 md:px-6 py-2 bg-primary text-white rounded-full border border-white/10 text-[9px] md:text-[10px] font-black uppercase tracking-widest hover:opacity-90 transition-all shadow-lg",
                     isActionLocked && "opacity-50 grayscale hover:grayscale-0 transition-all"
                   )}
+                  style={{ boxShadow: `0 10px 15px -3px var(--primary-soft)` }}
                 >
                   <Plus className="h-3.5 w-3.5" />
-                  {isActionLocked ? "SUB REQUIRED" : "New Appointment"}
+                  <span className="whitespace-nowrap">{isActionLocked ? "SUB REQUIRED" : "New Appt"}</span>
                 </button>
               </div>
             )}

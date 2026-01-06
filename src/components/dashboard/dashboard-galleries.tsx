@@ -71,16 +71,16 @@ export function DashboardGalleries({
   ).slice(0, 8); // Always show max 8 on dashboard
 
   return (
-    <section className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-4">
+    <section className="space-y-6 w-full max-w-full overflow-hidden">
+      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-lg font-bold text-slate-900 tracking-tight">Featured galleries</h2>
           <p className="text-sm font-medium text-slate-500">Latest image collections ready for client delivery.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <Link 
             href="/tenant/galleries"
-            className="h-10 border border-slate-200 bg-white hover:border-slate-300 text-slate-600 rounded-full px-5 text-xs font-bold transition-all active:scale-95 flex items-center gap-2"
+            className="h-10 border border-slate-200 bg-white hover:border-slate-300 text-slate-600 rounded-full px-4 sm:px-5 text-xs font-bold transition-all active:scale-95 flex items-center gap-2 flex-1 sm:flex-none justify-center"
           >
             See All
             <ArrowRight className="h-3 w-3" />
@@ -99,12 +99,12 @@ export function DashboardGalleries({
                   handleCreate();
                 }}
                 className={cn(
-                  "h-10 bg-[var(--primary)] hover:opacity-90 text-white rounded-full px-5 text-xs font-bold transition-all shadow-lg shadow-primary/20 active:scale-95 flex items-center gap-2",
+                  "h-10 bg-[var(--primary)] hover:opacity-90 text-white rounded-full px-4 sm:px-5 text-xs font-bold transition-all shadow-lg shadow-primary/20 active:scale-95 flex items-center gap-2 flex-1 sm:flex-none justify-center whitespace-nowrap",
                   isActionLocked && "opacity-50 grayscale hover:grayscale-0 hover:opacity-100 transition-all"
                 )}
               >
                 <Plus className="h-3.5 w-3.5" />
-                {isActionLocked ? "Subscription Required" : "Add gallery"}
+                {isActionLocked ? "Sub Required" : "Add gallery"}
               </button>
             </Hint>
           )}
@@ -112,20 +112,20 @@ export function DashboardGalleries({
       </header>
 
       {/* Filter Bar */}
-      <div className="flex items-center gap-2">
-        <div className="relative">
+      <div className="flex items-center gap-2 w-full">
+        <div className="relative w-full sm:max-w-xs">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <input 
             type="text" 
             placeholder="Search galleries..." 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="ui-input w-64 pl-11" 
+            className="ui-input w-full pl-11" 
           />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 w-full">
         {filteredGalleries.map((gallery: any, idx: number) => (
           <div key={gallery.id} className="group relative flex flex-col overflow-hidden rounded-[32px] border border-slate-200 bg-white transition-all hover:shadow-xl hover:shadow-slate-200/50">
             {/* Cover Image */}

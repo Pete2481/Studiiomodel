@@ -61,7 +61,7 @@ export function MetricCards({ metrics }: { metrics: MetricSummary }) {
 
   return (
     <>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 w-full auto-rows-fr">
         {rows.map((row, index) => {
           const palette = metricPalette[index % metricPalette.length];
           return (
@@ -69,27 +69,27 @@ export function MetricCards({ metrics }: { metrics: MetricSummary }) {
               key={row.label}
               onClick={row.onClick}
               className={cn(
-                "relative overflow-hidden rounded-[28px] border border-slate-200 bg-white px-5 py-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg cursor-default",
+                "relative overflow-hidden rounded-[24px] md:rounded-[28px] border border-slate-200 bg-white px-5 py-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg cursor-default w-full min-w-0 flex flex-col justify-center",
                 row.onClick && "cursor-pointer active:scale-[0.98]",
                 row.isAttention && attentionTotal > 0 && "border-rose-200 ring-2 ring-rose-500/5 shadow-rose-100"
               )}
             >
               <div className={cn("absolute inset-0 bg-gradient-to-br opacity-60", palette)} />
-              <div className="relative space-y-3">
-                <div className="flex items-center justify-between">
+              <div className="relative space-y-3 min-w-0">
+                <div className="flex items-center justify-between gap-2 min-w-0">
                   <p className={cn(
-                    "text-[11px] font-bold uppercase tracking-widest text-slate-500/70",
+                    "text-[10px] md:text-[11px] font-bold uppercase tracking-widest text-slate-500/70 truncate",
                     row.isAttention && attentionTotal > 0 && "text-rose-600"
                   )}>{row.label}</p>
                   {row.isAttention && attentionTotal > 0 && (
-                    <span className="flex h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
+                    <span className="flex h-2 w-2 flex-none rounded-full bg-rose-500 animate-pulse" />
                   )}
                 </div>
                 <p className={cn(
-                  "text-3xl font-black text-slate-900",
+                  "text-2xl md:text-3xl font-black text-slate-900 truncate",
                   row.isAttention && attentionTotal > 0 && "text-rose-600 italic"
                 )}>{row.value}</p>
-                {row.trendLabel ? <p className="text-[11px] font-medium text-slate-500">{row.trendLabel}</p> : null}
+                {row.trendLabel ? <p className="text-[10px] md:text-[11px] font-medium text-slate-500 leading-tight truncate">{row.trendLabel}</p> : null}
               </div>
             </article>
           );

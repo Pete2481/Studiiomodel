@@ -72,15 +72,26 @@ export function GalleryPublicViewer({
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
 
-  // Helper to append shared flag for incognito access to locked galleries
-  const getImageUrl = (url: string) => {
+  // Helper to append shared flag and size for incognito access to locked galleries
+  const getImageUrl = (url: string, size?: string) => {
     if (!url) return "";
-    if (!isShared) return url;
-    if (url.includes("shared=true")) return url;
-    return `${url}${url.includes("?") ? "&" : "?"}shared=true`;
+    let finalUrl = url;
+    
+    // Add shared flag if it's a shared link
+    if (isShared && !finalUrl.includes("shared=true")) {
+      finalUrl += `${finalUrl.includes("?") ? "&" : "?"}shared=true`;
+    }
+
+    // Add size if provided and not already present
+    if (size && !finalUrl.includes("size=")) {
+      finalUrl += `${finalUrl.includes("?") ? "&" : "?"}size=${size}`;
+    }
+
+    return finalUrl;
   };
 
-  const canDownload = permissionService.can(user, "canDownloadHighRes");
+  // Downloads are visible to everyone (Public & Logged In)
+  const canDownload = true;
   const canEdit = permissionService.can(user, "canEditRequests");
 
   // Pre-check for cached images
@@ -394,9 +405,9 @@ export function GalleryPublicViewer({
             {!isShared && (user?.role === "TENANT_ADMIN" || user?.role === "ADMIN" || user?.role === "AGENT") && favorites.length > 0 && (
               <button 
                 onClick={() => {
-                  const url = new URL(window.location.href);
-                  url.pathname = url.pathname + "/shared";
-                  navigator.clipboard.writeText(url.toString());
+                  const currentPath = window.location.pathname.replace(/\/$/, ""); // Remove trailing slash if any
+                  const shareUrl = `${window.location.origin}${currentPath}/shared`;
+                  navigator.clipboard.writeText(shareUrl);
                   setShowCopiedToast(true);
                   setTimeout(() => setShowCopiedToast(false), 3000);
                 }}
@@ -588,11 +599,10 @@ export function GalleryPublicViewer({
                       </div>
                     )
                   ) : (
-                    <img 
+                    <ProgressiveImage 
                       src={getImageUrl(item.url)} 
                       alt={item.name}
                       className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
-                      loading="lazy"
                     />
                   )}
                   
@@ -1345,6 +1355,45 @@ function FilterTab({ active, onClick, label, count, isSpecial }: any) {
         {count}
       </span>
     </button>
+  );
+}
+
+/**
+ * Progressive Image Loader
+ * Loads a tiny "Spark" thumb first, then swaps for a high-res one
+ */
+function ProgressiveImage({ src, alt, className }: { src: string, alt: string, className: string }) {
+  const [currentSrc, setCurrentSrc] = useState(`${src}${src.includes('?') ? '&' : '?'}size=w64h64`);
+  const [isHighResLoaded, setIsHighResLoaded] = useState(false);
+
+  useEffect(() => {
+    // Start loading the medium-res version immediately
+    const highRes = new Image();
+    highRes.src = `${src}${src.includes('?') ? '&' : '?'}size=w640h480`;
+    highRes.onload = () => {
+      setCurrentSrc(highRes.src);
+      setIsHighResLoaded(true);
+    };
+  }, [src]);
+
+  return (
+    <div className="relative h-full w-full overflow-hidden">
+      <img 
+        src={currentSrc} 
+        alt={alt}
+        className={cn(
+          className,
+          "transition-all duration-700",
+          !isHighResLoaded ? "blur-xl scale-110" : "blur-0 scale-100"
+        )}
+        loading="lazy"
+      />
+      {!isHighResLoaded && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Loader2 className="h-4 w-4 animate-spin text-white/20" />
+        </div>
+      )}
+    </div>
   );
 }
 

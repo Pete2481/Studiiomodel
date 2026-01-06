@@ -139,8 +139,76 @@ export function BookingList({
           </div>
         )}
       </div>
+      
+      {/* Mobile Card View (shown only on small screens) */}
+      <div className="grid grid-cols-1 gap-4 md:hidden">
+        {paginatedBookings.map((booking) => {
+          const token = STATUS_TOKENS[booking.status] || STATUS_TOKENS.confirmed;
+          return (
+            <div key={booking.id} className="bg-white rounded-[24px] border border-slate-200 p-5 space-y-4 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">
+                    {format(new Date(booking.startAt), "EEE d MMM yyyy")}
+                  </span>
+                  <span className="text-sm font-bold text-slate-900">
+                    {format(new Date(booking.startAt), "h:mma")} - {format(new Date(booking.endAt), "h:mma")}
+                  </span>
+                </div>
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-widest",
+                    token.surface, token.text, token.border
+                  )}
+                >
+                  <span className={cn("h-1 w-1 rounded-full", token.accent)} />
+                  {booking.status === 'confirmed' ? 'Approved' : 
+                   booking.status === 'pencilled' ? 'Pending' : 
+                   booking.status === 'blocked' ? 'Block Out' :
+                   booking.status}
+                </span>
+              </div>
 
-      <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm overflow-x-auto">
+              <div className="space-y-1">
+                <p className="text-[10px] font-black text-primary uppercase tracking-widest">
+                  {booking.clientBusinessName || booking.clientName}
+                </p>
+                <h4 className="text-sm font-bold text-slate-900 leading-snug">{booking.address || "TBC"}</h4>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {booking.serviceNames.map((name, i) => (
+                  <span key={i} className="bg-slate-50 text-slate-500 text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md border border-slate-100">
+                    {name}
+                  </span>
+                ))}
+              </div>
+
+              <div className="pt-3 border-t border-slate-50 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="h-6 w-6 rounded-full bg-slate-100 flex items-center justify-center text-[8px] font-bold text-slate-500 uppercase">
+                    {booking.photographers?.charAt(0) || "T"}
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                    {booking.photographers || "To assign"}
+                  </span>
+                </div>
+                {onEdit && (
+                  <button
+                    onClick={() => onEdit(booking)}
+                    className="h-8 px-4 rounded-full bg-slate-50 text-slate-600 text-[10px] font-black uppercase tracking-widest hover:bg-slate-100 active:scale-95 transition-all"
+                  >
+                    Edit
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Desktop Table View (hidden on small screens) */}
+      <div className="hidden md:block overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm overflow-x-auto">
         <table className="min-w-full text-sm text-slate-600 border-collapse">
           <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400 border-b border-slate-200">
             <tr>

@@ -63,11 +63,11 @@ export default async function TenantDashboard() {
   }
 
   return (
-    <div className="space-y-12">
+    <div className="space-y-8 md:space-y-12 w-full max-w-full overflow-x-hidden">
       {/* Title & Subtitle update immediately */}
       <DashboardHeader tenantId={tenantId} user={user} />
 
-      <div className="grid gap-12">
+      <div className="grid gap-8 md:gap-12 w-full">
         <Suspense fallback={<MetricCardsSkeleton />}>
           <MetricCardsWrapper 
             tenantId={tenantId} 
@@ -290,8 +290,8 @@ async function BookingPipelineWrapper({ tenantId, bookingWhere, user }: any) {
 
 function MetricCardsSkeleton() {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-      {[1, 2, 3, 4, 5].map(i => (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 w-full">
+      {[1, 2, 3, 4].map(i => (
         <div key={i} className="h-32 bg-slate-100 rounded-[32px] animate-pulse" />
       ))}
     </div>
@@ -300,9 +300,9 @@ function MetricCardsSkeleton() {
 
 function GalleriesSkeleton() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full">
       <div className="h-8 w-48 bg-slate-100 rounded-lg animate-pulse" />
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {[1, 2, 3, 4].map(i => (
           <div key={i} className="h-64 bg-slate-100 rounded-[32px] animate-pulse" />
         ))}

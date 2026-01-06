@@ -257,26 +257,60 @@ export async function getGalleryAssets(galleryId: string) {
 
     // 2. Parallelize folder scanning for speed
     const folderPromises = folders.map(async (folder: any) => {
-      const response = await dropboxFetch("https://api.dropboxapi.com/2/files/list_folder", {
-        path: folder.path,
-        recursive: false,
-        include_media_info: true
-      });
+      let folderAssets: any[] = [];
+      let hasMore = true;
+      let cursor = "";
 
-      if (response.ok) {
-        const data = await response.json();
-        return data.entries
-          .filter((entry: any) => entry[".tag"] === "file" && entry.name.match(/\.(jpg|jpeg|png|webp)$/i))
-          .map((entry: any) => ({
-            id: entry.id,
-            name: entry.name,
-            path: entry.path_lower,
-            url: `/api/dropbox/assets/${galleryId}?path=${encodeURIComponent(entry.path_lower)}`,
-            type: "image",
-            folderName: folder.name
-          }));
+      try {
+        // Initial fetch
+        let response = await dropboxFetch("https://api.dropboxapi.com/2/files/list_folder", {
+          path: folder.path,
+          recursive: false,
+          include_media_info: true
+        });
+
+        if (response.ok) {
+          let data = await response.json();
+          
+          const processEntries = (entries: any[]) => {
+            return entries
+              .filter((entry: any) => entry[".tag"] === "file" && entry.name.match(/\.(jpg|jpeg|png|webp)$/i))
+              .map((entry: any) => ({
+                id: entry.id,
+                name: entry.name,
+                path: entry.path_lower,
+                url: `/api/dropbox/assets/${galleryId}?path=${encodeURIComponent(entry.path_lower)}`,
+                type: "image",
+                folderName: folder.name
+              }));
+          };
+
+          folderAssets = [...folderAssets, ...processEntries(data.entries)];
+          hasMore = data.has_more;
+          cursor = data.cursor;
+
+          // CURSOR LOOP: Keep pulling if there are more than 1000 items
+          while (hasMore) {
+            console.log(`[DROPBOX] Pulling next batch for ${folder.name} (has_more: true)`);
+            const nextResponse = await dropboxFetch("https://api.dropboxapi.com/2/files/list_folder/continue", {
+              cursor: cursor
+            });
+
+            if (nextResponse.ok) {
+              const nextData = await nextResponse.json();
+              folderAssets = [...folderAssets, ...processEntries(nextData.entries)];
+              hasMore = nextData.has_more;
+              cursor = nextData.cursor;
+            } else {
+              hasMore = false;
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`Error fetching folder ${folder.name}:`, err);
       }
-      return [];
+
+      return folderAssets;
     });
 
     const results = await Promise.all(folderPromises);

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -34,6 +34,27 @@ export function CalendarView({
 }: CalendarViewProps) {
   const calendarRef = useRef<any>(null);
   const [hoveredEvent, setHoveredEvent] = useState<{ event: any, x: number, y: number } | null>(null);
+  const [view, setView] = useState<string>("timeGridWeek");
+
+  // Responsive View Handler
+  useEffect(() => {
+    const handleResize = () => {
+      const isMobile = window.innerWidth < 768;
+      const newView = isMobile ? "timeGridDay" : "timeGridWeek";
+      
+      if (calendarRef.current) {
+        const calendarApi = calendarRef.current.getApi();
+        if (calendarApi.view.type !== newView) {
+          calendarApi.changeView(newView);
+          setView(newView);
+        }
+      }
+    };
+
+    handleResize(); // Initial check
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const isClientOrRestrictedAgent = user?.role === "CLIENT" || (user?.role === "AGENT" && !user?.permissions?.seeAll);
   const isRestrictedRole = user?.role === "CLIENT" || user?.role === "AGENT";
@@ -206,51 +227,47 @@ export function CalendarView({
   }, [businessHours]);
 
   return (
-    <div className="relative space-y-4">
-      {/* Legend */}
-      <div className="flex flex-wrap items-center gap-4 px-4">
-        <div className="flex items-center gap-2">
-          <div className="h-2 w-2 rounded-full bg-primary" />
-          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Approved</span>
+    <div className="relative space-y-6 w-full max-w-full overflow-hidden">
+      {/* Legend - more compact on mobile */}
+      <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-6 gap-y-3 px-2 md:px-4 py-2 border-b border-slate-50 md:border-none pb-4 md:pb-0">
+        <div className="flex items-center gap-2.5 group">
+          <div className="h-2 w-2 rounded-full bg-primary shadow-sm" />
+          <span className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 group-hover:text-primary transition-colors">Approved</span>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="h-2 w-2 rounded-full bg-rose-500" />
-          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Requested / Declined</span>
+        <div className="flex items-center gap-2.5 group">
+          <div className="h-2 w-2 rounded-full bg-rose-500 shadow-sm" />
+          <span className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 group-hover:text-rose-500 transition-colors">Requested</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5 group text-rose-600">
           <div className="h-2 w-2 rounded-full bg-rose-600 shadow-sm" />
-          <span className="text-[10px] font-bold uppercase tracking-widest text-rose-600">Time Block Out</span>
+          <span className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.15em] text-rose-500 group-hover:text-rose-600 transition-colors">Block Out</span>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="h-2 w-2 rounded-full bg-amber-500" />
-          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Pending / Pencilled</span>
+        <div className="flex items-center gap-2.5 group">
+          <div className="h-2 w-2 rounded-full bg-amber-500 shadow-sm" />
+          <span className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 group-hover:text-amber-500 transition-colors">Pending</span>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="h-2 w-2 rounded-full bg-slate-400" />
-          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Limited Availability</span>
+        <div className="flex items-center gap-2.5 group">
+          <div className="h-2 w-2 rounded-full bg-slate-400 shadow-sm" />
+          <span className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 group-hover:text-slate-600 transition-colors">Limited</span>
         </div>
       </div>
 
-      <div className="calendar-container h-[900px] bg-white rounded-[40px] border border-slate-100 shadow-sm p-2 px-6 overflow-hidden">
+      <div className="calendar-container h-[85vh] md:h-[900px] bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm p-2 md:p-2 md:px-6 overflow-hidden w-full">
         <FullCalendar
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
-          initialView="timeGridWeek"
+          initialView={view}
           hiddenDays={hiddenDays}
           slotDuration="00:30:00"
           expandRows={false}
           headerToolbar={{
             left: 'prev,today,next',
             center: 'title',
-            right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek'
+            right: 'timeGridDay,timeGridWeek,dayGridMonth'
           }}
-          buttonText={{
-            today: 'Today',
-            month: 'Month',
-            week: 'Week',
-            day: 'Day',
-            list: 'List'
-          }}
+          handleWindowResize={true}
+          windowResizeDelay={100}
+          height="100%"
           dayHeaderContent={(arg) => {
             const isToday = format(arg.date, "yyyy-MM-dd") === format(new Date(), "yyyy-MM-dd");
             return (
