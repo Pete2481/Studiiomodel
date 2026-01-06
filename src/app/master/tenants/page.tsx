@@ -6,7 +6,6 @@ import { Building2, Plus, MoreVertical, ExternalLink, Search, RefreshCw } from "
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { ImpersonateButton } from "@/components/master/impersonate-button";
 import { TenantActions } from "@/components/master/tenant-actions";
 
 export default async function MasterTenantsPage() {
@@ -131,7 +130,6 @@ export default async function MasterTenantsPage() {
                   </td>
                   <td className="px-8 py-5 text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <ImpersonateButton tenantId={tenant.id} />
                       <TenantActions tenant={tenant} />
                     </div>
                   </td>

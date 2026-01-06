@@ -78,6 +78,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           };
         }
 
+        // SAFETY: Master Admins are NOT allowed to act as Tenant Admins or Team Members
+        if (user.isMasterAdmin) {
+          console.warn(`[AUTH] Master Admin (${user.email}) attempted to login to tenant ${tenantId}. Blocked.`);
+          return null;
+        }
+
         if (user.memberships.length === 0) {
           return null;
         }

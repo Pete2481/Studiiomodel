@@ -92,6 +92,17 @@ export async function upsertTeamMember(data: any) {
     // They crash the Next.js serialization engine.
     const avatarUrl = (rawAvatarUrl && rawAvatarUrl.length > 5000) ? null : rawAvatarUrl;
 
+    // SAFETY: Master Admin cannot be a Team Member
+    if (email) {
+      const user = await prisma.user.findFirst({
+        where: { email: email.toLowerCase().trim() },
+        select: { isMasterAdmin: true }
+      });
+      if (user?.isMasterAdmin) {
+        return { success: false, error: "Master Admin cannot be a Team Member." };
+      }
+    }
+
     const newSecret = randomBytes(16).toString("hex");
     console.log("[TURBO-DEBUG] UPSERT ATTEMPT:", { 
       name: displayName, 

@@ -75,16 +75,6 @@ export async function POST(request: Request) {
       });
     }
 
-    // 3. Link the Master Admin
-    await prisma.tenantMembership.create({
-      data: {
-        tenantId: tenant.id,
-        userId: session.user.id,
-        role: "TENANT_ADMIN",
-        hasFullClientAccess: true,
-      },
-    });
-
     // 4. AUTO-SEED STANDARD SERVICES
     const standardServices = [
       { name: "Professional Real Estate Photography", price: 250, duration: 60, icon: "Camera" },
