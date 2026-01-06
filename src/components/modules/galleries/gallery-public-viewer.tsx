@@ -42,6 +42,7 @@ interface GalleryPublicViewerProps {
   editTags?: any[];
   user?: any;
   initialAssets?: any[];
+  isShared?: boolean;
 }
 
 export function GalleryPublicViewer({ 
@@ -49,7 +50,8 @@ export function GalleryPublicViewer({
   tenant, 
   editTags = [], 
   user,
-  initialAssets = [] 
+  initialAssets = [],
+  isShared = false
 }: GalleryPublicViewerProps) {
   const router = useRouter();
   const [assets, setAssets] = useState<any[]>(initialAssets);
@@ -60,13 +62,23 @@ export function GalleryPublicViewer({
   const [activeFilter, setActiveFilter] = useState<"all" | "images" | "videos" | "favorites">("all");
   const [error, setError] = useState<string | null>(null);
   const [selectedVideo, setSelectedVideo] = useState<any>(null);
+  const [showCopiedToast, setShowCopiedToast] = useState(false);
   const [hoveredVideoId, setHoveredVideoId] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<string[]>(gallery.initialFavorites || []);
   const [isTogglingFavorite, setIsTogglingFavorite] = useState<string | null>(null);
   const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
   const [isAssetLoading, setIsAssetLoading] = useState(false);
   const [loadingDirection, setLoadingDirection] = useState<"prev" | "next" | null>(null);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
+
+  // Helper to append shared flag for incognito access to locked galleries
+  const getImageUrl = (url: string) => {
+    if (!url) return "";
+    if (!isShared) return url;
+    if (url.includes("shared=true")) return url;
+    return `${url}${url.includes("?") ? "&" : "?"}shared=true`;
+  };
 
   const canDownload = permissionService.can(user, "canDownloadHighRes");
   const canEdit = permissionService.can(user, "canEditRequests");
@@ -113,7 +125,6 @@ export function GalleryPublicViewer({
   const [editSuccess, setEditSuccess] = useState(false);
   const [isSocialCropperOpen, setIsSocialCropperOpen] = useState(false);
   const [isDownloadManagerOpen, setIsDownloadManagerOpen] = useState(false);
-  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [downloadAssets, setDownloadAssets] = useState<any[]>([]);
   const [videoTimestamp, setVideoTimestamp] = useState<number | null>(null);
   const [videoComments, setVideoComments] = useState<any[]>([]);
@@ -298,17 +309,19 @@ export function GalleryPublicViewer({
   };
 
   const filteredAssets = React.useMemo(() => assets.filter(a => {
+    if (isShared) return favorites.includes(a.id);
     if (activeFilter === "videos") return false;
     if (activeFilter === "favorites") return favorites.includes(a.id);
     return true;
-  }), [assets, activeFilter, favorites]);
+  }), [assets, activeFilter, favorites, isShared]);
 
   const displayVideos = React.useMemo(() => videos.filter((v, idx) => {
     const videoId = v.url || idx.toString();
+    if (isShared) return favorites.includes(videoId);
     if (activeFilter === "images") return false;
     if (activeFilter === "favorites") return favorites.includes(videoId);
     return true;
-  }), [videos, activeFilter, favorites]);
+  }), [videos, activeFilter, favorites, isShared]);
 
   const combinedMedia = React.useMemo(() => [
     ...displayVideos.map(v => ({ ...v, type: "video" })),
@@ -377,24 +390,43 @@ export function GalleryPublicViewer({
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Step 1: Simple Share Selection Button */}
+            {!isShared && (user?.role === "TENANT_ADMIN" || user?.role === "ADMIN" || user?.role === "AGENT") && favorites.length > 0 && (
+              <button 
+                onClick={() => {
+                  const url = new URL(window.location.href);
+                  url.pathname = url.pathname + "/shared";
+                  navigator.clipboard.writeText(url.toString());
+                  setShowCopiedToast(true);
+                  setTimeout(() => setShowCopiedToast(false), 3000);
+                }}
+                className="hidden md:flex h-10 px-6 rounded-full bg-rose-500 text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-rose-500/20 hover:scale-105 active:scale-95 transition-all items-center gap-2"
+              >
+                <Heart className="h-3.5 w-3.5 fill-current" />
+                Share Selection ({favorites.length})
+              </button>
+            )}
+
             {canDownload && (
               <button 
                 onClick={() => {
                   setDownloadAssets(assets);
                   setIsDownloadManagerOpen(true);
                 }}
-                className="h-10 px-6 rounded-full bg-slate-900 text-white text-xs font-bold shadow-lg shadow-slate-900/10 hover:scale-105 transition-all flex items-center gap-2"
+                className="h-10 px-6 rounded-full bg-slate-900 text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-slate-900/10 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
               >
                 <Download className="h-3.5 w-3.5" />
                 Download All
               </button>
             )}
-            <button 
-              onClick={() => setIsShareModalOpen(true)}
-              className="hidden md:flex h-10 w-10 rounded-full bg-white border border-slate-200 text-slate-400 items-center justify-center hover:text-slate-900 transition-colors shadow-sm"
-            >
-              <Share2 className="h-4 w-4" />
-            </button>
+            {!isShared && (
+              <button 
+                onClick={() => setIsShareModalOpen(true)}
+                className="hidden md:flex h-10 w-10 rounded-full bg-white border border-slate-200 text-slate-400 items-center justify-center hover:text-slate-900 transition-colors shadow-sm"
+              >
+                <Share2 className="h-4 w-4" />
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -434,34 +466,45 @@ export function GalleryPublicViewer({
       <main className="flex-1 bg-white">
         <div className="max-w-7xl mx-auto px-6 py-12">
           {/* Sub Header / Filters */}
-          <div className="flex flex-col md:flex-row items-center justify-between mb-12 gap-6">
-            <div className="flex bg-slate-50 p-1 rounded-2xl border border-slate-100 flex-wrap justify-center">
-              <FilterTab active={activeFilter === "all"} onClick={() => setActiveFilter("all")} label="Everything" count={assets.length + videos.length} />
-              <FilterTab active={activeFilter === "images"} onClick={() => setActiveFilter("images")} label="Images" count={assets.length} />
-              <FilterTab active={activeFilter === "videos"} onClick={() => setActiveFilter("videos")} label="Films" count={videos.length} />
-              <FilterTab 
-                active={activeFilter === "favorites"} 
-                onClick={() => setActiveFilter("favorites")} 
-                label="Favourites" 
-                count={favorites.length}
-                isSpecial={true}
-              />
-            </div>
-            
-            <div className="flex items-center gap-3">
-              <div className="flex -space-x-2">
-                {/* Visual indicator of multiple folders */}
-                {Array.from(new Set(assets.map(a => a.folderName))).map((folder, i) => (
-                  <div key={i} className="h-8 w-8 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-slate-400" title={folder}>
-                    <ImageIcon className="h-3.5 w-3.5" />
-                  </div>
-                ))}
+          {!isShared && (
+            <div className="flex flex-col md:flex-row items-center justify-between mb-12 gap-6">
+              <div className="flex bg-slate-50 p-1 rounded-2xl border border-slate-100 flex-wrap justify-center">
+                <FilterTab active={activeFilter === "all"} onClick={() => setActiveFilter("all")} label="Everything" count={assets.length + videos.length} />
+                <FilterTab active={activeFilter === "images"} onClick={() => setActiveFilter("images")} label="Images" count={assets.length} />
+                <FilterTab active={activeFilter === "videos"} onClick={() => setActiveFilter("videos")} label="Films" count={videos.length} />
+                <FilterTab 
+                  active={activeFilter === "favorites"} 
+                  onClick={() => setActiveFilter("favorites")} 
+                  label="Favourites" 
+                  count={favorites.length}
+                  isSpecial={true}
+                />
               </div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                Aggregating from {Array.from(new Set(assets.map(a => a.folderName))).length} Production Folders
-              </p>
+              
+              <div className="flex items-center gap-3">
+                <div className="flex -space-x-2">
+                  {/* Visual indicator of multiple folders */}
+                  {Array.from(new Set(assets.map(a => a.folderName))).map((folder, i) => (
+                    <div key={i} className="h-8 w-8 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-slate-400" title={folder}>
+                      <ImageIcon className="h-3.5 w-3.5" />
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                  Aggregating from {Array.from(new Set(assets.map(a => a.folderName))).length} Production Folders
+                </p>
+              </div>
             </div>
-          </div>
+          )}
+
+          {isShared && (
+            <div className="flex items-center justify-center mb-12">
+              <div className="px-6 py-2 rounded-2xl bg-rose-50 border border-rose-100 flex items-center gap-3">
+                <Heart className="h-4 w-4 text-rose-500 fill-current" />
+                <span className="text-[10px] font-black text-rose-500 uppercase tracking-[0.2em]">Curated Selection ({combinedMedia.length})</span>
+              </div>
+            </div>
+          )}
 
           {/* Grid */}
           {isLoading ? (
@@ -505,7 +548,7 @@ export function GalleryPublicViewer({
                     playingVideoId === (item.id || item.url) ? (
                       <div className="h-full w-full bg-black relative">
                         <iframe 
-                          src={formatVideoUrl(item.url)}
+                          src={formatVideoUrl(getImageUrl(item.url))}
                           className="w-full h-full border-0"
                           allow="autoplay; fullscreen; picture-in-picture"
                           allowFullScreen
@@ -530,7 +573,7 @@ export function GalleryPublicViewer({
                         <div className="absolute inset-0 z-0 flex items-center justify-center">
                           {gallery.bannerImageUrl ? (
                             <img 
-                              src={gallery.bannerImageUrl} 
+                              src={getImageUrl(gallery.bannerImageUrl)} 
                               alt="Video Thumbnail"
                               className="w-full h-full object-cover opacity-50 grayscale group-hover/vid:grayscale-0 group-hover/vid:opacity-100 transition-all duration-700"
                             />
@@ -546,7 +589,7 @@ export function GalleryPublicViewer({
                     )
                   ) : (
                     <img 
-                      src={item.url} 
+                      src={getImageUrl(item.url)} 
                       alt={item.name}
                       className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
                       loading="lazy"
@@ -556,16 +599,18 @@ export function GalleryPublicViewer({
                   <div className="absolute inset-0 bg-slate-900/0 group-hover:bg-slate-900/40 transition-all duration-300 pointer-events-none" />
                   
                   {/* Tag (Top Left - Hover Only) */}
-                  <div className="absolute top-6 left-6 z-30 pointer-events-none">
-                    <div className="px-3 py-1 bg-white/10 backdrop-blur-md rounded-full border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <p className="text-[9px] font-black text-white uppercase tracking-widest">
-                        {item.type === "video" ? "FILM" : item.folderName}
-                      </p>
+                  {!isShared && (
+                    <div className="absolute top-6 left-6 z-30 pointer-events-none">
+                      <div className="px-3 py-1 bg-white/10 backdrop-blur-md rounded-full border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <p className="text-[9px] font-black text-white uppercase tracking-widest">
+                          {item.type === "video" ? "FILM" : item.folderName}
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Status Badges (Bottom Left - Hover Only) */}
-                  {requestedFileUrls.includes(item.url) && (
+                  {!isShared && requestedFileUrls.includes(item.url) && (
                     <div className="absolute bottom-6 left-6 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
                       <div className="px-3 py-1.5 bg-rose-500/90 backdrop-blur-md rounded-full border border-rose-400/50 shadow-xl flex items-center gap-2">
                         <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
@@ -582,21 +627,25 @@ export function GalleryPublicViewer({
                     item.type === "video" && playingVideoId === (item.id || item.url) ? "hidden" : (item.type === "video" && "group-hover/vid:opacity-100")
                   )}>
                     <div className="flex gap-2 shrink-0">
-                      <button 
-                        onClick={(e) => handleToggleFavorite(e, item)}
-                        className={cn(
-                          "h-9 w-9 rounded-xl flex items-center justify-center transition-all shadow-lg",
-                          favorites.includes(item.id || item.url) 
-                            ? "bg-rose-500 text-white" 
-                            : "bg-white/20 backdrop-blur-md text-white hover:bg-white hover:text-rose-500"
-                        )}
-                      >
-                        <Heart className={cn("h-4 w-4", favorites.includes(item.id || item.url) && "fill-current")} />
-                      </button>
-                      {item.type === "image" && (
-                        <button className="h-9 w-9 rounded-xl bg-white/20 backdrop-blur-md text-white flex items-center justify-center hover:bg-white hover:text-slate-900 transition-all">
-                          <Crop className="h-4 w-4" />
-                        </button>
+                      {!isShared && (
+                        <>
+                          <button 
+                            onClick={(e) => handleToggleFavorite(e, item)}
+                            className={cn(
+                              "h-9 w-9 rounded-xl flex items-center justify-center transition-all shadow-lg",
+                              favorites.includes(item.id || item.url) 
+                                ? "bg-rose-500 text-white" 
+                                : "bg-white/20 backdrop-blur-md text-white hover:bg-white hover:text-rose-500"
+                            )}
+                          >
+                            <Heart className={cn("h-4 w-4", favorites.includes(item.id || item.url) && "fill-current")} />
+                          </button>
+                          {item.type === "image" && (
+                            <button className="h-9 w-9 rounded-xl bg-white/20 backdrop-blur-md text-white flex items-center justify-center hover:bg-white hover:text-slate-900 transition-all">
+                              <Crop className="h-4 w-4" />
+                            </button>
+                          )}
+                        </>
                       )}
                       {item.type === "video" && (
                         <button 
@@ -669,51 +718,55 @@ export function GalleryPublicViewer({
               <div>
                 <div className="flex items-center gap-3">
                   <p className="text-xs font-bold text-white tracking-tight">{selectedAsset.name}</p>
-                  {requestedFileUrls.includes(selectedAsset.url) && (
+                  {!isShared && requestedFileUrls.includes(selectedAsset.url) && (
                     <span className="px-2 py-0.5 bg-rose-500 text-white text-[8px] font-black uppercase tracking-widest rounded-md">
                       Edit Requested
                     </span>
                   )}
                 </div>
                 <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">
-                  {selectedAsset.folderName} &bull; Image {filteredAssets.indexOf(selectedAsset) + 1} of {filteredAssets.length}
+                  {isShared ? "Selected Item" : selectedAsset.folderName} &bull; Image {filteredAssets.indexOf(selectedAsset) + 1} of {filteredAssets.length}
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-3">
-              <button 
-                onClick={(e) => handleToggleFavorite(e, selectedAsset)}
-                className={cn(
-                  "h-10 w-10 rounded-full flex items-center justify-center transition-all border shadow-lg",
-                  favorites.includes(selectedAsset.id || selectedAsset.url)
-                    ? "bg-rose-500 border-rose-400 text-white"
-                    : "bg-white/5 border-white/10 text-white hover:bg-white hover:text-rose-500"
-                )}
-              >
-                <Heart className={cn("h-4 w-4", favorites.includes(selectedAsset.id || selectedAsset.url) && "fill-current")} />
-              </button>
+              {!isShared && (
+                <>
+                  <button 
+                    onClick={(e) => handleToggleFavorite(e, selectedAsset)}
+                    className={cn(
+                      "h-10 w-10 rounded-full flex items-center justify-center transition-all border shadow-lg",
+                      favorites.includes(selectedAsset.id || selectedAsset.url)
+                        ? "bg-rose-500 border-rose-400 text-white"
+                        : "bg-white/5 border-white/10 text-white hover:bg-white hover:text-rose-500"
+                    )}
+                  >
+                    <Heart className={cn("h-4 w-4", favorites.includes(selectedAsset.id || selectedAsset.url) && "fill-current")} />
+                  </button>
 
-              {canEdit && (
-                <button 
-                  onClick={() => {
-                    setIsRequestingEdit(true);
-                    setIsDrawingMode(false);
-                  }}
-                  className="h-10 px-6 rounded-full bg-white/10 text-white text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-white hover:text-slate-900 transition-all border border-white/10"
-                >
-                  <PenTool className="h-3.5 w-3.5" />
-                  Request Edit
-                </button>
+                  {canEdit && (
+                    <button 
+                      onClick={() => {
+                        setIsRequestingEdit(true);
+                        setIsDrawingMode(false);
+                      }}
+                      className="h-10 px-6 rounded-full bg-white/10 text-white text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-white hover:text-slate-900 transition-all border border-white/10"
+                    >
+                      <PenTool className="h-3.5 w-3.5" />
+                      Request Edit
+                    </button>
+                  )}
+
+                  <button 
+                    onClick={() => setIsSocialCropperOpen(true)}
+                    className="h-10 px-6 rounded-full bg-primary text-white text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all shadow-lg shadow-primary/20"
+                  >
+                    <Crop className="h-3.5 w-3.5" />
+                    Social Cropper
+                  </button>
+                </>
               )}
-
-              <button 
-                onClick={() => setIsSocialCropperOpen(true)}
-                className="h-10 px-6 rounded-full bg-primary text-white text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all shadow-lg shadow-primary/20"
-              >
-                <Crop className="h-3.5 w-3.5" />
-                Social Cropper
-              </button>
               
               {canDownload && (
                 <button 
@@ -759,7 +812,7 @@ export function GalleryPublicViewer({
             <div className="relative group/main">
               <img 
                 ref={imgRef}
-                src={`${selectedAsset.url}&size=w1024h768`} 
+                src={`${getImageUrl(selectedAsset.url)}&size=w1024h768`} 
                 alt={selectedAsset.name}
                 onLoad={() => {
                   setIsAssetLoading(false);
@@ -811,7 +864,7 @@ export function GalleryPublicViewer({
           {/* Social Cropper Overlay - Still needs selectedAsset, but moved for cleaner hierarchy */}
           {isSocialCropperOpen && selectedAsset && (
             <SocialCropper 
-              imageUrl={`${selectedAsset.url}&size=w2048h1536`}
+              imageUrl={`${getImageUrl(selectedAsset.url)}&size=w2048h1536`}
               imageName={selectedAsset.name}
               onClose={() => setIsSocialCropperOpen(false)}
             />
@@ -972,7 +1025,7 @@ export function GalleryPublicViewer({
           {/* Drawing Mode Overlay - Rendered AFTER everything with top-tier Z-index */}
           {isDrawingMode && (
             <DrawingCanvas 
-              imageUrl={`${selectedAsset.url}&size=w2048h1536`}
+              imageUrl={`${getImageUrl(selectedAsset.url)}&size=w2048h1536`}
               onSave={(data) => {
                 setDrawingData(data);
                 setIsDrawingMode(false);
@@ -1250,6 +1303,21 @@ export function GalleryPublicViewer({
           shareUrl={typeof window !== 'undefined' ? window.location.href : ""}
           tenantName={tenant.name}
         />
+      )}
+
+      {/* Copied Toast */}
+      {showCopiedToast && (
+        <div className="fixed bottom-12 left-1/2 -translate-x-1/2 z-[150] animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="bg-slate-900/90 backdrop-blur-xl text-white px-6 py-4 rounded-[24px] shadow-2xl flex items-center gap-4 border border-white/10 min-w-[320px]">
+            <div className="h-10 w-10 rounded-xl bg-rose-500 flex items-center justify-center shadow-lg shadow-rose-500/20 shrink-0">
+              <Check className="h-5 w-5 text-white stroke-[3]" />
+            </div>
+            <div className="space-y-0.5">
+              <p className="text-[11px] font-black uppercase tracking-widest text-white/50">Success</p>
+              <p className="text-sm font-bold tracking-tight">Curated link copied to clipboard</p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

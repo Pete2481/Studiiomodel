@@ -126,7 +126,7 @@ export async function browseDropboxFolders(path: string = "") {
 export async function getGalleryAssets(galleryId: string) {
   try {
     // 1. Resolve tenant first via unscoped prisma to find context
-    const galleryInfo = await prisma.gallery.findUnique({
+    const galleryInfo = await prisma.gallery.findFirst({
       where: { id: galleryId, deletedAt: null },
       select: { tenantId: true }
     });

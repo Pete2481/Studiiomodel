@@ -5,11 +5,11 @@ import { formatDropboxUrl } from "@/lib/utils";
 import { auth } from "@/auth";
 import { getGalleryAssets } from "@/app/actions/dropbox";
 import { Suspense } from "react";
-import { Loader2, Camera, ImageIcon } from "lucide-react";
+import { Camera, ImageIcon } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
-export default async function PublicGalleryPage({
+export default async function SharedGalleryPage({
   params
 }: {
   params: Promise<{ galleryId: string }>
@@ -17,7 +17,7 @@ export default async function PublicGalleryPage({
   const { galleryId } = await params;
   const session = await auth();
 
-  // 1. Fetch core gallery data (Shell data)
+  // 1. Fetch core gallery data
   const gallery = await prisma.gallery.findFirst({
     where: { id: galleryId, deletedAt: null },
     include: {
@@ -75,7 +75,7 @@ export default async function PublicGalleryPage({
     notFound();
   }
 
-  // Serialize edit tags (handling Decimal)
+  // Serialize edit tags
   const serializedEditTags = gallery.tenant.editTags.map(tag => ({
     id: tag.id,
     name: tag.name,
@@ -136,9 +136,6 @@ export default async function PublicGalleryPage({
   );
 }
 
-/**
- * Instant Shell Placeholder
- */
 function GalleryShellPlaceholder({ gallery, tenant }: any) {
   return (
     <div className="flex flex-col min-h-screen">
@@ -196,9 +193,6 @@ function GalleryShellPlaceholder({ gallery, tenant }: any) {
   );
 }
 
-/**
- * Data Wrapper that performs the heavy Dropbox fetch
- */
 async function GalleryDataWrapper({ 
   galleryId, 
   serializedGallery, 
@@ -216,6 +210,7 @@ async function GalleryDataWrapper({
       editTags={serializedEditTags}
       user={serializedUser}
       initialAssets={initialAssets}
+      isShared={true}
     />
   );
 }

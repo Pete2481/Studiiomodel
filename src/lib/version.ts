@@ -1,2 +1,2 @@
-export const APP_VERSION = "2056"; 
-// Force new build for v2.0.56
+export const APP_VERSION = "2054"; 
+// Force new build for v2.0.54

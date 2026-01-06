@@ -23,7 +23,12 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const path = searchParams.get("path");
     const sharedLink = searchParams.get("sharedLink");
+    const isSharedRequest = searchParams.get("shared") === "true";
     const size = searchParams.get("size") || "w640h480";
+
+    if (isSharedRequest) {
+      console.log(`[PROXY] Allowing shared request for gallery: ${galleryId}, path: ${path}`);
+    }
 
     if (!path) {
       return new NextResponse("Path is required", { status: 400 });
@@ -40,7 +45,7 @@ export async function GET(
     const thumbnailSize = validSizes.includes(size) ? size : "w640h480";
 
     // 3. Resolve Gallery & Permissions
-    const gallery = await prisma.gallery.findUnique({
+    const gallery = await prisma.gallery.findFirst({
       where: { id: galleryId, deletedAt: null },
       include: { tenant: true }
     });
@@ -53,18 +58,19 @@ export async function GET(
     const isStaff = session?.user?.role === "TENANT_ADMIN" || session?.user?.role === "TEAM_MEMBER";
     const isOwner = session?.user?.clientId === gallery.clientId;
     
-    // SECURITY: Public access only for READY/DELIVERED
-    if (gallery.status === "DRAFT" && !isStaff) {
+    // SECURITY: Public access only for READY/DELIVERED (unless it's a shared curated link)
+    if (gallery.status === "DRAFT" && !isStaff && !isSharedRequest) {
       return new NextResponse("Gallery not published", { status: 403 });
     }
 
-    // SECURITY: Locked galleries only for staff/owner
-    if (gallery.isLocked && !isStaff && !isOwner) {
+    // SECURITY: Locked galleries only for staff/owner/shared links
+    if (gallery.isLocked && !isStaff && !isOwner && !isSharedRequest) {
+      console.warn(`[PROXY] Blocked access to locked gallery: ${galleryId} (Not staff/owner/shared)`);
       return new NextResponse("Gallery Locked", { status: 403 });
     }
 
     // SECURITY: Path verification
-    if (!sharedLink) {
+    if (!sharedLink && !isSharedRequest) {
       const metadata = gallery.metadata as any;
       const allowedFolders = metadata?.imageFolders || [];
       const isPathAllowed = allowedFolders.some((f: any) => path.toLowerCase().startsWith(f.path.toLowerCase()));
@@ -75,7 +81,9 @@ export async function GET(
       }
     }
 
+    // 4. Resolve Dropbox Token & Fetch
     if (!gallery.tenant?.dropboxAccessToken) {
+      console.error(`[PROXY] Dropbox not connected for tenant: ${gallery.tenantId}`);
       return new NextResponse("Dropbox not connected", { status: 404 });
     }
 

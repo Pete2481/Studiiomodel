@@ -131,7 +131,7 @@ export async function notifyGalleryClient(galleryId: string) {
 export async function toggleFavorite(galleryId: string, imageId: string, imagePath: string) {
   try {
     // 1. Resolve tenant first
-    const gallery = await prisma.gallery.findUnique({
+    const gallery = await prisma.gallery.findFirst({
       where: { id: galleryId, deletedAt: null },
       select: { tenantId: true, status: true }
     });

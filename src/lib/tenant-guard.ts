@@ -69,7 +69,7 @@ function createScopedPrisma(tenantId: string) {
             const castArgs = args as any;
 
             // READ OPERATIONS
-            if (['findMany', 'findFirst', 'findUnique', 'count', 'aggregate', 'groupBy'].includes(operation)) {
+            if (['findMany', 'findFirst', 'count', 'aggregate', 'groupBy'].includes(operation)) {
               castArgs.where = { ...castArgs.where, tenantId };
             }
 
