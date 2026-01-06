@@ -6,8 +6,51 @@ import { auth } from "@/auth";
 import { getGalleryAssets } from "@/app/actions/dropbox";
 import { Suspense } from "react";
 import { Loader2, Camera, ImageIcon } from "lucide-react";
+import { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Generate Dynamic Social Preview (Open Graph)
+ */
+export async function generateMetadata({ 
+  params 
+}: { 
+  params: Promise<{ galleryId: string }> 
+}): Promise<Metadata> {
+  const { galleryId } = await params;
+  
+  const gallery = await prisma.gallery.findFirst({
+    where: { id: galleryId, deletedAt: null },
+    include: { 
+      tenant: true,
+      property: true 
+    }
+  });
+
+  if (!gallery) return { title: "Gallery Not Found" };
+
+  const title = gallery.title;
+  const description = `Production Gallery by ${gallery.tenant.name}`;
+  const imageUrl = gallery.bannerImageUrl ? formatDropboxUrl(gallery.bannerImageUrl) : null;
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      images: imageUrl ? [{ url: imageUrl }] : [],
+      type: 'website',
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+      images: imageUrl ? [imageUrl] : [],
+    },
+  };
+}
 
 export default async function PublicGalleryPage({
   params
