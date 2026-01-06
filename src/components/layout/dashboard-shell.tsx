@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { ReactNode, useState, useEffect, useMemo } from "react";
+import { ReactNode, useState, useEffect, useMemo, Suspense } from "react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { NavSection } from "@/lib/nav-config";
@@ -112,7 +112,9 @@ interface DashboardShellProps {
 export function DashboardShell(props: DashboardShellProps) {
   return (
     <DashboardProvider>
-      <ProgressBar />
+      <Suspense fallback={null}>
+        <ProgressBar />
+      </Suspense>
       <NavigationPrefetcher />
       <GuideProvider>
         <DashboardShellContent {...props} />
