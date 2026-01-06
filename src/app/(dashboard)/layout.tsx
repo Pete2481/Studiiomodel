@@ -1,9 +1,9 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { checkSubscriptionStatus } from "@/lib/tenant-guard";
-import { getNavCounts } from "@/lib/nav-utils";
 import { prisma } from "@/lib/prisma";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
+import { SidebarSkeleton } from "@/components/layout/sidebar-skeleton";
 import { Suspense } from "react";
 
 export default async function DashboardLayout({
@@ -55,16 +55,14 @@ async function ShellDataWrapper({
 }) {
   // 1. Fetch Shared Shell Data (Parallel)
   let tenant = null;
-  let navCounts = { bookings: 0, galleries: 0, edits: 0 };
   let isSubscribed = true; // Default to true to not lock UI while loading
 
   try {
-    [tenant, navCounts, isSubscribed] = await Promise.all([
+    [tenant, isSubscribed] = await Promise.all([
       prisma.tenant.findUnique({
         where: { id: tenantId },
         select: { id: true, name: true, logoUrl: true, brandColor: true, slug: true }
       }),
-      getNavCounts(tenantId, sessionUser.id, sessionUser.role, sessionUser.agentId, sessionUser.clientId, sessionUser.permissions),
       checkSubscriptionStatus(tenantId)
     ]);
   } catch (error) {
@@ -79,7 +77,6 @@ async function ShellDataWrapper({
       logoUrl={tenant?.logoUrl || undefined}
       brandColor={tenant?.brandColor || undefined}
       isActionLocked={!isSubscribed}
-      navCounts={navCounts}
     >
       {children}
     </DashboardShell>
@@ -89,19 +86,30 @@ async function ShellDataWrapper({
 // This is what the user sees for the first 100ms while the DB is hit
 function DashboardShellPlaceholder({ user }: { user: any }) {
   return (
-    <DashboardShell 
-      user={user}
-      workspaceName="Loading..."
-      navCounts={{ bookings: 0, galleries: 0, edits: 0 }}
-    >
-      <div className="animate-pulse space-y-8">
-        <div className="h-32 w-full bg-slate-100 rounded-[32px]" />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="h-40 bg-slate-100 rounded-[32px]" />
-          <div className="h-40 bg-slate-100 rounded-[32px]" />
-          <div className="h-40 bg-slate-100 rounded-[32px]" />
+    <div className="flex min-h-screen bg-slate-50">
+      {/* Ghost Sidebar */}
+      <aside className="w-24 lg:w-72 border-r border-slate-200 bg-white hidden lg:block">
+        <SidebarSkeleton isCollapsed={false} />
+      </aside>
+      
+      {/* Ghost Main Content */}
+      <main className="flex-1 min-w-0">
+        <header className="h-20 bg-white/80 border-b border-slate-200 px-10 flex items-center justify-between backdrop-blur-md">
+          <div className="h-6 w-48 bg-slate-100 rounded animate-pulse" />
+          <div className="flex gap-4">
+            <div className="h-10 w-32 bg-slate-100 rounded-xl animate-pulse" />
+            <div className="h-10 w-10 bg-slate-100 rounded-full animate-pulse" />
+          </div>
+        </header>
+        <div className="p-10 max-w-[1600px] mx-auto space-y-12">
+          <div className="h-32 w-full bg-slate-100 rounded-[40px] animate-pulse" />
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-40 bg-slate-100 rounded-[40px] animate-pulse" />
+            ))}
+          </div>
         </div>
-      </div>
-    </DashboardShell>
+      </main>
+    </div>
   );
 }
