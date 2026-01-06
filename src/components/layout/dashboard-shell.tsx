@@ -29,10 +29,13 @@ import {
   UserPlus,
   Menu,
   ChevronLeft,
-  ChevronRight,
-  Link as LinkIcon,
-  Copy,
-  Check
+  ChevronRight, 
+  Link as LinkIcon, 
+  Copy, 
+  Check, 
+  TrendingUp, 
+  LayoutDashboard as DashboardIcon, 
+  Activity
 } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 import { permissionService } from "@/lib/permission-service";
@@ -70,9 +73,11 @@ const IconMap: Record<string, any> = {
   Wrench,
   Camera,
   Scissors,
-  Settings,
-  Plus,
-  ChartColumn
+  Settings, 
+  Plus, 
+  ChartColumn, 
+  TrendingUp, 
+  Activity
 };
 
 interface DashboardShellProps {
@@ -177,41 +182,36 @@ function DashboardShellContent({
   }, [activeModal]);
 
   // Use provided user info or fall back to session
-  const user = useMemo(() => providedUser || {
-    name: session?.user?.name || "User",
-    role: (session?.user as any)?.role || "CLIENT",
-    clientId: (session?.user as any)?.clientId || null,
-    agentId: (session?.user as any)?.agentId || null,
-    initials: session?.user?.name?.split(' ').map(n => n[0]).join('') || "U",
-    avatarUrl: session?.user?.image || null,
-    permissions: (session?.user as any)?.permissions || {}
-  }, [providedUser, session]);
+  const user = useMemo(() => {
+    const sessionUser = session?.user as any;
+    return providedUser || {
+      name: sessionUser?.name || "User",
+      role: sessionUser?.role || "CLIENT",
+      clientId: sessionUser?.clientId || null,
+      agentId: sessionUser?.agentId || null,
+      initials: sessionUser?.name?.split(' ').map((n: string) => n[0]).join('') || "U",
+      avatarUrl: sessionUser?.image || null,
+      permissions: sessionUser?.permissions || {}
+    };
+  }, [providedUser, session?.user?.name, session?.user?.role, session?.user?.image]);
 
   const finalSlug = workspaceSlug || (session?.user as any)?.tenantSlug;
 
-  const showFinancials = user.role === "TENANT_ADMIN" || user.role === "ADMIN" || user.role === "ACCOUNTS";
-  const isRestrictedRole = !showFinancials && user.role !== "CLIENT" && user.role !== "AGENT";
-
-  useEffect(() => {
-    // Only show "See All" if the agent has the permission
-    if (user.role === "AGENT" && user.permissions?.seeAll) {
-      // In a real app, you might sync this with localStorage or a user setting
-    }
-  }, [user.role, user.permissions?.seeAll]);
-
-  // Use provided nav or fall back to global config
-  const baseNav = providedNavSections || UNIFIED_NAV_CONFIG;
+  const showFinancials = useMemo(() => user.role === "TENANT_ADMIN" || user.role === "ADMIN" || user.role === "ACCOUNTS", [user.role]);
+  const isRestrictedRole = useMemo(() => !showFinancials && user.role !== "CLIENT" && user.role !== "AGENT", [showFinancials, user.role]);
 
   const filteredNav = useMemo(() => {
+    if (providedNavSections) return providedNavSections;
+    
     return permissionService.getFilteredNav(
       { 
         role: user.role as any, 
         isMasterMode, 
         permissions: user.permissions
       },
-      baseNav
+      UNIFIED_NAV_CONFIG
     );
-  }, [user.role, user.permissions, isMasterMode, baseNav]);
+  }, [user.role, user.permissions, isMasterMode, providedNavSections]);
 
   useEffect(() => {
     setMounted(true);
@@ -272,6 +272,69 @@ function DashboardShellContent({
       setIsSubmitting(false);
     }
   }
+
+  const sidebarContent = useMemo(() => {
+    return filteredNav.map((section: any, idx: number) => (
+      <div key={section.heading || idx} className="flex flex-col gap-3">
+        {section.heading && !isSidebarCollapsed && (
+          <p className="px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 animate-in fade-in">
+            {section.heading}
+          </p>
+        )}
+        <div className="flex flex-col gap-1">
+          {section.items.map((item: any) => {
+            const Icon = IconMap[item.icon] || HelpCircle;
+            const isActive = pathname === item.href;
+            const count = navCounts[item.module as keyof typeof navCounts];
+            
+            return (
+              <Hint 
+                key={item.href} 
+                title={item.label} 
+                content={`Navigate to ${item.label}`}
+                position="right"
+              >
+                <Link
+                  href={item.href}
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={cn(
+                    "group flex items-center rounded-xl px-3 py-2.5 text-[13px] font-semibold transition-all duration-200",
+                    isActive 
+                      ? "bg-primary text-white shadow-lg" 
+                      : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
+                    isSidebarCollapsed ? "lg:justify-center lg:px-0 lg:w-12 lg:h-12 lg:mx-auto" : "justify-between"
+                  )}
+                  style={isActive ? { boxShadow: `0 10px 15px -3px var(--primary-soft)` } : {}}
+                >
+                  <span className={cn("flex items-center gap-3", isSidebarCollapsed && "lg:gap-0")}>
+                    <span className={cn(
+                      "flex h-8 w-8 flex-none items-center justify-center rounded-full transition-colors relative",
+                      isActive ? "bg-white/20 text-white" : "bg-slate-50 group-hover:bg-primary group-hover:text-white"
+                    )}>
+                      <Icon className="h-4 w-4" />
+                      {isSidebarCollapsed && count && count > 0 && (
+                        <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white ring-2 ring-white">
+                          {count > 9 ? '9+' : count}
+                        </span>
+                      )}
+                    </span>
+                    {!isSidebarCollapsed && <span className="animate-in fade-in">{item.label}</span>}
+                  </span>
+                  {!isSidebarCollapsed && count && count > 0 && (
+                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white shadow-sm ring-2 ring-white animate-in zoom-in">
+                      {count}
+                    </span>
+                  )}
+                </Link>
+              </Hint>
+            );
+          })}
+        </div>
+      </div>
+    ));
+  }, [filteredNav, isSidebarCollapsed, pathname, navCounts, setIsMobileMenuOpen]);
+
+  const memoizedChildren = useMemo(() => children, [children]);
 
   return (
     <div className="flex min-h-screen bg-slate-50 overflow-x-hidden">
@@ -510,64 +573,7 @@ function DashboardShellContent({
         </div>
 
         <nav className="flex-1 flex flex-col gap-10 overflow-y-auto px-6 pr-2 scrollbar-hide">
-          {filteredNav.map((section: any, idx: number) => (
-            <div key={section.heading || idx} className="flex flex-col gap-3">
-              {section.heading && !isSidebarCollapsed && (
-                <p className="px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 animate-in fade-in">
-                  {section.heading}
-                </p>
-              )}
-              <div className="flex flex-col gap-1">
-                {section.items.map((item: any) => {
-                  const Icon = IconMap[item.icon] || HelpCircle;
-                  const isActive = pathname === item.href;
-                  const count = navCounts[item.module as keyof typeof navCounts];
-                  
-                    return (
-                      <Hint 
-                        key={item.href} 
-                        title={item.label} 
-                        content={`Navigate to ${item.label}`}
-                        position="right"
-                      >
-                        <Link
-                          href={item.href}
-                          onClick={() => setIsMobileMenuOpen(false)}
-                          className={cn(
-                            "group flex items-center rounded-xl px-3 py-2.5 text-[13px] font-semibold transition-all duration-200",
-                            isActive 
-                              ? "bg-primary text-white shadow-lg" 
-                              : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
-                            isSidebarCollapsed ? "lg:justify-center lg:px-0 lg:w-12 lg:h-12 lg:mx-auto" : "justify-between"
-                          )}
-                          style={isActive ? { boxShadow: `0 10px 15px -3px var(--primary-soft)` } : {}}
-                        >
-                          <span className={cn("flex items-center gap-3", isSidebarCollapsed && "lg:gap-0")}>
-                            <span className={cn(
-                              "flex h-8 w-8 flex-none items-center justify-center rounded-full transition-colors relative",
-                              isActive ? "bg-white/20 text-white" : "bg-slate-50 group-hover:bg-primary group-hover:text-white"
-                            )}>
-                              <Icon className="h-4 w-4" />
-                              {isSidebarCollapsed && count && count > 0 && (
-                                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white ring-2 ring-white">
-                                  {count > 9 ? '9+' : count}
-                                </span>
-                              )}
-                            </span>
-                            {!isSidebarCollapsed && <span className="animate-in fade-in">{item.label}</span>}
-                          </span>
-                          {!isSidebarCollapsed && count && count > 0 && (
-                            <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white shadow-sm ring-2 ring-white animate-in zoom-in">
-                              {count}
-                            </span>
-                          )}
-                        </Link>
-                      </Hint>
-                    );
-                })}
-              </div>
-            </div>
-          ))}
+          {sidebarContent}
         </nav>
 
         {/* Sidebar Footer */}
@@ -743,7 +749,7 @@ function DashboardShellContent({
         </header>
 
         <div className="px-4 md:px-10 py-6 md:py-10 max-w-[1600px] mx-auto w-full overflow-x-hidden">
-          {children}
+          {memoizedChildren}
         </div>
 
         {user.role === "TENANT_ADMIN" && !isMasterMode && (

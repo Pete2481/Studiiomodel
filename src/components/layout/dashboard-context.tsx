@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, ReactNode } from "react";
+import React, { createContext, useContext, useState, ReactNode, useMemo } from "react";
 
 interface DashboardContextType {
   activeModal: string | null;
@@ -24,7 +24,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   const [title, setTitle] = useState("Dashboard");
   const [subtitle, setSubtitle] = useState("Welcome to your studio.");
 
-  const value = {
+  const value = useMemo(() => ({
     activeModal,
     setActiveModal,
     isSidebarCollapsed,
@@ -35,7 +35,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     setTitle,
     subtitle,
     setSubtitle,
-  };
+  }), [activeModal, isSidebarCollapsed, isMobileMenuOpen, title, subtitle]);
 
   return (
     <DashboardContext.Provider value={value}>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useMemo } from "react";
 
 interface GuideContextType {
   showHints: boolean;
@@ -26,8 +26,14 @@ export function GuideProvider({ children }: { children: React.ReactNode }) {
 
   const toggleHints = () => handleSetShowHints(!showHints);
 
+  const value = useMemo(() => ({ 
+    showHints, 
+    setShowHints: handleSetShowHints, 
+    toggleHints 
+  }), [showHints]);
+
   return (
-    <GuideContext.Provider value={{ showHints, setShowHints: handleSetShowHints, toggleHints }}>
+    <GuideContext.Provider value={value}>
       {children}
     </GuideContext.Provider>
   );
