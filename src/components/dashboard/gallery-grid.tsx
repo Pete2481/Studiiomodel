@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { formatDropboxUrl } from "@/lib/utils";
 
 // Local type - no mock data dependency
 export type GallerySummary = {
