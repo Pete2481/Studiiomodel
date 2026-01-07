@@ -11,19 +11,19 @@ export function cn(...inputs: ClassValue[]) {
  */
 export function formatDropboxUrl(url: string) {
   if (!url) return url;
-  if (url.includes("dropbox.com")) {
-    // Handle both ?dl=0 and &dl=0
-    if (url.includes("dl=0")) {
-      return url.replace("dl=0", "raw=1");
+  
+  if (url.includes("dropbox.com") || url.includes("dropboxusercontent.com")) {
+    let directUrl = url
+      .replace("www.dropbox.com", "dl.dropboxusercontent.com")
+      .replace("dl.dropbox.com", "dl.dropboxusercontent.com")
+      .replace("dl=0", "raw=1");
+
+    if (!directUrl.includes("?")) {
+      directUrl += "?raw=1";
+    } else if (!directUrl.includes("dl=") && !directUrl.includes("raw=")) {
+      directUrl += "&raw=1";
     }
-    // If no query string at all, add it
-    if (!url.includes("?")) {
-      return `${url}?raw=1`;
-    }
-    // If has query but no dl/raw parameter, append it
-    if (!url.includes("dl=") && !url.includes("raw=")) {
-      return `${url}&raw=1`;
-    }
+    return directUrl;
   }
   return url;
 }

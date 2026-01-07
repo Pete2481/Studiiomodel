@@ -62,7 +62,6 @@ export async function upsertService(data: any) {
     }
 
     revalidatePath("/tenant/services");
-    revalidatePath("/mobile/services");
     return { success: true };
   } catch (error: any) {
     console.error("UPSERT SERVICE ERROR:", error);
@@ -101,7 +100,6 @@ export async function toggleServiceFavorite(id: string, isFavorite: boolean) {
     });
 
     revalidatePath("/tenant/services");
-    revalidatePath("/mobile/services");
     revalidatePath("/tenant/bookings");
     return { success: true };
   } catch (error: any) {
@@ -133,7 +131,6 @@ export async function deleteService(id: string) {
     });
 
     revalidatePath("/tenant/services");
-    revalidatePath("/mobile/services");
     return { success: true };
   } catch (error: any) {
     console.error("DELETE SERVICE ERROR:", error);
@@ -186,7 +183,6 @@ export async function importServicesCsv(formData: FormData) {
     }
 
     revalidatePath("/tenant/services");
-    revalidatePath("/mobile/services");
     return { success: true, count };
   } catch (error: any) {
     console.error("CSV IMPORT ERROR:", error);

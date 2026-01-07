@@ -12,13 +12,6 @@ export default function TenantError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  const pathname = usePathname();
-  const isMobile = pathname?.startsWith("/mobile");
-
-  useEffect(() => {
-    console.error("Dashboard Error:", error);
-  }, [error]);
-
   return (
     <div className="p-8 h-[calc(100vh-100px)] flex items-center justify-center">
       <div className="max-w-md w-full text-center space-y-8 animate-in zoom-in duration-300">
@@ -53,11 +46,11 @@ export default function TenantError({
           </button>
           
           <Link
-            href={isMobile ? "/mobile" : "/tenant/calendar"}
+            href="/tenant/calendar"
             className="h-14 rounded-2xl bg-white border border-slate-200 text-slate-600 font-bold flex items-center justify-center gap-2 hover:bg-slate-50 transition-all"
           >
             <LayoutDashboard className="h-4 w-4" />
-            {isMobile ? "Back to App Home" : "Back to Calendar"}
+            Back to Calendar
           </Link>
         </div>
 

@@ -88,7 +88,6 @@ export async function createInvoiceFromGallery(galleryId: string) {
 
     revalidatePath("/tenant/galleries");
     revalidatePath("/tenant/invoices");
-    revalidatePath("/mobile/invoices");
     return { success: true, invoiceId: invoice.id };
   } catch (error: any) {
     console.error("AUTO-INVOICE ERROR:", error);
@@ -177,7 +176,6 @@ export async function createInvoiceFromEditRequests(galleryId: string) {
 
     revalidatePath("/tenant/edits");
     revalidatePath("/tenant/invoices");
-    revalidatePath("/mobile/invoices");
     return { success: true, invoiceId: invoice.id };
   } catch (error: any) {
     console.error("EDIT-REQUEST-INVOICE ERROR:", error);
@@ -327,10 +325,8 @@ export async function upsertInvoice(data: any) {
     }
 
     revalidatePath("/tenant/invoices");
-    revalidatePath("/mobile/invoices");
     if (data.galleryId) {
       revalidatePath("/tenant/galleries");
-      revalidatePath("/mobile/galleries");
     }
     
     return { success: true };
@@ -361,7 +357,6 @@ export async function deleteInvoice(id: string) {
     });
 
     revalidatePath("/tenant/invoices");
-    revalidatePath("/mobile/invoices");
     return { success: true };
   } catch (error: any) {
     console.error("DELETE-INVOICE ERROR:", error);
@@ -400,7 +395,6 @@ export async function updateInvoiceStatus(id: string, status: string) {
     }
 
     revalidatePath("/tenant/invoices");
-    revalidatePath("/mobile/invoices");
     return { success: true };
   } catch (error: any) {
     console.error("UPDATE-INVOICE-STATUS ERROR:", error);

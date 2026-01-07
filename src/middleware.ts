@@ -24,12 +24,6 @@ export default auth((req) => {
   const user = req.auth?.user as any;
   const path = req.nextUrl.pathname;
 
-  // 1. Mobile App Routing (Clients) - DISABLED REDIRECT to allow Web Dashboard access
-  if (user?.role === "CLIENT") {
-    // We used to redirect clients to /mobile here, but now they can use the full Web Dashboard
-    return;
-  }
-
   // 2. Restricted Role Routing (Editors/Team Members)
   if (user?.role === "EDITOR" || user?.role === "TEAM_MEMBER") {
     const allowedPaths = ["/tenant/edits", "/api", "/login", "/logout"];

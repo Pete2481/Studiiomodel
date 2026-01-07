@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'Studiio',
     short_name: 'Studiio',
     description: 'Boutique photography management for agencies.',
-    start_url: '/mobile',
+    start_url: '/',
     display: 'standalone',
     display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
     background_color: '#ffffff',

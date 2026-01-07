@@ -8,8 +8,6 @@ import { usePathname, useRouter } from "next/navigation";
 export default function NotFound() {
   const router = useRouter();
   const pathname = usePathname();
-  const isMobile = pathname?.startsWith("/mobile");
-
   return (
     <div className="min-h-screen bg-white flex items-center justify-center p-6">
       <div className="max-w-xl w-full text-center space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -43,11 +41,11 @@ export default function NotFound() {
           </button>
           
           <Link
-            href={isMobile ? "/mobile" : "/"}
+            href="/"
             className="h-16 px-10 rounded-full bg-primary text-white font-black uppercase tracking-widest text-[10px] flex items-center gap-3 shadow-xl shadow-primary/20 hover:opacity-90 transition-all active:scale-95"
           >
             <Home className="h-4 w-4" />
-            {isMobile ? "App Home" : "Dashboard"}
+            Dashboard
           </Link>
         </div>
 

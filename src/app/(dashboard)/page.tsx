@@ -154,7 +154,11 @@ async function GalleriesWrapper({ tenantId, galleryWhere, user }: any) {
       include: { 
         client: { select: { id: true, name: true, businessName: true } }, 
         property: { select: { id: true, name: true } }, 
-        media: { select: { thumbnailUrl: true, url: true }, take: 10 }, 
+        media: {
+          take: 1, // Fetch only the first media item as a fallback for the cover
+          orderBy: { createdAt: 'asc' },
+          select: { url: true, thumbnailUrl: true }
+        }, 
         services: { include: { service: { select: { id: true, name: true, price: true } } } }, 
         favorites: { select: { id: true } }, 
         booking: { include: { assignments: { include: { teamMember: { select: { displayName: true } } } } } } 
@@ -183,8 +187,8 @@ async function GalleriesWrapper({ tenantId, galleryWhere, user }: any) {
   ]);
 
   const galleries = dbGalleries.map(g => {
-    const galleryMedia = g.media.map(m => formatDropboxUrl(String(m.thumbnailUrl || m.url)));
     const bannerUrl = g.bannerImageUrl ? formatDropboxUrl(g.bannerImageUrl) : null;
+    const firstMediaUrl = g.media[0] ? formatDropboxUrl(String(g.media[0].thumbnailUrl || g.media[0].url)) : null;
     const safeMetadata = g.metadata ? JSON.parse(JSON.stringify(g.metadata)) : {};
 
     return {
@@ -205,8 +209,7 @@ async function GalleriesWrapper({ tenantId, galleryWhere, user }: any) {
       videoCount: Number(safeMetadata.videoLinks?.length || 0), 
       favoriteCount: Number(g.favorites.length), 
       photographers: g.booking?.assignments?.map(a => String(a.teamMember.displayName)).join(", ") || "No team assigned",
-      cover: bannerUrl || galleryMedia[0] || "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80",
-      allMedia: [bannerUrl, ...galleryMedia].filter(Boolean) as string[]
+      cover: bannerUrl || firstMediaUrl || "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80",
     };
   });
 

@@ -242,7 +242,6 @@ export async function upsertTeamMember(data: any) {
     }
 
     revalidatePath("/tenant/photographers");
-    revalidatePath("/mobile/team");
     revalidatePath("/");
     
     // Notifications
@@ -302,7 +301,6 @@ export async function deleteTeamMember(id: string) {
     }
 
     revalidatePath("/tenant/photographers");
-    revalidatePath("/mobile/team");
     return { success: true };
   } catch (error: any) {
     console.error("DELETE TEAM MEMBER ERROR:", error);
@@ -340,7 +338,6 @@ export async function joinTeamAction() {
     });
 
     revalidatePath("/tenant/photographers");
-    revalidatePath("/mobile/team");
     return { success: true, memberId: member.id };
   } catch (error: any) {
     console.error("JOIN TEAM ERROR:", error);

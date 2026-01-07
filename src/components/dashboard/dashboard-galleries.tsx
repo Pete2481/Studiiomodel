@@ -9,6 +9,7 @@ import { deleteGallery, notifyGalleryClient, updateGalleryStatus } from "@/app/a
 import Link from "next/link";
 import { Hint } from "@/components/ui";
 import { Bell } from "lucide-react";
+import Image from "next/image";
 
 interface DashboardGalleriesProps {
   initialGalleries: any[];
@@ -19,8 +20,6 @@ interface DashboardGalleriesProps {
   user: any;
   isActionLocked?: boolean;
 }
-
-import { AutoFadeCover } from "../ui/auto-fade-cover";
 
 export function DashboardGalleries({ 
   initialGalleries, 
@@ -130,19 +129,14 @@ export function DashboardGalleries({
           <div key={gallery.id} className="group relative flex flex-col overflow-hidden rounded-[32px] border border-slate-200 bg-white transition-all hover:shadow-xl hover:shadow-slate-200/50">
             {/* Cover Image */}
             <div className="aspect-[4/3] overflow-hidden relative bg-slate-100">
-              {idx === 0 ? (
-                <AutoFadeCover 
-                  images={gallery.allMedia || [gallery.cover]} 
-                  title={gallery.title} 
-                  fallback={gallery.cover} 
-                />
-              ) : (
-                <img 
-                  src={gallery.cover} 
-                  alt={gallery.title} 
-                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
-                />
-              )}
+              <Image 
+                src={gallery.cover} 
+                alt={gallery.title} 
+                fill
+                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
+                className="object-cover transition-transform duration-500 group-hover:scale-110"
+                priority={idx < 4}
+              />
               <div className="absolute inset-0 bg-slate-900/0 group-hover:bg-slate-900/40 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
                 <div className="flex gap-2">
                   <Link 

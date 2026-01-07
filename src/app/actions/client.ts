@@ -153,7 +153,6 @@ export async function upsertClient(data: any, skipNotification = false) {
     }
 
     revalidatePath("/tenant/clients");
-    revalidatePath("/mobile/clients");
 
     // Notifications
     try {
@@ -277,7 +276,6 @@ export async function importClientsCsv(formData: FormData) {
     }
 
     revalidatePath("/tenant/clients");
-    revalidatePath("/mobile/clients");
     return { success: true, count };
   } catch (error: any) {
     console.error("CLIENT CSV IMPORT ERROR:", error);

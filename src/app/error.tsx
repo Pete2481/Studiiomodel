@@ -12,14 +12,6 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  const pathname = usePathname();
-  const isMobile = pathname?.startsWith("/mobile");
-
-  useEffect(() => {
-    // Log the error to an error reporting service
-    console.error("Global Error Boundary caught:", error);
-  }, [error]);
-
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
       <div className="max-w-xl w-full bg-white rounded-[48px] shadow-2xl shadow-slate-200/50 border border-slate-100 overflow-hidden animate-in zoom-in duration-500">
@@ -61,7 +53,7 @@ export default function GlobalError({
 
             <div className="grid grid-cols-2 gap-4">
               <Link
-                href={isMobile ? "/mobile" : "/"}
+                href="/"
                 className="h-14 rounded-full bg-white border border-slate-100 text-slate-600 font-bold flex items-center justify-center gap-2 hover:bg-slate-50 transition-all active:scale-95"
               >
                 <Home className="h-4 w-4" />
