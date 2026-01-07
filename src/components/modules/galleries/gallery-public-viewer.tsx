@@ -541,7 +541,7 @@ export function GalleryPublicViewer({
               </button>
             </div>
           ) : (
-            <div className="columns-1 sm:columns-2 lg:columns-3 gap-8 space-y-8">
+            <div className="columns-1 sm:columns-2 lg:columns-3 gap-8">
               {combinedMedia.map((item: any, idx: number) => (
                 <div 
                   key={item.id || idx} 
@@ -1369,7 +1369,7 @@ function ProgressiveImage({ src, alt, className }: { src: string, alt: string, c
   useEffect(() => {
     // Start loading the medium-res version immediately
     const highRes = new Image();
-    highRes.src = `${src}${src.includes('?') ? '&' : '?'}size=w640h480`;
+    highRes.src = `${src}${src.includes('?') ? '&' : '?'}size=w480h320`;
     highRes.onload = () => {
       setCurrentSrc(highRes.src);
       setIsHighResLoaded(true);
@@ -1377,20 +1377,20 @@ function ProgressiveImage({ src, alt, className }: { src: string, alt: string, c
   }, [src]);
 
   return (
-    <div className="relative w-full overflow-hidden rounded-[32px]">
+    <div className="relative w-full overflow-hidden rounded-[32px] bg-slate-50 min-h-[250px] flex items-center justify-center">
       <img 
         src={currentSrc} 
         alt={alt}
         className={cn(
           className,
-          "transition-all duration-700",
-          !isHighResLoaded ? "blur-xl scale-110" : "blur-0 scale-100"
+          "transition-all duration-700 w-full",
+          !isHighResLoaded ? "blur-xl scale-110 opacity-50" : "blur-0 scale-100 opacity-100"
         )}
         loading="lazy"
       />
       {!isHighResLoaded && (
         <div className="absolute inset-0 flex items-center justify-center">
-          <Loader2 className="h-4 w-4 animate-spin text-white/20" />
+          <Loader2 className="h-5 w-5 animate-spin text-slate-200" />
         </div>
       )}
     </div>
