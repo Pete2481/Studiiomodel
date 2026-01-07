@@ -545,7 +545,7 @@ export function GalleryPublicViewer({
               {combinedMedia.map((item: any, idx: number) => (
                 <div 
                   key={item.id || idx} 
-                  className="break-inside-avoid relative rounded-[24px] overflow-hidden bg-slate-50 cursor-zoom-in border border-slate-100 group transition-all duration-500 hover:shadow-2xl hover:shadow-slate-200 mb-8"
+                  className="break-inside-avoid relative rounded-[32px] overflow-hidden bg-slate-50 cursor-zoom-in border border-slate-100 group transition-all duration-500 hover:shadow-2xl hover:shadow-slate-200 mb-8"
                   onClick={() => {
                     if (item.type === "video") {
                       setPlayingVideoId(item.id || item.url);
@@ -576,7 +576,7 @@ export function GalleryPublicViewer({
                       </div>
                     ) : (
                       <div 
-                        className="h-full w-full bg-slate-900 flex items-center justify-center relative group/vid aspect-video"
+                        className="h-full w-full bg-slate-900 flex items-center justify-center relative group/vid aspect-video rounded-[32px] overflow-hidden"
                       >
                         <div className="absolute inset-0 bg-primary/10 pointer-events-none z-10" />
                         
@@ -1377,7 +1377,7 @@ function ProgressiveImage({ src, alt, className }: { src: string, alt: string, c
   }, [src]);
 
   return (
-    <div className="relative w-full overflow-hidden">
+    <div className="relative w-full overflow-hidden rounded-[32px]">
       <img 
         src={currentSrc} 
         alt={alt}

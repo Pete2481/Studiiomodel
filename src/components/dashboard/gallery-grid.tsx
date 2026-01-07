@@ -93,10 +93,10 @@ export function GalleryGrid({ galleries, onEdit, editingGalleryId }: GalleryGrid
         {paginatedGalleries.map((gallery) => (
           <article
             key={gallery.id}
-            className="group relative overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-xl"
+            className="group relative overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-xl"
           >
             <div
-              className="relative w-full overflow-hidden rounded-t-[28px] bg-slate-100"
+              className="relative w-full overflow-hidden rounded-t-[32px] bg-slate-100"
               style={{ aspectRatio: "4 / 3" }}
             >
               {gallery.coverImageUrl && gallery.coverImageUrl.length > 0 ? (
