@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Plus, Search, Filter, Image as ImageIcon, Video, MoreHorizontal, ExternalLink, Settings, Trash2, ArrowRight, Heart, Lock, ShieldCheck, ChevronDown, Loader2 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatDropboxUrl } from "@/lib/utils";
 import { GalleryDrawer } from "../modules/galleries/gallery-drawer";
 import { GalleryStatusDropdown } from "../modules/galleries/gallery-status-dropdown";
 import { deleteGallery, notifyGalleryClient, updateGalleryStatus } from "@/app/actions/gallery";
@@ -129,14 +129,25 @@ export function DashboardGalleries({
           <div key={gallery.id} className="group relative flex flex-col overflow-hidden rounded-[32px] border border-slate-200 bg-white transition-all hover:shadow-xl hover:shadow-slate-200/50">
             {/* Cover Image */}
             <div className="aspect-[4/3] overflow-hidden relative bg-slate-100">
-              <Image 
-                src={gallery.cover} 
-                alt={gallery.title} 
-                fill
-                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
-                className="object-cover transition-transform duration-500 group-hover:scale-110"
-                priority={idx < 4}
-              />
+              {gallery.cover?.includes("/api/dropbox/assets") ? (
+                <img 
+                  src={gallery.cover?.includes("dropbox.com") || gallery.cover?.includes("dropboxusercontent.com")
+                    ? `/api/dropbox/assets/${gallery.id}?path=/cover.jpg&sharedLink=${encodeURIComponent(gallery.cover.replace("dl.dropboxusercontent.com", "www.dropbox.com"))}&size=w640h480` 
+                    : formatDropboxUrl(gallery.cover)}
+                  alt={gallery.title}
+                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+                  loading={idx < 4 ? "eager" : "lazy"}
+                />
+              ) : (
+                <Image 
+                  src={formatDropboxUrl(gallery.cover)}
+                  alt={gallery.title} 
+                  fill
+                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
+                  className="object-cover transition-transform duration-500 group-hover:scale-110"
+                  priority={idx < 4}
+                />
+              )}
               <div className="absolute inset-0 bg-slate-900/0 group-hover:bg-slate-900/40 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
                 <div className="flex gap-2">
                   <Link 

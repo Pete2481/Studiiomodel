@@ -49,6 +49,8 @@ import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
 import { NavigationPrefetcher } from "./navigation-prefetcher";
 import { ProgressBar } from "./progress-bar";
 import dynamic from "next/dynamic";
+import Image from "next/image";
+import { formatDropboxUrl } from "@/lib/utils";
 
 const QuickActionModals = dynamic(() => import("./modals/quick-action-modals"), {
   loading: () => null,
@@ -338,13 +340,19 @@ function DashboardShellContent({
           "mb-10 flex items-center gap-3 px-6 pt-8 transition-all duration-300 relative",
           isSidebarCollapsed && "lg:px-4 lg:justify-center lg:gap-0"
         )}>
-          <div className="flex h-11 w-11 flex-none items-center justify-center rounded-2xl bg-primary text-white shadow-lg overflow-hidden group-hover:scale-105 transition-transform"
+          <div className="flex h-11 w-11 flex-none items-center justify-center rounded-2xl bg-primary text-white shadow-lg overflow-hidden group-hover:scale-105 transition-transform relative"
                style={{ 
                  boxShadow: isMasterMode ? `0 10px 15px -3px rgba(99, 102, 241, 0.3)` : `0 10px 15px -3px var(--primary-soft)`,
                  background: isMasterMode ? 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)' : undefined
                }}>
             {logoUrl && logoUrl !== "" ? (
-              <img src={logoUrl} className="h-full w-full object-cover" alt={workspaceName || "Brand"} />
+              <Image 
+                src={formatDropboxUrl(logoUrl)} 
+                className="h-full w-full object-contain p-1" 
+                alt={workspaceName || "Brand"} 
+                fill
+                sizes="44px"
+              />
             ) : (
               <span className="text-xl font-black italic">
                 {isMasterMode ? "M" : (workspaceName || "St")[0]}
@@ -523,9 +531,15 @@ function DashboardShellContent({
                 </div>
               </Hint>
               
-                          <div className="h-9 w-9 md:h-10 md:w-10 rounded-full bg-slate-900 flex items-center justify-center text-[11px] md:text-[13px] font-bold text-white shadow-lg shadow-slate-900/20 ring-2 ring-white overflow-hidden">
+                          <div className="h-9 w-9 md:h-10 md:w-10 rounded-full bg-slate-900 flex items-center justify-center text-[11px] md:text-[13px] font-bold text-white shadow-lg shadow-slate-900/20 ring-2 ring-white overflow-hidden relative">
                             {user?.avatarUrl && user.avatarUrl !== "" ? (
-                              <img src={user.avatarUrl} className="h-full w-full object-cover" alt={user.name} />
+                              <Image 
+                                src={formatDropboxUrl(user.avatarUrl)} 
+                                className="h-full w-full object-cover" 
+                                alt={user.name} 
+                                fill
+                                sizes="40px"
+                              />
                             ) : (
                               user?.initials || "U"
                             )}

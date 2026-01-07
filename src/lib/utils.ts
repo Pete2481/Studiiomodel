@@ -12,6 +12,9 @@ export function cn(...inputs: ClassValue[]) {
 export function formatDropboxUrl(url: string) {
   if (!url) return url;
   
+  // Don't format internal proxy URLs
+  if (url.startsWith("/api/")) return url;
+
   if (url.includes("dropbox.com") || url.includes("dropboxusercontent.com")) {
     let directUrl = url
       .replace("www.dropbox.com", "dl.dropboxusercontent.com")

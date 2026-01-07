@@ -25,6 +25,7 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel }: DrawingCanvasProps
   const [paths, setPaths] = useState<any[]>([]);
   const [currentPath, setCurrentPath] = useState<any[]>([]);
   const [scale, setScale] = useState({ x: 1, y: 1 });
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   
   const [texts, setTexts] = useState<TextAnnotation[]>([]);
   const [draggingTextId, setDraggingTextId] = useState<string | null>(null);
@@ -62,6 +63,7 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel }: DrawingCanvasProps
       canvas.width = dWidth;
       canvas.height = dHeight;
       
+      setDimensions({ width: dWidth, height: dHeight });
       setScale({
         x: img.width / dWidth,
         y: img.height / dHeight
@@ -314,7 +316,7 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel }: DrawingCanvasProps
         <div 
           ref={containerRef}
           className={cn(
-            "flex-1 relative rounded-3xl overflow-hidden bg-slate-900 border border-white/5 flex items-center justify-center",
+            "flex-1 relative rounded-3xl overflow-hidden bg-slate-900/50 border border-white/5 flex items-center justify-center",
             tool === "text" ? "cursor-text" : "cursor-crosshair"
           )}
           onMouseMove={handleMouseMove}
@@ -322,12 +324,20 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel }: DrawingCanvasProps
           onTouchMove={handleMouseMove}
           onTouchEnd={handleMouseUp}
         >
-          {/* Base Image & Canvas Container */}
-          <div className="relative flex items-center justify-center pointer-events-none">
+          {/* Base Image & Canvas Container - LOCKED TO IMAGE SIZE */}
+          <div 
+            className="relative flex items-center justify-center pointer-events-none"
+            style={{ 
+              width: dimensions.width || 'auto', 
+              height: dimensions.height || 'auto',
+              maxWidth: '100%',
+              maxHeight: '100%'
+            }}
+          >
             <img 
               src={imageUrl} 
               alt="Base"
-              className="max-h-full max-w-full object-contain select-none"
+              className="w-full h-full object-contain select-none"
               draggable={false}
             />
             

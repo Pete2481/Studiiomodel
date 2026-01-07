@@ -99,15 +99,25 @@ export function GalleryGrid({ galleries, onEdit, editingGalleryId }: GalleryGrid
               style={{ aspectRatio: "4 / 3" }}
             >
               {gallery.coverImageUrl && gallery.coverImageUrl.length > 0 ? (
-                <Image
-                  fill
-                  src={gallery.coverImageUrl}
-                  alt={gallery.title}
-                  sizes="(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
-                  className="object-cover transition duration-500 group-hover:scale-105"
-                  priority
-                  unoptimized={gallery.coverImageUrl.includes("dropboxusercontent.com")}
-                />
+                gallery.coverImageUrl?.includes("/api/dropbox/assets") ? (
+                  <img
+                    src={gallery.coverImageUrl?.includes("dropbox.com") || gallery.coverImageUrl?.includes("dropboxusercontent.com")
+                      ? `/api/dropbox/assets/${gallery.id}?path=/cover.jpg&sharedLink=${encodeURIComponent(gallery.coverImageUrl.replace("dl.dropboxusercontent.com", "www.dropbox.com"))}&size=w640h480` 
+                      : formatDropboxUrl(gallery.coverImageUrl)}
+                    alt={gallery.title}
+                    className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+                    loading={page === 1 ? "eager" : "lazy"}
+                  />
+                ) : (
+                  <Image
+                    fill
+                    src={formatDropboxUrl(gallery.coverImageUrl)}
+                    alt={gallery.title}
+                    sizes="(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                    className="object-cover transition duration-500 group-hover:scale-105"
+                    priority={page === 1}
+                  />
+                )
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-slate-400">
                   <span className="text-4xl">🖼</span>

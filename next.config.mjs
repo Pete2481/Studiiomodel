@@ -27,6 +27,13 @@ const nextConfig = {
         hostname: 'studiio-assets.s3.amazonaws.com',
       },
     ],
+    localPatterns: [
+      {
+        pathname: '/api/dropbox/assets/**',
+        search: '?*',
+      },
+    ],
+    minimumCacheTTL: 31536000,
   },
 };
 

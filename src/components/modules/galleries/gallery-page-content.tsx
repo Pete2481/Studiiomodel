@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import NextImage from "next/image";
 import { Bell, DollarSign, Plus, Search, Filter, Image as ImageIcon, Video, MoreHorizontal, ExternalLink, Settings, Trash2, Heart, List as ListIcon, LayoutGrid, Mail, Copy, CheckCircle2, Clock, Check, Loader2, Lock, ShieldCheck, ChevronDown } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatDropboxUrl } from "@/lib/utils";
 import { GalleryDrawer } from "./gallery-drawer";
 import { GalleryStatusDropdown } from "./gallery-status-dropdown";
 import { deleteGallery, notifyGalleryClient, updateGalleryStatus } from "@/app/actions/gallery";
@@ -228,11 +229,25 @@ export function GalleryPageContent({
               {/* Cover Image */}
               <div className="aspect-[4/3] overflow-hidden relative">
                 {gallery.cover && gallery.cover !== "" ? (
-                  <img 
-                    src={gallery.cover} 
-                    alt={gallery.title} 
-                    className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
-                  />
+                  gallery.cover?.includes("/api/dropbox/assets") ? (
+                    <img 
+                      src={gallery.cover?.includes("dropbox.com") || gallery.cover?.includes("dropboxusercontent.com")
+                        ? `/api/dropbox/assets/${gallery.id}?path=/cover.jpg&sharedLink=${encodeURIComponent(gallery.cover.replace("dl.dropboxusercontent.com", "www.dropbox.com"))}&size=w640h480` 
+                        : formatDropboxUrl(gallery.cover)}
+                      alt={gallery.title} 
+                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+                      loading={filteredGalleries.indexOf(gallery) < 4 ? "eager" : "lazy"}
+                    />
+                  ) : (
+                    <NextImage 
+                      src={formatDropboxUrl(gallery.cover)}
+                      alt={gallery.title} 
+                      fill
+                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
+                      className="object-cover transition-transform duration-500 group-hover:scale-110"
+                      priority={filteredGalleries.indexOf(gallery) < 4}
+                    />
+                  )
                 ) : (
                   <div className="h-full w-full flex items-center justify-center bg-slate-50 text-slate-200">
                     <ImageIcon className="h-8 w-8" />
@@ -358,9 +373,25 @@ export function GalleryPageContent({
                   <tr key={gallery.id} className="group hover:bg-slate-50/50 transition-colors">
                                 <td className="px-6 py-4">
                                   <div className="flex items-center gap-4">
-                                    <div className="h-12 w-16 rounded-xl bg-slate-100 overflow-hidden border border-slate-200 shrink-0 flex items-center justify-center">
+                                    <div className="h-12 w-16 rounded-xl bg-slate-100 overflow-hidden border border-slate-200 shrink-0 flex items-center justify-center relative">
                                       {gallery.cover && gallery.cover !== "" ? (
-                                        <img src={gallery.cover} className="h-full w-full object-cover" alt="" />
+                                        gallery.cover?.includes("/api/dropbox/assets") ? (
+                                          <img 
+                                            src={gallery.cover?.includes("dropbox.com") || gallery.cover?.includes("dropboxusercontent.com")
+                                              ? `/api/dropbox/assets/${gallery.id}?path=/cover.jpg&sharedLink=${encodeURIComponent(gallery.cover.replace("dl.dropboxusercontent.com", "www.dropbox.com"))}&size=w64h64` 
+                                              : formatDropboxUrl(gallery.cover)}
+                                            alt={gallery.title}
+                                            className="h-full w-full object-cover"
+                                          />
+                                        ) : (
+                                          <NextImage 
+                                            src={formatDropboxUrl(gallery.cover)}
+                                            alt={gallery.title}
+                                            fill
+                                            sizes="64px"
+                                            className="object-cover"
+                                          />
+                                        )
                                       ) : (
                                         <ImageIcon className="h-4 w-4 text-slate-300" />
                                       )}

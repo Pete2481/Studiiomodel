@@ -194,7 +194,7 @@ export async function GET(
         return new NextResponse(Buffer.from(watermarkedBuffer), {
           headers: {
             "Content-Type": "image/jpeg",
-            "Cache-Control": "public, max-age=3600"
+            "Cache-Control": "public, max-age=86400, stale-while-revalidate=3600"
           }
         });
       }
@@ -205,7 +205,7 @@ export async function GET(
             return new NextResponse(Buffer.from(buffer), {
               headers: {
                 "Content-Type": "image/jpeg",
-                "Cache-Control": "public, max-age=3600"
+                "Cache-Control": "public, max-age=86400, stale-while-revalidate=3600"
               }
             });
 

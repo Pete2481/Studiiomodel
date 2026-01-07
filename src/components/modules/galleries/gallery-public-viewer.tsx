@@ -541,11 +541,11 @@ export function GalleryPublicViewer({
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div className="columns-1 sm:columns-2 lg:columns-3 gap-8 space-y-8">
               {combinedMedia.map((item: any, idx: number) => (
                 <div 
                   key={item.id || idx} 
-                  className="group relative aspect-[4/3] rounded-[32px] overflow-hidden bg-slate-50 cursor-zoom-in border border-slate-100"
+                  className="break-inside-avoid relative rounded-[24px] overflow-hidden bg-slate-50 cursor-zoom-in border border-slate-100 group transition-all duration-500 hover:shadow-2xl hover:shadow-slate-200 mb-8"
                   onClick={() => {
                     if (item.type === "video") {
                       setPlayingVideoId(item.id || item.url);
@@ -557,7 +557,7 @@ export function GalleryPublicViewer({
                 >
                   {item.type === "video" ? (
                     playingVideoId === (item.id || item.url) ? (
-                      <div className="h-full w-full bg-black relative">
+                      <div className="h-full w-full bg-black relative aspect-video">
                         <iframe 
                           src={formatVideoUrl(getImageUrl(item.url))}
                           className="w-full h-full border-0"
@@ -576,7 +576,7 @@ export function GalleryPublicViewer({
                       </div>
                     ) : (
                       <div 
-                        className="h-full w-full bg-slate-900 flex items-center justify-center relative group/vid"
+                        className="h-full w-full bg-slate-900 flex items-center justify-center relative group/vid aspect-video"
                       >
                         <div className="absolute inset-0 bg-primary/10 pointer-events-none z-10" />
                         
@@ -602,7 +602,7 @@ export function GalleryPublicViewer({
                     <ProgressiveImage 
                       src={getImageUrl(item.url)} 
                       alt={item.name}
-                      className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
+                      className="w-full h-auto object-cover transition-transform duration-700 group-hover:scale-105"
                     />
                   )}
                   
@@ -929,9 +929,9 @@ export function GalleryPublicViewer({
                     {drawingData ? (
                       <div 
                         onClick={() => setIsDrawingMode(true)}
-                        className="aspect-video rounded-2xl bg-slate-50 border border-slate-100 overflow-hidden relative group cursor-pointer"
+                        className="aspect-square rounded-2xl bg-slate-50 border border-slate-100 overflow-hidden relative group cursor-pointer"
                       >
-                        <img src={`${selectedAsset.url}&size=w1024h768`} className="h-full w-full object-cover opacity-40" alt="Preview" />
+                        <img src={`${selectedAsset.url}&size=w1024h768`} className="h-full w-full object-contain opacity-40" alt="Preview" />
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
                           <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
                             <PenTool className="h-5 w-5" />
@@ -943,7 +943,7 @@ export function GalleryPublicViewer({
                       <button 
                         type="button"
                         onClick={() => setIsDrawingMode(true)}
-                        className="w-full aspect-video rounded-2xl border-2 border-dashed border-slate-100 hover:border-primary/30 hover:bg-primary/[0.02] transition-all flex flex-col items-center justify-center gap-3 group"
+                        className="w-full aspect-square rounded-2xl border-2 border-dashed border-slate-100 hover:border-primary/30 hover:bg-primary/[0.02] transition-all flex flex-col items-center justify-center gap-3 group"
                       >
                         <div className="h-12 w-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:text-primary group-hover:bg-primary/10 transition-all">
                           <PenTool className="h-5 w-5" />
@@ -1377,7 +1377,7 @@ function ProgressiveImage({ src, alt, className }: { src: string, alt: string, c
   }, [src]);
 
   return (
-    <div className="relative h-full w-full overflow-hidden">
+    <div className="relative w-full overflow-hidden">
       <img 
         src={currentSrc} 
         alt={alt}

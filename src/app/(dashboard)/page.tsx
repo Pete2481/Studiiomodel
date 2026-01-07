@@ -150,7 +150,7 @@ async function GalleriesWrapper({ tenantId, galleryWhere, user }: any) {
     prisma.gallery.findMany({ 
       where: galleryWhere, 
       orderBy: { createdAt: 'desc' }, 
-      take: 8, 
+      take: 12, 
       include: { 
         client: { select: { id: true, name: true, businessName: true } }, 
         property: { select: { id: true, name: true } }, 
