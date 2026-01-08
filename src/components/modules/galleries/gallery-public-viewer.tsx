@@ -72,22 +72,37 @@ export function GalleryPublicViewer({
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
 
+  const [visibleCount, setVisibleCount] = useState(25);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
   // Helper to append shared flag and size for incognito access to locked galleries
   const getImageUrl = (url: string, size?: string) => {
     if (!url) return "";
-    let finalUrl = url;
     
-    // Add shared flag if it's a shared link
-    if (isShared && !finalUrl.includes("shared=true")) {
-      finalUrl += `${finalUrl.includes("?") ? "&" : "?"}shared=true`;
+    // Use URL object for robust parsing
+    try {
+      const urlObj = new URL(url, window.location.origin);
+      
+      if (isShared) {
+        urlObj.searchParams.set("shared", "true");
+      }
+      
+      if (size) {
+        urlObj.searchParams.set("size", size);
+      }
+      
+      return urlObj.pathname + urlObj.search;
+    } catch (e) {
+      // Fallback to manual string manipulation if URL parsing fails
+      let finalUrl = url;
+      if (isShared && !finalUrl.includes("shared=true")) {
+        finalUrl += `${finalUrl.includes("?") ? "&" : "?"}shared=true`;
+      }
+      if (size && !finalUrl.includes("size=")) {
+        finalUrl += `${finalUrl.includes("?") ? "&" : "?"}size=${size}`;
+      }
+      return finalUrl;
     }
-
-    // Add size if provided and not already present
-    if (size && !finalUrl.includes("size=")) {
-      finalUrl += `${finalUrl.includes("?") ? "&" : "?"}size=${size}`;
-    }
-
-    return finalUrl;
   };
 
   // Downloads are visible to everyone (Public & Logged In)
@@ -339,6 +354,26 @@ export function GalleryPublicViewer({
     ...filteredAssets.map(a => ({ ...a, type: "image" }))
   ], [displayVideos, filteredAssets]);
 
+  // Intersection Observer for infinite scroll
+  useEffect(() => {
+    if (!combinedMedia || combinedMedia.length <= visibleCount) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((prev) => Math.min(prev + 25, combinedMedia.length));
+        }
+      },
+      { threshold: 0.1, rootMargin: "200px" }
+    );
+
+    if (loadMoreRef.current) {
+      observer.observe(loadMoreRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [combinedMedia, visibleCount]);
+
   return (
     <div 
       className="flex flex-col min-h-screen relative touch-pan-y"
@@ -541,152 +576,162 @@ export function GalleryPublicViewer({
               </button>
             </div>
           ) : (
-            <div className="columns-1 sm:columns-2 lg:columns-3 gap-8">
-              {combinedMedia.map((item: any, idx: number) => (
-                <div 
-                  key={item.id || idx} 
-                  className="break-inside-avoid relative rounded-[32px] overflow-hidden bg-slate-50 cursor-zoom-in border border-slate-100 group transition-all duration-500 hover:shadow-2xl hover:shadow-slate-200 mb-8"
-                  onClick={() => {
-                    if (item.type === "video") {
-                      setPlayingVideoId(item.id || item.url);
-                    } else {
-                      setIsAssetLoading(true);
-                      setSelectedAsset(item);
-                    }
-                  }}
-                >
-                  {item.type === "video" ? (
-                    playingVideoId === (item.id || item.url) ? (
-                      <div className="h-full w-full bg-black relative aspect-video">
-                        <iframe 
-                          src={formatVideoUrl(getImageUrl(item.url))}
-                          className="w-full h-full border-0"
-                          allow="autoplay; fullscreen; picture-in-picture"
-                          allowFullScreen
-                        />
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPlayingVideoId(null);
-                          }}
-                          className="absolute top-4 right-4 h-8 w-8 rounded-full bg-black/50 text-white flex items-center justify-center backdrop-blur-md z-40 hover:bg-black transition-colors"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ) : (
-                      <div 
-                        className="h-full w-full bg-slate-900 flex items-center justify-center relative group/vid aspect-video rounded-[32px] overflow-hidden"
-                      >
-                        <div className="absolute inset-0 bg-primary/10 pointer-events-none z-10" />
-                        
-                        {/* Video Thumbnail: Use Banner Image if available */}
-                        <div className="absolute inset-0 z-0 flex items-center justify-center">
-                          {gallery.bannerImageUrl ? (
-                            <img 
-                              src={getImageUrl(gallery.bannerImageUrl)} 
-                              alt="Video Thumbnail"
-                              className="w-full h-full object-cover opacity-50 grayscale group-hover/vid:grayscale-0 group-hover/vid:opacity-100 transition-all duration-700"
-                            />
-                          ) : (
-                            <div className="w-full h-full bg-slate-800" />
-                          )}
-                        </div>
-
-                        <div className="relative z-20 h-16 w-16 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center text-white scale-100 group-hover/vid:scale-110 group-hover/vid:bg-primary transition-all duration-500 shadow-xl border border-white/20">
-                          <Play className="h-6 w-6 fill-current ml-1" />
-                        </div>
-                      </div>
-                    )
-                  ) : (
-                    <ProgressiveImage 
-                      src={getImageUrl(item.url)} 
-                      alt={item.name}
-                      className="w-full h-auto object-cover transition-transform duration-700 group-hover:scale-105"
-                    />
-                  )}
-                  
-                  <div className="absolute inset-0 bg-slate-900/0 group-hover:bg-slate-900/40 transition-all duration-300 pointer-events-none" />
-                  
-                  {/* Tag (Top Left - Hover Only) */}
-                  {!isShared && (
-                    <div className="absolute top-6 left-6 z-30 pointer-events-none">
-                      <div className="px-3 py-1 bg-white/10 backdrop-blur-md rounded-full border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <p className="text-[9px] font-black text-white uppercase tracking-widest">
-                          {item.type === "video" ? "FILM" : item.folderName}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Status Badges (Bottom Left - Hover Only) */}
-                  {!isShared && requestedFileUrls.includes(item.url) && (
-                    <div className="absolute bottom-6 left-6 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
-                      <div className="px-3 py-1.5 bg-rose-500/90 backdrop-blur-md rounded-full border border-rose-400/50 shadow-xl flex items-center gap-2">
-                        <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
-                        <p className="text-[9px] font-black text-white uppercase tracking-[0.1em]">
-                          Edit Requested
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Hover Actions */}
-                  <div className={cn(
-                    "absolute bottom-6 left-6 right-6 flex items-center justify-end translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300 z-30",
-                    item.type === "video" && playingVideoId === (item.id || item.url) ? "hidden" : (item.type === "video" && "group-hover/vid:opacity-100")
-                  )}>
-                    <div className="flex gap-2 shrink-0">
-                      {!isShared && (
-                        <>
+            <>
+              <div className="columns-1 sm:columns-2 lg:columns-3 gap-8">
+                {combinedMedia.slice(0, visibleCount).map((item: any, idx: number) => (
+                  <div 
+                    key={item.id || idx} 
+                    className="break-inside-avoid relative rounded-[32px] overflow-hidden bg-slate-50 cursor-zoom-in border border-slate-100 group transition-all duration-500 hover:shadow-2xl hover:shadow-slate-200 mb-8"
+                    onClick={() => {
+                      if (item.type === "video") {
+                        setPlayingVideoId(item.id || item.url);
+                      } else {
+                        setIsAssetLoading(true);
+                        setSelectedAsset(item);
+                      }
+                    }}
+                  >
+                    {item.type === "video" ? (
+                      playingVideoId === (item.id || item.url) ? (
+                        <div className="h-full w-full bg-black relative aspect-video">
+                          <iframe 
+                            src={formatVideoUrl(getImageUrl(item.url))}
+                            className="w-full h-full border-0"
+                            allow="autoplay; fullscreen; picture-in-picture"
+                            allowFullScreen
+                          />
                           <button 
-                            onClick={(e) => handleToggleFavorite(e, item)}
-                            className={cn(
-                              "h-9 w-9 rounded-xl flex items-center justify-center transition-all shadow-lg",
-                              favorites.includes(item.id || item.url) 
-                                ? "bg-rose-500 text-white" 
-                                : "bg-white/20 backdrop-blur-md text-white hover:bg-white hover:text-rose-500"
-                            )}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPlayingVideoId(null);
+                            }}
+                            className="absolute top-4 right-4 h-8 w-8 rounded-full bg-black/50 text-white flex items-center justify-center backdrop-blur-md z-40 hover:bg-black transition-colors"
                           >
-                            <Heart className={cn("h-4 w-4", favorites.includes(item.id || item.url) && "fill-current")} />
+                            <X className="h-4 w-4" />
                           </button>
-                          {item.type === "image" && (
-                            <button className="h-9 w-9 rounded-xl bg-white/20 backdrop-blur-md text-white flex items-center justify-center hover:bg-white hover:text-slate-900 transition-all">
-                              <Crop className="h-4 w-4" />
+                        </div>
+                      ) : (
+                        <div 
+                          className="h-full w-full bg-slate-900 flex items-center justify-center relative group/vid aspect-video rounded-[32px] overflow-hidden"
+                        >
+                          <div className="absolute inset-0 bg-primary/10 pointer-events-none z-10" />
+                          
+                          {/* Video Thumbnail: Use Banner Image if available */}
+                          <div className="absolute inset-0 z-0 flex items-center justify-center">
+                            {gallery.bannerImageUrl ? (
+                              <img 
+                                src={getImageUrl(gallery.bannerImageUrl, "w640h480")} 
+                                alt="Video Thumbnail"
+                                className="w-full h-full object-cover opacity-50 grayscale group-hover/vid:grayscale-0 group-hover/vid:opacity-100 transition-all duration-700"
+                              />
+                            ) : (
+                              <div className="w-full h-full bg-slate-800" />
+                            )}
+                          </div>
+
+                          <div className="relative z-20 h-16 w-16 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center text-white scale-100 group-hover/vid:scale-110 group-hover/vid:bg-primary transition-all duration-500 shadow-xl border border-white/20">
+                            <Play className="h-6 w-6 fill-current ml-1" />
+                          </div>
+                        </div>
+                      )
+                    ) : (
+                      <ProgressiveImage 
+                        src={item.url} 
+                        alt={item.name}
+                        className="w-full h-auto object-cover transition-transform duration-700 group-hover:scale-105"
+                        getImageUrl={getImageUrl}
+                      />
+                    )}
+                    
+                    <div className="absolute inset-0 bg-slate-900/0 group-hover:bg-slate-900/40 transition-all duration-300 pointer-events-none" />
+                    
+                    {/* Tag (Top Left - Hover Only) */}
+                    {!isShared && (
+                      <div className="absolute top-6 left-6 z-30 pointer-events-none">
+                        <div className="px-3 py-1 bg-white/10 backdrop-blur-md rounded-full border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <p className="text-[9px] font-black text-white uppercase tracking-widest">
+                            {item.type === "video" ? "FILM" : item.folderName}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Status Badges (Bottom Left - Hover Only) */}
+                    {!isShared && requestedFileUrls.includes(item.url) && (
+                      <div className="absolute bottom-6 left-6 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
+                        <div className="px-3 py-1.5 bg-rose-500/90 backdrop-blur-md rounded-full border border-rose-400/50 shadow-xl flex items-center gap-2">
+                          <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
+                          <p className="text-[9px] font-black text-white uppercase tracking-[0.1em]">
+                            Edit Requested
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Hover Actions */}
+                    <div className={cn(
+                      "absolute bottom-6 left-6 right-6 flex items-center justify-end translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300 z-30",
+                      item.type === "video" && playingVideoId === (item.id || item.url) ? "hidden" : (item.type === "video" && "group-hover/vid:opacity-100")
+                    )}>
+                      <div className="flex gap-2 shrink-0">
+                        {!isShared && (
+                          <>
+                            <button 
+                              onClick={(e) => handleToggleFavorite(e, item)}
+                              className={cn(
+                                "h-9 w-9 rounded-xl flex items-center justify-center transition-all shadow-lg",
+                                favorites.includes(item.id || item.url) 
+                                  ? "bg-rose-500 text-white" 
+                                  : "bg-white/20 backdrop-blur-md text-white hover:bg-white hover:text-rose-500"
+                              )}
+                            >
+                              <Heart className={cn("h-4 w-4", favorites.includes(item.id || item.url) && "fill-current")} />
                             </button>
-                          )}
-                        </>
-                      )}
-                      {item.type === "video" && (
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedVideo(item);
-                          }}
-                          className="h-9 w-9 rounded-xl bg-white/20 backdrop-blur-md text-white flex items-center justify-center hover:bg-white hover:text-slate-900 transition-all"
-                          title="Full Screen / Edit"
-                        >
-                          <Maximize2 className="h-4 w-4" />
-                        </button>
-                      )}
-                      {canDownload && (
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDownloadAssets([item]);
-                            setIsDownloadManagerOpen(true);
-                          }}
-                          className="h-9 w-9 rounded-xl bg-white text-slate-900 flex items-center justify-center hover:scale-110 transition-all shadow-lg shadow-black/20"
-                          title="Download"
-                        >
-                          <Download className="h-4 w-4" />
-                        </button>
-                      )}
+                            {item.type === "image" && (
+                              <button className="h-9 w-9 rounded-xl bg-white/20 backdrop-blur-md text-white flex items-center justify-center hover:bg-white hover:text-slate-900 transition-all">
+                                <Crop className="h-4 w-4" />
+                              </button>
+                            )}
+                          </>
+                        )}
+                        {item.type === "video" && (
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedVideo(item);
+                            }}
+                            className="h-9 w-9 rounded-xl bg-white/20 backdrop-blur-md text-white flex items-center justify-center hover:bg-white hover:text-slate-900 transition-all"
+                            title="Full Screen / Edit"
+                          >
+                            <Maximize2 className="h-4 w-4" />
+                          </button>
+                        )}
+                        {canDownload && (
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDownloadAssets([item]);
+                              setIsDownloadManagerOpen(true);
+                            }}
+                            className="h-9 w-9 rounded-xl bg-white text-slate-900 flex items-center justify-center hover:scale-110 transition-all shadow-lg shadow-black/20"
+                            title="Download"
+                          >
+                            <Download className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
+                ))}
+              </div>
+              
+              {/* Load More Trigger */}
+              {combinedMedia.length > visibleCount && (
+                <div ref={loadMoreRef} className="h-20 flex items-center justify-center">
+                  <Loader2 className="h-6 w-6 animate-spin text-slate-200" />
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
           
           {!isLoading && activeFilter === "favorites" && combinedMedia.length === 0 && (
@@ -822,7 +867,7 @@ export function GalleryPublicViewer({
             <div className="relative group/main">
               <img 
                 ref={imgRef}
-                src={`${getImageUrl(selectedAsset.url)}&size=w1024h768`} 
+                src={getImageUrl(selectedAsset.url, "w1024h768")} 
                 alt={selectedAsset.name}
                 onLoad={() => {
                   setIsAssetLoading(false);
@@ -931,7 +976,7 @@ export function GalleryPublicViewer({
                         onClick={() => setIsDrawingMode(true)}
                         className="aspect-square rounded-2xl bg-slate-50 border border-slate-100 overflow-hidden relative group cursor-pointer"
                       >
-                        <img src={`${selectedAsset.url}&size=w1024h768`} className="h-full w-full object-contain opacity-40" alt="Preview" />
+                        <img src={getImageUrl(selectedAsset.url, "w1024h768")} className="h-full w-full object-contain opacity-40" alt="Preview" />
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
                           <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
                             <PenTool className="h-5 w-5" />
@@ -1362,22 +1407,44 @@ function FilterTab({ active, onClick, label, count, isSpecial }: any) {
  * Progressive Image Loader
  * Loads a tiny "Spark" thumb first, then swaps for a high-res one
  */
-function ProgressiveImage({ src, alt, className }: { src: string, alt: string, className: string }) {
-  const [currentSrc, setCurrentSrc] = useState(`${src}${src.includes('?') ? '&' : '?'}size=w64h64`);
+function ProgressiveImage({ src, alt, className, getImageUrl }: { src: string, alt: string, className: string, getImageUrl: (url: string, size?: string) => string }) {
+  const [currentSrc, setCurrentSrc] = useState(getImageUrl(src, "w64h64"));
   const [isHighResLoaded, setIsHighResLoaded] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Start loading the medium-res version immediately
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.01, rootMargin: "400px" }
+    );
+
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!isVisible) return;
+
+    // Start loading the medium-res version
     const highRes = new Image();
-    highRes.src = `${src}${src.includes('?') ? '&' : '?'}size=w480h320`;
+    highRes.src = getImageUrl(src, "w480h320");
     highRes.onload = () => {
       setCurrentSrc(highRes.src);
       setIsHighResLoaded(true);
     };
-  }, [src]);
+  }, [src, isVisible, getImageUrl]);
 
   return (
-    <div className="relative w-full overflow-hidden rounded-[32px] bg-slate-50 min-h-[250px] flex items-center justify-center">
+    <div ref={containerRef} className="relative w-full overflow-hidden rounded-[32px] bg-slate-50 min-h-[250px] flex items-center justify-center">
       <img 
         src={currentSrc} 
         alt={alt}
