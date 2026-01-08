@@ -33,7 +33,8 @@ export class BookingService {
       agentId,
       notes,
       propertyStatus,
-      slotType 
+      slotType,
+      repeat = "none" 
     } = data;
 
     const isBlocked = status === 'BLOCKED' || status === 'blocked';
@@ -119,6 +120,31 @@ export class BookingService {
           }
         }
       });
+
+      // Handle recurrence for Block Outs
+      if (repeat !== "none" && isBlocked) {
+        const iterations = repeat === "daily" ? 7 : 4;
+        for (let i = 1; i < iterations; i++) {
+          const nextStart = new Date(startAt);
+          const nextEnd = new Date(endAt);
+          
+          if (repeat === "daily") {
+            nextStart.setDate(nextStart.getDate() + i);
+            nextEnd.setDate(nextEnd.getDate() + i);
+          } else {
+            nextStart.setDate(nextStart.getDate() + (i * 7));
+            nextEnd.setDate(nextEnd.getDate() + (i * 7));
+          }
+          
+          await tPrisma.booking.create({
+            data: { 
+              ...bookingData, 
+              startAt: nextStart, 
+              endAt: nextEnd 
+            }
+          });
+        }
+      }
     }
 
     // 2. Handle Notifications

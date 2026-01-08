@@ -149,6 +149,18 @@ export function BookingsPageContent({
       return;
     }
     const { start, end, serviceId } = data;
+
+    if (serviceId === "blocked") {
+      setSelectedBooking({
+        status: 'blocked',
+        title: 'TIME BLOCK OUT',
+        startAt: start.toISOString(),
+        endAt: end ? end.toISOString() : new Date(start.getTime() + 3600000).toISOString(),
+      });
+      setIsDrawerOpen(true);
+      return;
+    }
+    
     const service = services.find(s => s.id === serviceId);
     
     const isClient = user?.role === "CLIENT";
@@ -245,6 +257,21 @@ export function BookingsPageContent({
             </div>
             
             <div id="external-events" className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-hide">
+              {user?.role !== "CLIENT" && (
+                <div 
+                  data-service-id="blocked"
+                  data-service-name="TIME BLOCK OUT"
+                  data-duration="01:00"
+                  className="fc-event flex-none w-48 p-4 rounded-[24px] border border-rose-100 bg-rose-50 hover:border-rose-400 hover:shadow-lg hover:shadow-rose-100 transition-all cursor-grab active:cursor-grabbing group"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[8px] font-bold uppercase tracking-widest text-rose-300">Quick schedule</span>
+                    <Lock className="h-3 w-3 text-rose-200 group-hover:text-rose-400" />
+                  </div>
+                  <h4 className="text-xs font-bold text-rose-900 leading-tight truncate">TIME BLOCKER</h4>
+                  <p className="mt-0.5 text-[10px] font-bold text-rose-400">Unavailable for Clients</p>
+                </div>
+              )}
               {services
                 .filter(s => s.isFavorite && (user?.role !== "CLIENT" || s.clientVisible !== false))
                 .map((service) => (

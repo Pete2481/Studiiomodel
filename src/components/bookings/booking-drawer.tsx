@@ -59,6 +59,7 @@ export function BookingDrawer({
     agentId: "",
     notes: "",
     propertyStatus: "",
+    repeat: "none" as "none" | "daily" | "weekly",
   });
 
   const isBlockedType = formData.status === "blocked";
@@ -181,6 +182,7 @@ export function BookingDrawer({
         agentId: booking.agentId || "",
         notes: booking.internalNotes || "",
         propertyStatus: booking.propertyStatus || "",
+        repeat: "none" as "none" | "daily" | "weekly",
       });
     } else if (booking && (booking.startAt || booking.isPlaceholder)) {
       const autoSelectedServiceIds = booking.isPlaceholder 
@@ -207,6 +209,7 @@ export function BookingDrawer({
         agentId: "",
         notes: "",
         propertyStatus: "",
+        repeat: "none" as "none" | "daily" | "weekly",
       }));
     } else {
       // Reset form
@@ -225,6 +228,7 @@ export function BookingDrawer({
         agentId: "",
         notes: "",
         propertyStatus: "",
+        repeat: "none" as "none" | "daily" | "weekly",
       });
     }
   }, [booking, currentClientId, isClient]);
@@ -396,6 +400,24 @@ export function BookingDrawer({
                   )}
                 </div>
               </div>
+
+              {isBlockedType && (
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Repeat Block Out</label>
+                  <div className="relative">
+                    <select 
+                      value={formData.repeat}
+                      onChange={(e) => setFormData({...formData, repeat: e.target.value as any})}
+                      className="ui-input-tight appearance-none bg-white pr-10"
+                    >
+                      <option value="none">Does not repeat</option>
+                      <option value="daily">Daily (for 7 days)</option>
+                      <option value="weekly">Weekly (for 4 weeks)</option>
+                    </select>
+                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+              )}
 
               {!isClient && !isBlockedType && (
                 <div className="space-y-2 relative">
