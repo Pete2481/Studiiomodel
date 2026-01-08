@@ -5,7 +5,12 @@ const dropboxTokenEndpoint = "https://api.dropboxapi.com/oauth2/token";
 
 const clientId = process.env.DROPBOX_CLIENT_ID ?? "";
 const clientSecret = process.env.DROPBOX_CLIENT_SECRET ?? "";
-const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/auth/dropbox/callback`;
+
+function getRedirectUri(request: NextRequest) {
+  const host = request.headers.get("host") || "localhost:3000";
+  const protocol = host.includes("localhost") ? "http" : "https";
+  return `${protocol}://${host}/api/auth/dropbox/callback`;
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
@@ -20,6 +25,8 @@ export async function GET(request: NextRequest) {
   if (!code || !state || !clientId || !clientSecret) {
     return NextResponse.redirect(new URL("/tenant/settings?dropbox=error", request.nextUrl.origin));
   }
+
+  const redirectUri = getRedirectUri(request);
 
   let tenantId = "";
   try {

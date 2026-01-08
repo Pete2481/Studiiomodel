@@ -4,7 +4,12 @@ import { auth } from "@/auth";
 const dropboxAuthBase = "https://www.dropbox.com/oauth2/authorize";
 
 const clientId = process.env.DROPBOX_CLIENT_ID ?? "";
-const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/auth/dropbox/callback`;
+
+function getRedirectUri(request: NextRequest) {
+  const host = request.headers.get("host") || "localhost:3000";
+  const protocol = host.includes("localhost") ? "http" : "https";
+  return `${protocol}://${host}/api/auth/dropbox/callback`;
+}
 
 export async function GET(request: NextRequest) {
   const session = await auth();
@@ -17,6 +22,8 @@ export async function GET(request: NextRequest) {
   if (!clientId) {
     return NextResponse.json({ error: "Dropbox client not configured" }, { status: 500 });
   }
+
+  const redirectUri = getRedirectUri(request);
 
   // State contains the tenantId so we know who to update in the callback
   const state = Buffer.from(JSON.stringify({ 
