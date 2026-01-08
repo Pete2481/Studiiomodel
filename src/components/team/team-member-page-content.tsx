@@ -15,7 +15,7 @@ import {
   Trash2,
   Edit2
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatDropboxUrl } from "@/lib/utils";
 import { TeamMemberDrawer } from "./team-member-drawer";
 import { upsertTeamMember, deleteTeamMember, joinTeamAction } from "@/app/actions/team-member";
 import { UserCheck, Loader2 } from "lucide-react";
@@ -186,11 +186,17 @@ export function TeamMemberPageContent({
                   >
                     {/* Profile */}
                     <div className="flex items-center gap-4">
-                      <div className="h-12 w-12 rounded-2xl overflow-hidden bg-slate-100 shrink-0 shadow-inner flex items-center justify-center">
+                      <div className="h-12 w-12 rounded-2xl overflow-hidden bg-slate-100 shrink-0 shadow-inner flex items-center justify-center border border-slate-50">
                         {member.avatar ? (
-                          <img src={member.avatar} alt={member.name} className="h-full w-full object-cover" />
+                          <img 
+                            src={formatDropboxUrl(member.avatar)} 
+                            alt={member.name} 
+                            className="h-full w-full object-cover" 
+                          />
                         ) : (
-                          <Camera className="h-5 w-5 text-slate-300" />
+                          <div className="h-full w-full flex items-center justify-center bg-emerald-50 text-emerald-600 font-bold text-xs uppercase">
+                            {member.name?.split(" ").map((n: any) => n[0]).join("").slice(0, 2) || <Camera className="h-4 w-4 text-slate-300" />}
+                          </div>
                         )}
                       </div>
                       <div className="min-w-0">

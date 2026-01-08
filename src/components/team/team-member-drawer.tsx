@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { X, ChevronDown, Camera, ShieldCheck, Mail, Phone, User, Globe, Trash2, Plus, Copy } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatDropboxUrl } from "@/lib/utils";
 
 interface TeamMemberDrawerProps {
   isOpen: boolean;
@@ -171,9 +171,11 @@ export function TeamMemberDrawer({
               <div className="relative group">
                 <div className="h-32 w-32 rounded-[40px] bg-slate-100 overflow-hidden border-4 border-white shadow-xl flex items-center justify-center">
                   {previewUrl ? (
-                    <img src={previewUrl} className="h-full w-full object-cover" alt="Profile preview" />
+                    <img src={formatDropboxUrl(previewUrl)} className="h-full w-full object-cover" alt="Profile preview" />
                   ) : (
-                    <Camera className="h-10 w-10 text-slate-300" />
+                    <div className="h-full w-full flex items-center justify-center bg-emerald-50 text-emerald-600 font-bold text-2xl uppercase">
+                      {formData.displayName?.split(" ").map((n: any) => n[0]).join("").slice(0, 2) || <Camera className="h-10 w-10 text-slate-300" />}
+                    </div>
                   )}
                 </div>
                 <button

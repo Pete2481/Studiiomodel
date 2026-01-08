@@ -1,3 +1,4 @@
+import { cn, formatDropboxUrl } from "@/lib/utils";
 import { 
   Plus, 
   Search, 
@@ -95,7 +96,7 @@ async function EditorsDataWrapper({ session }: { session: any }) {
             {/* Profile */}
             <div className="flex items-center gap-4">
               <div className="h-12 w-12 rounded-2xl overflow-hidden bg-slate-100 shrink-0 shadow-inner">
-                <img src={agent.avatar} alt={agent.name} className="h-full w-full object-cover" />
+                <img src={formatDropboxUrl(agent.avatar)} alt={agent.name} className="h-full w-full object-cover" />
               </div>
               <div className="min-w-0">
                 <h4 className="text-sm font-bold text-slate-900 truncate group-hover:text-emerald-600 transition-colors">{agent.name}</h4>

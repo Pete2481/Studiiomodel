@@ -91,7 +91,8 @@ export async function upsertTeamMember(data: any) {
 
     // SAFETY: Never store massive base64 images in the DB.
     // They crash the Next.js serialization engine.
-    const avatarUrl = (rawAvatarUrl && rawAvatarUrl.length > 5000) ? null : rawAvatarUrl;
+    // Increased limit to 1MB (approx 1.3M chars for base64)
+    const avatarUrl = (rawAvatarUrl && rawAvatarUrl.length > 1500000) ? null : rawAvatarUrl;
 
     // SAFETY: Master Admin cannot be a Team Member
     if (email) {
