@@ -654,7 +654,6 @@ export function GalleryPageContent({
         isOpen={isPreviewOpen} 
         onClose={() => setIsPreviewOpen(false)} 
         invoice={selectedInvoice} 
-        onRefresh={() => window.location.reload()}
       />
 
       {isCopyModalOpen && activeCopyGallery && (

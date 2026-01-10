@@ -52,7 +52,7 @@ async function ServicesDataWrapper() {
     orderBy: { name: 'asc' }
   });
 
-  const initialServices = dbServices.map(s => ({
+  const initialServices = dbServices.map((s: any) => ({
     id: String(s.id),
     name: String(s.name),
     description: String(s.description || ""),

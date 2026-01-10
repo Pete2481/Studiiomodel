@@ -448,7 +448,7 @@ export function AISuiteDrawer({
                         <ChevronRight className="h-4 w-4 text-white/20 group-hover:translate-x-1 transition-all" />
                       </button>
 
-                      {activeTask === tool.id && tool.needsPrompt && !isProcessing && tool.id !== "virtual_staging" && (
+                      {activeTask === tool.id && tool.needsPrompt && !isProcessing && (tool.id as string) !== "virtual_staging" && (
                         <div className="p-6 bg-white/5 rounded-[32px] border border-white/10 space-y-4 animate-in slide-in-from-top-4 duration-300">
                           <textarea
                             autoFocus

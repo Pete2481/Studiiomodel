@@ -32,7 +32,7 @@ export function AgentPageContent({ initialAgents, role, clientId, clientInfo }: 
   
   const refreshAgents = async () => {
     const updatedAgents = await getAgentsByClient(clientId);
-    const serialized = updatedAgents.map(a => ({
+    const serialized = updatedAgents.map((a: any) => ({
       ...a,
       createdAt: (a.createdAt as any).toISOString ? (a.createdAt as any).toISOString() : a.createdAt,
       updatedAt: (a.updatedAt as any).toISOString ? (a.updatedAt as any).toISOString() : a.updatedAt,

@@ -103,7 +103,7 @@ async function EditDataWrapper({ sessionUser, isGlobal }: { sessionUser: any, is
     checkSubscriptionStatus(tenantId)
   ]);
 
-  const requests = dbRequests.map(r => ({
+  const requests = dbRequests.map((r: any) => ({
     id: String(r.id),
     galleryId: String(r.galleryId),
     title: r.note ? String(r.note.split('\n')[0]) : "Edit Request",
@@ -117,19 +117,19 @@ async function EditDataWrapper({ sessionUser, isGlobal }: { sessionUser: any, is
     metadata: r.metadata,
     assignedToIds: r.assignedToIds || [],
     invoice: r.gallery.invoices[0] || null,
-    selectedTags: r.selectedTags.map(st => ({
+    selectedTags: r.selectedTags.map((st: any) => ({
       id: st.id,
       name: st.editTag.name,
       cost: isRestrictedRole ? 0 : Number(st.costAtTime),
       specialistType: st.editTag.specialistType
     })),
-    totalCost: isRestrictedRole ? 0 : r.selectedTags.reduce((acc, st) => acc + Number(st.costAtTime), 0),
+    totalCost: isRestrictedRole ? 0 : r.selectedTags.reduce((acc: number, st: any) => acc + Number(st.costAtTime), 0),
     important: r.metadata && (r.metadata as any).important === true,
     hasAttachments: !!r.fileUrl,
     comments: 0
   }));
 
-  const tags = dbTags.map(t => ({
+  const tags = dbTags.map((t: any) => ({
     id: String(t.id),
     name: String(t.name),
     description: t.description || "",
@@ -138,7 +138,7 @@ async function EditDataWrapper({ sessionUser, isGlobal }: { sessionUser: any, is
     active: t.active
   }));
 
-  const teamMembers = dbTeam.map(tm => ({
+  const teamMembers = dbTeam.map((tm: any) => ({
     id: tm.id,
     name: tm.displayName,
     role: tm.role,

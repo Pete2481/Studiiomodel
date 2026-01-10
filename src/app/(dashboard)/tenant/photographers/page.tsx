@@ -64,7 +64,7 @@ async function TeamDataWrapper({ tenantId }: { tenantId: string }) {
     }
   });
 
-  const initialMembers = members.map(m => ({
+  const initialMembers = members.map((m: any) => ({
     id: String(m.id),
     name: m.displayName || "",
     email: m.email || "",

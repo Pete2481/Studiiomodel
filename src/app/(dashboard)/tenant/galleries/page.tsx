@@ -105,21 +105,21 @@ async function GalleriesDataWrapper({ sessionUser, isGlobal, page }: { sessionUs
     tPrisma.service.findMany({ where: { deletedAt: null }, select: { id: true, name: true, price: true, icon: true } })
   ]);
 
-  const galleries = dbGalleries.map(g => ({
+  const galleries = dbGalleries.map((g: any) => ({
     id: String(g.id), title: String(g.title), clientId: String(g.clientId), bookingId: g.bookingId ? String(g.bookingId) : undefined, agentId: g.agentId ? String(g.agentId) : undefined,
-    property: String(g.property?.name || g.title), client: String(g.client?.businessName || g.client?.name || "Unknown"), status: String(g.status), isLocked: (g as any).isLocked, watermarkEnabled: (g as any).watermarkEnabled, bannerImageUrl: g.bannerImageUrl, metadata: g.metadata, serviceIds: g.services.map(s => s.service.id), mediaCount: Number((g.metadata as any)?.imageCount || 0), videoCount: (g.metadata as any)?.videoLinks?.length || 0, favoriteCount: g.favorites.length, photographers: g.booking?.assignments?.map(a => a.teamMember.displayName).join(", ") || "No team assigned", invoice: g.invoices[0] || null, createdAt: g.createdAt,
+    property: String(g.property?.name || g.title), client: String(g.client?.businessName || g.client?.name || "Unknown"), status: String(g.status), isLocked: (g as any).isLocked, watermarkEnabled: (g as any).watermarkEnabled, bannerImageUrl: g.bannerImageUrl, metadata: g.metadata, serviceIds: g.services.map((s: any) => s.service.id), mediaCount: Number((g.metadata as any)?.imageCount || 0), videoCount: (g.metadata as any)?.videoLinks?.length || 0, favoriteCount: g.favorites.length, photographers: g.booking?.assignments?.map((a: any) => a.teamMember.displayName).join(", ") || "No team assigned", invoice: g.invoices[0] || null, createdAt: g.createdAt,
     cover: formatDropboxUrl(g.bannerImageUrl || String(g.media[0]?.thumbnailUrl || g.media[0]?.url || "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80"))
   }));
 
-  const bookingsData = dbBookings.map(b => ({
+  const bookingsData = dbBookings.map((b: any) => ({
     id: String(b.id), title: String(b.title), clientId: String(b.clientId), property: b.property,
-    services: b.services.map(s => ({ ...s, service: { ...s.service, price: Number(s.service.price) } }))
+    services: b.services.map((s: any) => ({ ...s, service: { ...s.service, price: Number(s.service.price) } }))
   }));
 
   return (
     <GalleryPageContent 
       galleries={galleries}
-      clients={dbClients.map(c => ({
+      clients={dbClients.map((c: any) => ({
         id: String(c.id),
         name: String(c.name),
         businessName: String(c.businessName || ""),
@@ -128,7 +128,7 @@ async function GalleriesDataWrapper({ sessionUser, isGlobal, page }: { sessionUs
       }))}
       bookings={bookingsData}
       agents={dbAgents}
-      services={dbServices.map(s => ({ id: String(s.id), name: String(s.name), price: Number(s.price), icon: s.icon }))}
+      services={dbServices.map((s: any) => ({ id: String(s.id), name: String(s.name), price: Number(s.price), icon: s.icon }))}
       user={user}
       pagination={{ total: totalCount, page, limit }}
     />

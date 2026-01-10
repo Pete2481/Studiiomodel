@@ -11,7 +11,8 @@ import {
   Layout,
   ExternalLink,
   Eye,
-  Send
+  Send,
+  Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CameraLoader } from "@/components/ui/camera-loader";
@@ -49,7 +50,7 @@ export function AIListingModal({
     try {
       const result = await generateListingCopy(galleryId);
       if (result.success && result.copy) {
-        setCopy(result.copy);
+        setCopy(result.copy as string);
       } else {
         setError(result.error || "Failed to generate copy.");
       }

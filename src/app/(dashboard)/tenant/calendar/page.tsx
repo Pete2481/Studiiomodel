@@ -147,7 +147,7 @@ async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
     "Tenanted Property", "Owner Occupied", "Empty (Keys at office)"
   ];
 
-  const bookings = (dbBookings as any[]).map(b => {
+  const bookings = (dbBookings as any[]).map((b: any) => {
     const startAt = b.startAt instanceof Date && !isNaN(b.startAt.getTime()) ? b.startAt.toISOString() : null;
     const endAt = b.endAt instanceof Date && !isNaN(b.endAt.getTime()) ? b.endAt.toISOString() : null;
     if (!startAt || !endAt) return null;
@@ -203,16 +203,16 @@ async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
     };
   }).filter(Boolean);
 
-  const clients = dbClients.map(c => ({ 
+  const clients = dbClients.map((c: any) => ({ 
     id: String(c.id), 
     name: String(c.name), 
     businessName: String(c.businessName || ""), 
     avatarUrl: c.avatarUrl || null,
     disabledServices: (c.settings as any)?.disabledServices || []
   }));
-  const services = dbServices.map(s => ({ id: String(s.id), name: String(s.name), price: Number(s.price), durationMinutes: Number(s.durationMinutes), icon: String(s.icon || "CAMERA"), slotType: (s as any).slotType || null, clientVisible: (s as any).clientVisible !== false, isFavorite: (s.settings as any)?.isFavorite || false }));
-  const teamMembers = dbTeamMembers.map(m => ({ id: String(m.id), displayName: String(m.displayName), avatarUrl: m.avatarUrl || null }));
-  const agents = dbAgents.map(a => ({ id: String(a.id), name: String(a.name), clientId: String(a.clientId), avatarUrl: a.avatarUrl || null }));
+  const services = dbServices.map((s: any) => ({ id: String(s.id), name: String(s.name), price: Number(s.price), durationMinutes: Number(s.durationMinutes), icon: String(s.icon || "CAMERA"), slotType: (s as any).slotType || null, clientVisible: (s as any).clientVisible !== false, isFavorite: (s.settings as any)?.isFavorite || false }));
+  const teamMembers = dbTeamMembers.map((m: any) => ({ id: String(m.id), displayName: String(m.displayName), avatarUrl: m.avatarUrl || null }));
+  const agents = dbAgents.map((a: any) => ({ id: String(a.id), name: String(a.name), clientId: String(a.clientId), avatarUrl: a.avatarUrl || null }));
 
   return (
     <BookingsPageContent 

@@ -73,7 +73,7 @@ async function ClientsDataWrapper({ tenantId }: { tenantId: string }) {
     })
   ]);
 
-  const initialClients = dbClients.map(c => ({
+  const initialClients = dbClients.map((c: any) => ({
     id: String(c.id),
     name: String(c.name),
     businessName: String(c.businessName || ""),
@@ -91,7 +91,7 @@ async function ClientsDataWrapper({ tenantId }: { tenantId: string }) {
     createdAt: c.createdAt.toISOString()
   }));
 
-  const services = dbServices.map(s => ({
+  const services = dbServices.map((s: any) => ({
     id: String(s.id),
     name: String(s.name),
     price: Number(s.price)

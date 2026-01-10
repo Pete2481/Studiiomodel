@@ -107,36 +107,36 @@ async function ReportsDataWrapper({ session, searchParams }: { session: any, sea
 
   // 3. Aggregate Data
   const totalInPeriod = invoices
-    .filter(inv => inv.issuedAt && inv.issuedAt >= periodStart && inv.issuedAt <= periodEnd)
-    .reduce((acc, inv) => {
-      const subtotal = inv.lineItems.reduce((s, li) => s + (Number(li.quantity) * Number(li.unitPrice)), 0);
+    .filter((inv: any) => inv.issuedAt && inv.issuedAt >= periodStart && inv.issuedAt <= periodEnd)
+    .reduce((acc: number, inv: any) => {
+      const subtotal = inv.lineItems.reduce((s: number, li: any) => s + (Number(li.quantity) * Number(li.unitPrice)), 0);
       const tax = (subtotal - Number(inv.discount)) * Number(inv.taxRate);
       return acc + subtotal - Number(inv.discount) + tax;
     }, 0);
 
-  const completedJobsInPeriod = galleries.filter(g => g.deliveredAt && g.deliveredAt >= periodStart && g.deliveredAt <= periodEnd).length;
+  const completedJobsInPeriod = galleries.filter((g: any) => g.deliveredAt && g.deliveredAt >= periodStart && g.deliveredAt <= periodEnd).length;
 
   const clientLeaderboard = clients
-    .map(c => {
-      const scopedInvoices = c.invoices.filter(inv => inv.issuedAt && inv.issuedAt >= periodStart && inv.issuedAt <= periodEnd);
-      const revenue = scopedInvoices.reduce((acc, inv) => {
-        const subtotal = inv.lineItems.reduce((s, li) => s + (Number(li.quantity) * Number(li.unitPrice)), 0);
+    .map((c: any) => {
+      const scopedInvoices = c.invoices.filter((inv: any) => inv.issuedAt && inv.issuedAt >= periodStart && inv.issuedAt <= periodEnd);
+      const revenue = scopedInvoices.reduce((acc: number, inv: any) => {
+        const subtotal = inv.lineItems.reduce((s: number, li: any) => s + (Number(li.quantity) * Number(li.unitPrice)), 0);
         const tax = (subtotal - Number(inv.discount)) * Number(inv.taxRate);
         return acc + subtotal - Number(inv.discount) + tax;
       }, 0);
-      const scopedBookings = c.bookings.filter(b => b.startAt >= periodStart && b.startAt <= periodEnd);
+      const scopedBookings = c.bookings.filter((b: any) => b.startAt >= periodStart && b.startAt <= periodEnd);
       const volume = scopedBookings.length;
-      const lastBooking = c.bookings.sort((a, b) => b.startAt.getTime() - a.startAt.getTime())[0];
+      const lastBooking = (c.bookings as any[]).sort((a: any, b: any) => b.startAt.getTime() - a.startAt.getTime())[0];
       const isAtRisk = lastBooking ? (now.getTime() - lastBooking.startAt.getTime()) > (21 * 24 * 60 * 60 * 1000) : false;
       return { id: c.id, name: c.businessName || c.name, revenue, volume, isAtRisk };
     })
-    .filter(c => c.revenue > 0 || c.volume > 0)
-    .sort((a, b) => b.revenue - a.revenue)
+    .filter((c: any) => c.revenue > 0 || c.volume > 0)
+    .sort((a: any, b: any) => b.revenue - a.revenue)
     .slice(0, 10);
 
   const revenueMixMap: Record<string, number> = {};
-  invoices.filter(inv => inv.issuedAt && inv.issuedAt >= periodStart && inv.issuedAt <= periodEnd).forEach(inv => {
-    inv.lineItems.forEach(li => {
+  invoices.filter((inv: any) => inv.issuedAt && inv.issuedAt >= periodStart && inv.issuedAt <= periodEnd).forEach((inv: any) => {
+    inv.lineItems.forEach((li: any) => {
       const category = li.service?.name || li.description || "Other";
       const itemRevenue = Number(li.quantity) * Number(li.unitPrice);
       revenueMixMap[category] = (revenueMixMap[category] || 0) + itemRevenue;
@@ -148,14 +148,14 @@ async function ReportsDataWrapper({ session, searchParams }: { session: any, sea
   const yearStart = startOfYear(periodStart);
   const yearEnd = endOfYear(periodStart);
   const revenueTotalAnnual = invoices
-    .filter(inv => inv.status === 'PAID' && inv.paidAt && inv.paidAt >= yearStart && inv.paidAt <= yearEnd)
-    .reduce((acc, inv) => acc + Number(inv.paidAmount), 0);
+    .filter((inv: any) => inv.status === 'PAID' && inv.paidAt && inv.paidAt >= yearStart && inv.paidAt <= yearEnd)
+    .reduce((acc: number, inv: any) => acc + Number(inv.paidAmount), 0);
   const revenueTarget = (tenant?.settings as any)?.revenueTarget || 100000;
 
   const outstandingBalance = invoices
-    .filter(inv => inv.status === 'SENT' || inv.status === 'OVERDUE')
-    .reduce((acc, inv) => {
-      const subtotal = inv.lineItems.reduce((s, li) => s + (Number(li.quantity) * Number(li.unitPrice)), 0);
+    .filter((inv: any) => inv.status === 'SENT' || inv.status === 'OVERDUE')
+    .reduce((acc: number, inv: any) => {
+      const subtotal = inv.lineItems.reduce((s: number, li: any) => s + (Number(li.quantity) * Number(li.unitPrice)), 0);
       const tax = (subtotal - Number(inv.discount)) * Number(inv.taxRate);
       const total = subtotal - Number(inv.discount) + tax;
       return acc + (total - Number(inv.paidAmount));
@@ -165,13 +165,13 @@ async function ReportsDataWrapper({ session, searchParams }: { session: any, sea
   const weekEnd = endOfWeek(baseDate, { weekStartsOn: 1 });
   const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd });
   const weeklySalesDaily = weekDays.map(day => {
-    const dayTotal = invoices.filter(inv => inv.issuedAt && format(inv.issuedAt, "yyyy-MM-dd") === format(day, "yyyy-MM-dd")).reduce((acc, inv) => acc + inv.lineItems.reduce((s, li) => s + (Number(li.quantity) * Number(li.unitPrice)), 0) - Number(inv.discount), 0);
+    const dayTotal = invoices.filter((inv: any) => inv.issuedAt && format(inv.issuedAt, "yyyy-MM-dd") === format(day, "yyyy-MM-dd")).reduce((acc: number, inv: any) => acc + inv.lineItems.reduce((s: number, li: any) => s + (Number(li.quantity) * Number(li.unitPrice)), 0) - Number(inv.discount), 0);
     return { label: format(day, "EEE"), value: dayTotal };
   });
 
   const yearMonths = eachMonthOfInterval({ start: yearStart, end: yearEnd });
   const yearlySalesMonthly = yearMonths.map(m => {
-    const mTotal = invoices.filter(inv => inv.issuedAt && inv.issuedAt >= startOfMonth(m) && inv.issuedAt <= endOfMonth(m)).reduce((acc, inv) => acc + inv.lineItems.reduce((s, li) => s + (Number(li.quantity) * Number(li.unitPrice)), 0) - Number(inv.discount), 0);
+    const mTotal = invoices.filter((inv: any) => inv.issuedAt && inv.issuedAt >= startOfMonth(m) && inv.issuedAt <= endOfMonth(m)).reduce((acc: number, inv: any) => acc + inv.lineItems.reduce((s: number, li: any) => s + (Number(li.quantity) * Number(li.unitPrice)), 0) - Number(inv.discount), 0);
     return { label: format(m, "MMM"), value: mTotal };
   });
 
@@ -179,11 +179,11 @@ async function ReportsDataWrapper({ session, searchParams }: { session: any, sea
   const monthEnd = endOfMonth(baseDate);
   const monthDays = eachDayOfInterval({ start: monthStart, end: monthEnd });
   const monthlySalesDaily = monthDays.map(day => {
-    const dayTotal = invoices.filter(inv => inv.issuedAt && format(inv.issuedAt, "yyyy-MM-dd") === format(day, "yyyy-MM-dd")).reduce((acc, inv) => acc + inv.lineItems.reduce((s, li) => s + (Number(li.quantity) * Number(li.unitPrice)), 0) - Number(inv.discount), 0);
+    const dayTotal = invoices.filter((inv: any) => inv.issuedAt && format(inv.issuedAt, "yyyy-MM-dd") === format(day, "yyyy-MM-dd")).reduce((acc: number, inv: any) => acc + inv.lineItems.reduce((s: number, li: any) => s + (Number(li.quantity) * Number(li.unitPrice)), 0) - Number(inv.discount), 0);
     return { label: format(day, "d"), value: dayTotal };
   });
 
-  const servicesInPeriod = invoices.filter(inv => inv.issuedAt && inv.issuedAt >= periodStart && inv.issuedAt <= periodEnd).flatMap(inv => inv.lineItems).reduce((acc: any, li) => {
+  const servicesInPeriod = invoices.filter((inv: any) => inv.issuedAt && inv.issuedAt >= periodStart && inv.issuedAt <= periodEnd).flatMap((inv: any) => inv.lineItems).reduce((acc: any, li: any) => {
     const name = li.service?.name || li.description;
     acc[name] = (acc[name] || 0) + li.quantity;
     return acc;

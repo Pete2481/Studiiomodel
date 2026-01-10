@@ -77,34 +77,34 @@ export async function globalSearch(query: string): Promise<SearchResult[]> {
   ]);
 
   const results: SearchResult[] = [
-    ...bookings.map(b => ({
+    ...bookings.map((b: any) => ({
       id: b.id,
       type: "booking" as const,
       title: b.title || "Untitled Booking",
       subtitle: b.property?.name || undefined,
       href: `/tenant/calendar?bookingId=${b.id}`,
     })),
-    ...galleries.map(g => ({
+    ...galleries.map((g: any) => ({
       id: g.id,
       type: "gallery" as const,
       title: g.title,
       href: `/tenant/galleries?galleryId=${g.id}`,
     })),
-    ...invoices.map(i => ({
+    ...invoices.map((i: any) => ({
       id: i.id,
       type: "invoice" as const,
       title: i.number,
       subtitle: i.client?.businessName || i.client?.name || undefined,
       href: `/tenant/invoices?invoiceId=${i.id}`,
     })),
-    ...clients.map(c => ({
+    ...clients.map((c: any) => ({
       id: c.id,
       type: "client" as const,
       title: c.name,
       subtitle: c.businessName || undefined,
       href: `/tenant/clients?clientId=${c.id}`,
     })),
-    ...editRequests.map(e => ({
+    ...editRequests.map((e: any) => ({
       id: e.id,
       type: "editRequest" as const,
       title: "Edit Request",

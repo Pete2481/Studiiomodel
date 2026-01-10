@@ -140,8 +140,8 @@ export async function createInvoiceFromEditRequests(galleryId: string) {
     const number = `INV-${year}-${nextNum.toString().padStart(3, '0')}`;
 
     // 3. Prepare line items from edit requests
-    const lineItemsData = gallery.editRequests.flatMap(req => 
-      req.selectedTags.map(st => ({
+    const lineItemsData = gallery.editRequests.flatMap((req: any) => 
+      req.selectedTags.map((st: any) => ({
         description: `${req.title || 'Edit Request'}: ${st.editTag.name}`,
         unitPrice: st.costAtTime,
         quantity: 1,
