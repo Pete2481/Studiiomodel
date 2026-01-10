@@ -132,7 +132,7 @@ async function BookingsDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
     "Tenanted Property", "Owner Occupied", "Empty (Keys at office)"
   ];
 
-  const bookings = dbBookings.map(b => {
+  const bookings = dbBookings.map((b: any) => {
     let status = b.status.toLowerCase();
     if (status === 'approved') status = 'confirmed';
     return {
