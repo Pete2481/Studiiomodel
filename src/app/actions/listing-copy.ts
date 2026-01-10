@@ -174,7 +174,13 @@ Return strict JSON:
           max_new_tokens: 500,
         });
         
-        analysisResults.push(Array.isArray(analysisOutput) ? analysisOutput.join("") : analysisOutput as string);
+        const resultString = Array.isArray(analysisOutput) 
+          ? analysisOutput.join("") 
+          : typeof analysisOutput === "string" 
+            ? analysisOutput 
+            : JSON.stringify(analysisOutput);
+
+        analysisResults.push(resultString);
         
         // Brief 1s delay between vision calls
         if (i < validLinks.slice(0, 3).length - 1) {
@@ -232,7 +238,11 @@ Write the final professional copy now.
       temperature: 0.75,
     });
 
-    const resultText = Array.isArray(finalOutput) ? finalOutput.join("") : finalOutput as string;
+    const resultText = Array.isArray(finalOutput) 
+      ? finalOutput.join("") 
+      : typeof finalOutput === "string"
+        ? finalOutput
+        : JSON.stringify(finalOutput);
 
     return { success: true, copy: resultText };
   } catch (error: any) {
@@ -322,10 +332,14 @@ Return ONLY the rewritten snippet. No preamble, no explanation.
       temperature: 0.7,
     });
 
-    const rewrittenSnippet = Array.isArray(output) ? output.join("") : output as string;
+    const resultText = Array.isArray(output) 
+      ? output.join("") 
+      : typeof output === "string"
+        ? output
+        : JSON.stringify(output);
     
     // Clean up the snippet (sometimes AI adds quotes or markers)
-    const cleanedSnippet = rewrittenSnippet.trim().replace(/^"/, '').replace(/"$/, '').replace(/^"""/, '').replace(/"""$/, '');
+    const cleanedSnippet = resultText.trim().replace(/^"/, '').replace(/"$/, '').replace(/^"""/, '').replace(/"""$/, '');
 
     // Replace the selection in the full text
     const updatedFullText = fullText.replace(selectionText, cleanedSnippet);
