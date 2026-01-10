@@ -273,7 +273,14 @@ export function BookingsPageContent({
                 </div>
               )}
               {services
-                .filter(s => s.isFavorite && (user?.role !== "CLIENT" || s.clientVisible !== false))
+                .filter(s => {
+                  if (!s.isFavorite) return false;
+                  if (user?.role !== "CLIENT") return true;
+                  if (s.clientVisible === false) return false;
+                  const currentClient = clients.find(c => c.id === user?.clientId);
+                  if (currentClient?.disabledServices?.includes(s.id)) return false;
+                  return true;
+                })
                 .map((service) => (
                 <div 
                   key={service.id} 

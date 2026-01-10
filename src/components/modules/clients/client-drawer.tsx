@@ -57,6 +57,7 @@ export function ClientDrawer({
       canEditRequests: true,
     } as Record<string, boolean>,
     priceOverrides: {} as Record<string, number | string>,
+    disabledServices: [] as string[],
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -88,6 +89,7 @@ export function ClientDrawer({
           canEditRequests: true,
         },
         priceOverrides: client.priceOverrides || {},
+        disabledServices: client.disabledServices || [],
       });
       setPreviewUrl(client.avatar || client.avatarUrl || null);
     } else {
@@ -109,6 +111,7 @@ export function ClientDrawer({
           canEditRequests: true,
         },
         priceOverrides: {},
+        disabledServices: [],
       });
       setPreviewUrl(null);
     }
@@ -550,10 +553,19 @@ export function ClientDrawer({
                 <div className="grid grid-cols-1 gap-4">
                   {services.map((service) => {
                     const override = formData.priceOverrides[service.id];
+                    const isDisabled = formData.disabledServices.includes(service.id);
                     return (
-                      <div key={service.id} className="flex items-center justify-between p-5 rounded-[28px] bg-slate-50 border border-slate-100 group hover:bg-white hover:shadow-xl hover:shadow-slate-100 hover:border-emerald-200 transition-all">
+                      <div key={service.id} className={cn(
+                        "flex items-center justify-between p-5 rounded-[28px] border transition-all",
+                        isDisabled 
+                          ? "bg-slate-50/50 border-slate-100 opacity-60" 
+                          : "bg-slate-50 border-slate-100 group hover:bg-white hover:shadow-xl hover:shadow-slate-100 hover:border-emerald-200"
+                      )}>
                         <div className="flex items-center gap-4">
-                          <div className="h-10 w-10 rounded-2xl bg-white flex items-center justify-center text-slate-400 group-hover:text-primary group-hover:bg-primary/5 transition-all shadow-sm">
+                          <div className={cn(
+                            "h-10 w-10 rounded-2xl flex items-center justify-center transition-all shadow-sm",
+                            isDisabled ? "bg-slate-100 text-slate-300" : "bg-white text-slate-400 group-hover:text-primary group-hover:bg-primary/5"
+                          )}>
                             <Tag className="h-5 w-5" />
                           </div>
                           <div>
@@ -562,25 +574,52 @@ export function ClientDrawer({
                           </div>
                         </div>
                         
-                        <div className="relative w-32">
-                          <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-300" />
-                          <input 
-                            type="number" 
-                            step="0.01"
-                            value={override || ""}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              const newOverrides = { ...formData.priceOverrides };
-                              if (val === "") {
-                                delete newOverrides[service.id];
-                              } else {
-                                newOverrides[service.id] = parseFloat(val);
-                              }
-                              setFormData({ ...formData, priceOverrides: newOverrides });
-                            }}
-                            placeholder="Special Rate"
-                            className="w-full h-10 pl-8 pr-4 bg-white border border-slate-200 rounded-xl text-xs font-black text-emerald-600 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all outline-none"
-                          />
+                        <div className="flex items-center gap-6">
+                          <div className="flex flex-col items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const current = formData.disabledServices;
+                                const next = current.includes(service.id)
+                                  ? current.filter(id => id !== service.id)
+                                  : [...current, service.id];
+                                setFormData({ ...formData, disabledServices: next });
+                              }}
+                              className={cn(
+                                "w-10 h-5 rounded-full transition-all relative shrink-0",
+                                isDisabled ? "bg-slate-200" : "bg-emerald-500"
+                              )}
+                            >
+                              <div className={cn(
+                                "absolute top-1 w-3 h-3 bg-white rounded-full transition-all",
+                                isDisabled ? "left-1" : "left-6"
+                              )} />
+                            </button>
+                            <span className="text-[8px] font-black uppercase tracking-tighter text-slate-400">
+                              {isDisabled ? "Hidden" : "Visible"}
+                            </span>
+                          </div>
+
+                          <div className="relative w-32">
+                            <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-300" />
+                            <input 
+                              type="number" 
+                              step="0.01"
+                              value={override || ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const newOverrides = { ...formData.priceOverrides };
+                                if (val === "") {
+                                  delete newOverrides[service.id];
+                                } else {
+                                  newOverrides[service.id] = parseFloat(val);
+                                }
+                                setFormData({ ...formData, priceOverrides: newOverrides });
+                              }}
+                              placeholder="Special Rate"
+                              className="w-full h-10 pl-8 pr-4 bg-white border border-slate-200 rounded-xl text-xs font-black text-emerald-600 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all outline-none"
+                            />
+                          </div>
                         </div>
                       </div>
                     );

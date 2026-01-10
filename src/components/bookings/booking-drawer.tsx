@@ -66,9 +66,24 @@ export function BookingDrawer({
 
   // Filter services based on client visibility
   const visibleServices = React.useMemo(() => {
-    if (!isClient) return services;
-    return services.filter(s => s.clientVisible !== false);
-  }, [services, isClient]);
+    // If no client is selected, show all services
+    if (!formData.clientId) return services;
+    
+    const currentClient = clients.find(c => c.id === formData.clientId);
+    let filtered = services;
+
+    // Filter by general client visibility if the user IS a client
+    if (isClient) {
+      filtered = filtered.filter(s => s.clientVisible !== false);
+    }
+    
+    // Always filter out services explicitly disabled for this specific client
+    if (currentClient?.disabledServices) {
+      filtered = filtered.filter(s => !currentClient.disabledServices.includes(s.id));
+    }
+    
+    return filtered;
+  }, [services, isClient, formData.clientId, clients]);
 
   const [statuses, setStatuses] = useState<string[]>(customStatuses);
   const [newStatusName, setNewStatusName] = useState("");

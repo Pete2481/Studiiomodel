@@ -89,6 +89,7 @@ export function InvoiceEditor({ clients, services, bookings, initialData, tenant
     discount: initialData?.discount || 0,
     taxRate: initialData?.taxRate !== undefined ? initialData.taxRate : (tenant?.taxRate !== null ? Number(tenant.taxRate) : 0.1),
     paidAmount: initialData?.paidAmount || 0,
+    taxInclusive: initialData?.taxInclusive ?? (tenant?.taxInclusive ?? true),
     paymentTerms: initialData?.paymentTerms || (tenant?.accountName ? `Account Name: ${tenant.accountName}\nBSB: ${tenant.bsb || ""}  Account: ${tenant.accountNumber || ""}` : ""),
     clientNotes: initialData?.clientNotes || "Thank you for your business!",
     invoiceTerms: initialData?.invoiceTerms || tenant?.invoiceTerms || "",
@@ -179,13 +180,28 @@ export function InvoiceEditor({ clients, services, bookings, initialData, tenant
   const totals = useMemo(() => {
     const subtotal = formData.lineItems.reduce((acc: number, item: any) => acc + (item.quantity * item.unitPrice), 0);
     const discountAmount = formData.discount;
-    const taxableAmount = Math.max(0, subtotal - discountAmount);
-    const taxAmount = taxableAmount * formData.taxRate;
-    const total = taxableAmount + taxAmount;
+    const amountAfterDiscount = Math.max(0, subtotal - discountAmount);
+    
+    let taxAmount = 0;
+    let total = 0;
+    let exTaxSubtotal = 0;
+
+    if (formData.taxInclusive) {
+      // Standard in Australia: Price includes GST
+      total = amountAfterDiscount;
+      taxAmount = total * (formData.taxRate / (1 + formData.taxRate));
+      exTaxSubtotal = total - taxAmount;
+    } else {
+      // US style: Price + Tax
+      exTaxSubtotal = amountAfterDiscount;
+      taxAmount = exTaxSubtotal * formData.taxRate;
+      total = exTaxSubtotal + taxAmount;
+    }
+
     const balance = total - formData.paidAmount;
 
-    return { subtotal, taxAmount, total, balance };
-  }, [formData.lineItems, formData.discount, formData.taxRate, formData.paidAmount]);
+    return { subtotal, taxAmount, total, balance, exTaxSubtotal };
+  }, [formData.lineItems, formData.discount, formData.taxRate, formData.paidAmount, formData.taxInclusive]);
 
   const handleSubmit = async (status: string) => {
     if (!formData.clientId) {
@@ -819,7 +835,7 @@ export function InvoiceEditor({ clients, services, bookings, initialData, tenant
 
             <div className="space-y-4 pt-2">
               <div className="flex justify-between items-center text-xs font-bold">
-                <span className="text-slate-400 uppercase tracking-widest">Subtotal</span>
+                <span className="text-slate-400 uppercase tracking-widest">{formData.taxInclusive ? "Total (Tax Incl.)" : "Subtotal"}</span>
                 <span className="text-slate-900">${totals.subtotal.toFixed(2)}</span>
               </div>
               
@@ -855,8 +871,11 @@ export function InvoiceEditor({ clients, services, bookings, initialData, tenant
                 </div>
               </div>
 
-              <div className="flex justify-between items-center text-xs font-bold border-t border-slate-50 pt-4">
-                <span className="text-slate-400 uppercase tracking-widest">{(tenant?.taxLabel || tenantSettings.taxLabel) || "Tax"} Amount</span>
+              <div className="flex justify-between items-center text-[10px] font-bold border-t border-slate-50 pt-4">
+                <div className="flex flex-col">
+                  <span className="text-slate-400 uppercase tracking-widest">Includes {(tenant?.taxLabel || tenantSettings.taxLabel) || "Tax"}</span>
+                  {formData.taxInclusive && <span className="text-[8px] text-slate-400 font-medium lowercase italic">(tax included in price)</span>}
+                </div>
                 <span className="text-slate-900">${totals.taxAmount.toFixed(2)}</span>
               </div>
 

@@ -208,8 +208,21 @@ export async function GET(
     const subtotal = invoice.lineItems.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0);
     const discount = Number(invoice.discount);
     const taxRate = Number(invoice.taxRate);
-    const taxAmount = (subtotal - discount) * taxRate;
-    const total = subtotal - discount + taxAmount;
+    const amountAfterDiscount = Math.max(0, subtotal - discount);
+    
+    let taxAmount = 0;
+    let total = 0;
+    
+    // Check if the tenant uses tax inclusive pricing (standard in AU)
+    const isTaxInclusive = (invoice.tenant as any).taxInclusive ?? true;
+
+    if (isTaxInclusive) {
+      total = amountAfterDiscount;
+      taxAmount = total * (taxRate / (1 + taxRate));
+    } else {
+      taxAmount = amountAfterDiscount * taxRate;
+      total = amountAfterDiscount + taxAmount;
+    }
 
     drawSummaryLine("TOTAL DUE", money(total), billToY - 25, true);
     drawSummaryLine("DUE BY", formatDate(invoice.dueAt), billToY - 42, false);
@@ -254,10 +267,17 @@ export async function GET(
 
     const taxLabel = tenant.taxLabel || "GST";
     const taxRatePercent = (taxRate * 100).toFixed(0);
+    const isTaxInclusive = (tenant as any).taxInclusive ?? true;
 
     drawTotalLine("SUBTOTAL", money(subtotal));
     if (discount > 0) drawTotalLine("DISCOUNT", `-${money(discount)}`);
-    drawTotalLine(`${taxLabel} (${taxRatePercent}%)`, money(taxAmount));
+    
+    if (isTaxInclusive) {
+      drawTotalLine(`INCLUDES ${taxLabel} (${taxRatePercent}%)`, money(taxAmount));
+    } else {
+      drawTotalLine(`${taxLabel} (${taxRatePercent}%)`, money(taxAmount));
+    }
+    
     y -= 5;
     page.drawLine({ start: { x: margin + 350, y: y + 10 }, end: { x: pageW - margin, y: y + 10 }, thickness: 1, color: rgb(0, 0, 0) });
     drawTotalLine("TOTAL DUE", money(total), true);

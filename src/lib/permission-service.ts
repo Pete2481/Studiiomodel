@@ -175,7 +175,21 @@ export class PermissionService {
       }
 
       // Filter items within the section
-      const filteredItems = section.items.filter((item: any) => this.canAccessModule(user, item.module));
+      const filteredItems = section.items.map((item: any) => {
+        const hasAccess = this.canAccessModule(user, item.module);
+        
+        // If it has sub-items, we need to check them too
+        if (item.items) {
+          const filteredNestedItems = item.items.filter((nestedItem: any) => 
+            this.canAccessModule(user, nestedItem.module)
+          );
+          
+          if (filteredNestedItems.length === 0) return null;
+          return { ...item, items: filteredNestedItems };
+        }
+        
+        return hasAccess ? item : null;
+      }).filter(Boolean);
       
       if (filteredItems.length === 0) return null;
 

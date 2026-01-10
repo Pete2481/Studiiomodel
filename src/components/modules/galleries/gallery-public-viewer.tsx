@@ -11,6 +11,7 @@ import {
   ChevronRight, 
   X, 
   Crop, 
+  Pencil,
   Check, 
   Loader2,
   Image as ImageIcon,
@@ -19,11 +20,15 @@ import {
   ArrowRight,
   ArrowLeft,
   Monitor,
-  Smartphone, 
+  Smartphone,
+  Instagram,
+  Sparkles,
   Info, 
   Heart, 
   PenTool,
-  Lock
+  Lock,
+  Zap,
+  FileText
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getGalleryAssets } from "@/app/actions/dropbox";
@@ -35,6 +40,7 @@ import { SocialCropper } from "./social-cropper";
 import { DownloadManager } from "./download-manager";
 import { VideoEditor } from "./video-editor";
 import { ShareModal } from "./share-modal";
+import { AISuiteDrawer } from "./ai-suite-drawer";
 
 interface GalleryPublicViewerProps {
   gallery: any;
@@ -66,10 +72,15 @@ export function GalleryPublicViewer({
   const [hoveredVideoId, setHoveredVideoId] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<string[]>(gallery.initialFavorites || []);
   const [isTogglingFavorite, setIsTogglingFavorite] = useState<string | null>(null);
-  const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
   const [isAssetLoading, setIsAssetLoading] = useState(false);
   const [loadingDirection, setLoadingDirection] = useState<"prev" | "next" | null>(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isAISuiteOpen, setIsAISuiteOpen] = useState(false);
+  const [isAIPlacementMode, setIsAIPlacementMode] = useState(false);
+  const [aiMaskData, setAiMaskData] = useState<any>(null);
+  const [aiMaskUrl, setAiMaskUrl] = useState<string | null>(null);
+  const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
+  const [isChoiceModalOpen, setIsChoiceModalOpen] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
 
   const [visibleCount, setVisibleCount] = useState(25);
@@ -79,7 +90,19 @@ export function GalleryPublicViewer({
   const getImageUrl = (url: string, size?: string) => {
     if (!url) return "";
     
-    // Use URL object for robust parsing
+    // If it's already an absolute external URL, don't try to transform it into a relative path
+    if (url.startsWith("http") && !url.includes(window.location.origin)) {
+      let finalUrl = url;
+      if (isShared && !finalUrl.includes("shared=true")) {
+        finalUrl += `${finalUrl.includes("?") ? "&" : "?"}shared=true`;
+      }
+      if (size && !finalUrl.includes("size=")) {
+        finalUrl += `${finalUrl.includes("?") ? "&" : "?"}size=${size}`;
+      }
+      return finalUrl;
+    }
+
+    // Use URL object for robust parsing for internal paths
     try {
       const urlObj = new URL(url, window.location.origin);
       
@@ -136,7 +159,7 @@ export function GalleryPublicViewer({
     if (!touchStart.current || !touchEnd.current) return;
     const distance = touchStart.current - touchEnd.current;
     const isRightSwipe = distance < -minSwipeDistance;
-    if (isRightSwipe && !selectedAsset && !selectedVideo && !playingVideoId) {
+    if (isRightSwipe && !selectedAsset && !selectedVideo) {
       router.back();
     }
   };
@@ -584,7 +607,7 @@ export function GalleryPublicViewer({
                     className="break-inside-avoid relative rounded-[32px] overflow-hidden bg-slate-50 cursor-zoom-in border border-slate-100 group transition-all duration-500 hover:shadow-2xl hover:shadow-slate-200 mb-8"
                     onClick={() => {
                       if (item.type === "video") {
-                        setPlayingVideoId(item.id || item.url);
+                        setSelectedVideo(item);
                       } else {
                         setIsAssetLoading(true);
                         setSelectedAsset(item);
@@ -592,48 +615,37 @@ export function GalleryPublicViewer({
                     }}
                   >
                     {item.type === "video" ? (
-                      playingVideoId === (item.id || item.url) ? (
-                        <div className="h-full w-full bg-black relative aspect-video">
-                          <iframe 
-                            src={formatVideoUrl(getImageUrl(item.url))}
-                            className="w-full h-full border-0"
-                            allow="autoplay; fullscreen; picture-in-picture"
-                            allowFullScreen
-                          />
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setPlayingVideoId(null);
-                            }}
-                            className="absolute top-4 right-4 h-8 w-8 rounded-full bg-black/50 text-white flex items-center justify-center backdrop-blur-md z-40 hover:bg-black transition-colors"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
+                      <div 
+                        className="h-full w-full bg-slate-950 flex items-center justify-center relative group/vid aspect-video rounded-[32px] overflow-hidden"
+                      >
+                        {/* Video Thumbnail: Use Banner Image if available, otherwise a placeholder */}
+                        <div className="absolute inset-0 z-0 flex items-center justify-center">
+                          {gallery.bannerImageUrl ? (
+                            <img 
+                              src={getImageUrl(gallery.bannerImageUrl, "w1024h768")} 
+                              alt="Video Thumbnail"
+                              className="w-full h-full object-cover grayscale contrast-125 opacity-40 group-hover/vid:scale-105 transition-all duration-1000"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-slate-900 flex flex-col items-center justify-center gap-4">
+                              <div className="h-20 w-20 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white/20">
+                                <VideoIcon className="h-8 w-8" />
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      ) : (
-                        <div 
-                          className="h-full w-full bg-slate-900 flex items-center justify-center relative group/vid aspect-video rounded-[32px] overflow-hidden"
-                        >
-                          <div className="absolute inset-0 bg-primary/10 pointer-events-none z-10" />
-                          
-                          {/* Video Thumbnail: Use Banner Image if available */}
-                          <div className="absolute inset-0 z-0 flex items-center justify-center">
-                            {gallery.bannerImageUrl ? (
-                              <img 
-                                src={getImageUrl(gallery.bannerImageUrl, "w640h480")} 
-                                alt="Video Thumbnail"
-                                className="w-full h-full object-cover opacity-50 grayscale group-hover/vid:grayscale-0 group-hover/vid:opacity-100 transition-all duration-700"
-                              />
-                            ) : (
-                              <div className="w-full h-full bg-slate-800" />
-                            )}
-                          </div>
 
-                          <div className="relative z-20 h-16 w-16 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center text-white scale-100 group-hover/vid:scale-110 group-hover/vid:bg-primary transition-all duration-500 shadow-xl border border-white/20">
+                        {/* High-end Play Button Overlay */}
+                        <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+                          {/* Signature Green Play Button */}
+                          <div className="h-16 w-16 rounded-full bg-emerald-500 flex items-center justify-center text-white group-hover/vid:scale-110 transition-all duration-500 shadow-xl shadow-emerald-500/20">
                             <Play className="h-6 w-6 fill-current ml-1" />
                           </div>
                         </div>
-                      )
+                        
+                        {/* Gradient Overlay for labels */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60 pointer-events-none" />
+                      </div>
                     ) : (
                       <ProgressiveImage 
                         src={item.url} 
@@ -671,7 +683,7 @@ export function GalleryPublicViewer({
                     {/* Hover Actions */}
                     <div className={cn(
                       "absolute bottom-6 left-6 right-6 flex items-center justify-end translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300 z-30",
-                      item.type === "video" && playingVideoId === (item.id || item.url) ? "hidden" : (item.type === "video" && "group-hover/vid:opacity-100")
+                      item.type === "video" ? "group-hover/vid:opacity-100" : ""
                     )}>
                       <div className="flex gap-2 shrink-0">
                         {!isShared && (
@@ -688,8 +700,16 @@ export function GalleryPublicViewer({
                               <Heart className={cn("h-4 w-4", favorites.includes(item.id || item.url) && "fill-current")} />
                             </button>
                             {item.type === "image" && (
-                              <button className="h-9 w-9 rounded-xl bg-white/20 backdrop-blur-md text-white flex items-center justify-center hover:bg-white hover:text-slate-900 transition-all">
-                                <Crop className="h-4 w-4" />
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedAsset(item);
+                                  setIsChoiceModalOpen(true);
+                                }}
+                                className="h-9 w-9 rounded-xl bg-white/20 backdrop-blur-md text-white flex items-center justify-center hover:bg-white hover:text-slate-900 transition-all"
+                                title="Edit Image"
+                              >
+                                <Pencil className="h-4 w-4" />
                               </button>
                             )}
                           </>
@@ -786,135 +806,144 @@ export function GalleryPublicViewer({
             </div>
 
             <div className="flex items-center gap-3">
-              {!isShared && (
+              {!isRequestingEdit && !isAISuiteOpen && (
                 <>
-                  <button 
-                    onClick={(e) => handleToggleFavorite(e, selectedAsset)}
-                    className={cn(
-                      "h-10 w-10 rounded-full flex items-center justify-center transition-all border shadow-lg",
-                      favorites.includes(selectedAsset.id || selectedAsset.url)
-                        ? "bg-rose-500 border-rose-400 text-white"
-                        : "bg-white/5 border-white/10 text-white hover:bg-white hover:text-rose-500"
-                    )}
-                  >
-                    <Heart className={cn("h-4 w-4", favorites.includes(selectedAsset.id || selectedAsset.url) && "fill-current")} />
-                  </button>
-
-                  {canEdit && (
+                  {gallery.isCopyPublished && gallery.aiCopy && (
                     <button 
-                      onClick={() => {
-                        setIsRequestingEdit(true);
-                        setIsDrawingMode(false);
-                      }}
-                      className="h-10 px-6 rounded-full bg-white/10 text-white text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-white hover:text-slate-900 transition-all border border-white/10"
+                      onClick={() => setIsCopyModalOpen(true)}
+                      className="h-10 px-6 rounded-full bg-white text-slate-900 text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all shadow-lg border border-slate-200"
                     >
-                      <PenTool className="h-3.5 w-3.5" />
-                      Request Edit
+                      <FileText className="h-3.5 w-3.5 text-primary" />
+                      Property Copy
                     </button>
                   )}
 
-                  <button 
-                    onClick={() => setIsSocialCropperOpen(true)}
-                    className="h-10 px-6 rounded-full bg-primary text-white text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all shadow-lg shadow-primary/20"
-                  >
-                    <Crop className="h-3.5 w-3.5" />
-                    Social Cropper
-                  </button>
+                  {!isShared && (
+                    <>
+                      <button 
+                        onClick={() => setIsChoiceModalOpen(true)}
+                        className="h-10 px-6 rounded-full bg-primary text-white text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all shadow-lg shadow-primary/20"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Edit Image
+                      </button>
+
+                      <button 
+                        onClick={(e) => handleToggleFavorite(e, selectedAsset)}
+                        className={cn(
+                          "h-10 w-10 rounded-full flex items-center justify-center transition-all border shadow-lg",
+                          favorites.includes(selectedAsset.id || selectedAsset.url)
+                            ? "bg-rose-500 border-rose-400 text-white"
+                            : "bg-white/5 border-white/10 text-white hover:bg-white hover:text-rose-500"
+                        )}
+                      >
+                        <Heart className={cn("h-4 w-4", favorites.includes(selectedAsset.id || selectedAsset.url) && "fill-current")} />
+                      </button>
+                    </>
+                  )}
+                  
+                  {canDownload && (
+                    <button 
+                      onClick={() => {
+                        setDownloadAssets([selectedAsset]);
+                        setIsDownloadManagerOpen(true);
+                      }}
+                      className="h-10 px-6 rounded-full bg-white text-slate-900 text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Download
+                    </button>
+                  )}
                 </>
               )}
-              
-              {canDownload && (
+            </div>
+          </div>
+
+            <div className="flex-1 relative flex items-center justify-center p-8">
+              {!isRequestingEdit && !isAISuiteOpen && (
                 <button 
-                  onClick={() => {
-                    setDownloadAssets([selectedAsset]);
-                    setIsDownloadManagerOpen(true);
+                  className={cn(
+                    "absolute left-6 h-14 w-14 rounded-full bg-white/5 text-white flex items-center justify-center hover:bg-white/10 transition-all border border-white/5 group z-20",
+                    isAssetLoading && loadingDirection === "prev" && "cursor-wait"
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // Allow clicking if we are not already loading this direction
+                    if (isAssetLoading && loadingDirection === "prev") return;
+                    
+                    const idx = filteredAssets.findIndex(a => a.url === selectedAsset.url);
+                    if (idx > 0) {
+                      setIsAssetLoading(true);
+                      setLoadingDirection("prev");
+                      setSelectedAsset(filteredAssets[idx - 1]);
+                    }
                   }}
-                  className="h-10 px-6 rounded-full bg-white text-slate-900 text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all"
                 >
-                  <Download className="h-3.5 w-3.5" />
-                  Download
+                  {isAssetLoading && loadingDirection === "prev" ? (
+                    <Loader2 className="h-8 w-8 animate-spin" />
+                  ) : (
+                    <ChevronLeft className="h-8 w-8 group-hover:scale-110 transition-transform" />
+                  )}
+                </button>
+              )}
+              
+              <div className={cn(
+                "relative group/main transition-all duration-500 ease-in-out",
+                isRequestingEdit ? "lg:mr-[1000px]" : isAISuiteOpen ? "lg:mr-[480px]" : "lg:mr-0"
+              )}>
+                <img 
+                  ref={imgRef}
+                  src={getImageUrl(selectedAsset.url, "w1024h768")} 
+                  alt={selectedAsset.name}
+                  onLoad={() => {
+                    setIsAssetLoading(false);
+                    setLoadingDirection(null);
+                  }}
+                  onError={() => {
+                    setIsAssetLoading(false);
+                    setLoadingDirection(null);
+                  }}
+                  className="max-h-[85vh] max-w-full object-contain rounded-xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.8)]"
+                />
+                
+                {!isRequestingEdit && !isAISuiteOpen && (
+                  <div className="absolute bottom-8 left-1/2 -translate-x-1/2 px-4 py-2 bg-black/40 backdrop-blur-md rounded-full border border-white/10 opacity-0 group-hover/main:opacity-100 transition-opacity text-center">
+                    <p className="text-[9px] font-black text-white/80 uppercase tracking-widest flex items-center gap-2">
+                      <Monitor className="h-3 w-3" />
+                      High Definition Preview (1024px)
+                    </p>
+                    <p className="text-[7px] font-bold text-white/40 uppercase mt-0.5 tracking-tight">Full resolution available via download</p>
+                  </div>
+                )}
+              </div>
+
+              {!isRequestingEdit && !isAISuiteOpen && (
+                <button 
+                  className={cn(
+                    "absolute right-6 h-14 w-14 rounded-full bg-white/5 text-white flex items-center justify-center hover:bg-white/10 transition-all border border-white/5 group z-20",
+                    isAssetLoading && loadingDirection === "next" && "cursor-wait"
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // Allow clicking if we are not already loading this direction
+                    if (isAssetLoading && loadingDirection === "next") return;
+
+                    const idx = filteredAssets.findIndex(a => a.url === selectedAsset.url);
+                    if (idx < filteredAssets.length - 1) {
+                      setIsAssetLoading(true);
+                      setLoadingDirection("next");
+                      setSelectedAsset(filteredAssets[idx + 1]);
+                    }
+                  }}
+                >
+                  {isAssetLoading && loadingDirection === "next" ? (
+                    <Loader2 className="h-8 w-8 animate-spin" />
+                  ) : (
+                    <ChevronRight className="h-8 w-8 group-hover:scale-110 transition-transform" />
+                  )}
                 </button>
               )}
             </div>
-          </div>
-
-          <div className="flex-1 relative flex items-center justify-center p-8">
-            <button 
-              className={cn(
-                "absolute left-6 h-14 w-14 rounded-full bg-white/5 text-white flex items-center justify-center hover:bg-white/10 transition-all border border-white/5 group z-20",
-                isAssetLoading && loadingDirection === "prev" && "cursor-wait"
-              )}
-              onClick={(e) => {
-                e.stopPropagation();
-                // Allow clicking if we are not already loading this direction
-                if (isAssetLoading && loadingDirection === "prev") return;
-                
-                const idx = filteredAssets.findIndex(a => a.url === selectedAsset.url);
-                if (idx > 0) {
-                  setIsAssetLoading(true);
-                  setLoadingDirection("prev");
-                  setSelectedAsset(filteredAssets[idx - 1]);
-                }
-              }}
-            >
-              {isAssetLoading && loadingDirection === "prev" ? (
-                <Loader2 className="h-8 w-8 animate-spin" />
-              ) : (
-                <ChevronLeft className="h-8 w-8 group-hover:scale-110 transition-transform" />
-              )}
-            </button>
-            
-            <div className="relative group/main">
-              <img 
-                ref={imgRef}
-                src={getImageUrl(selectedAsset.url, "w1024h768")} 
-                alt={selectedAsset.name}
-                onLoad={() => {
-                  setIsAssetLoading(false);
-                  setLoadingDirection(null);
-                }}
-                onError={() => {
-                  setIsAssetLoading(false);
-                  setLoadingDirection(null);
-                }}
-                className="max-h-[85vh] max-w-full object-contain rounded-xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.8)]"
-              />
-              
-              {/* Image Info Overlay on hover in Lightbox */}
-              <div className="absolute bottom-8 left-1/2 -translate-x-1/2 px-4 py-2 bg-black/40 backdrop-blur-md rounded-full border border-white/10 opacity-0 group-hover/main:opacity-100 transition-opacity text-center">
-                <p className="text-[9px] font-black text-white/80 uppercase tracking-widest flex items-center gap-2">
-                  <Monitor className="h-3 w-3" />
-                  High Definition Preview (1024px)
-                </p>
-                <p className="text-[7px] font-bold text-white/40 uppercase mt-0.5 tracking-tight">Full resolution available via download</p>
-              </div>
-            </div>
-
-            <button 
-              className={cn(
-                "absolute right-6 h-14 w-14 rounded-full bg-white/5 text-white flex items-center justify-center hover:bg-white/10 transition-all border border-white/5 group z-20",
-                isAssetLoading && loadingDirection === "next" && "cursor-wait"
-              )}
-              onClick={(e) => {
-                e.stopPropagation();
-                // Allow clicking if we are not already loading this direction
-                if (isAssetLoading && loadingDirection === "next") return;
-
-                const idx = filteredAssets.findIndex(a => a.url === selectedAsset.url);
-                if (idx < filteredAssets.length - 1) {
-                  setIsAssetLoading(true);
-                  setLoadingDirection("next");
-                  setSelectedAsset(filteredAssets[idx + 1]);
-                }
-              }}
-            >
-              {isAssetLoading && loadingDirection === "next" ? (
-                <Loader2 className="h-8 w-8 animate-spin" />
-              ) : (
-                <ChevronRight className="h-8 w-8 group-hover:scale-110 transition-transform" />
-              )}
-            </button>
-          </div>
 
           {/* Social Cropper Overlay - Still needs selectedAsset, but moved for cleaner hierarchy */}
           {isSocialCropperOpen && selectedAsset && (
@@ -925,16 +954,81 @@ export function GalleryPublicViewer({
             />
           )}
 
+          {isAISuiteOpen && selectedAsset && (
+            <AISuiteDrawer
+              isOpen={isAISuiteOpen}
+              onClose={() => {
+                setIsAISuiteOpen(false);
+                setAiMaskData(null);
+              }}
+              assetUrl={selectedAsset.url.startsWith("http") 
+                ? selectedAsset.url 
+                : `${window.location.origin}${getImageUrl(selectedAsset.url)}&size=w2048h1536&id=${selectedAsset.id}`}
+              assetName={selectedAsset.name}
+              dbxPath={selectedAsset.path}
+              tenantId={gallery.tenantId}
+              maskData={aiMaskUrl}
+              onStartPlacement={() => {
+                setIsAIPlacementMode(true);
+              }}
+              onComplete={(newUrl) => {
+                // Future: We could update the asset in the gallery
+                console.log("AI complete:", newUrl);
+              }}
+            />
+          )}
+
+          {isCopyModalOpen && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+              <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-md" onClick={() => setIsCopyModalOpen(false)} />
+              <div className="relative w-full max-w-2xl bg-white rounded-[40px] shadow-2xl flex flex-col max-h-[80vh] overflow-hidden animate-in zoom-in-95 duration-300">
+                <div className="px-8 py-8 border-b border-slate-50 flex items-center justify-between shrink-0">
+                  <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
+                      <FileText className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-black text-slate-900 tracking-tight">Property Listing</h3>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{gallery.title}</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setIsCopyModalOpen(false)}
+                    className="h-10 w-10 rounded-full bg-slate-50 hover:bg-slate-100 flex items-center justify-center text-slate-400"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                  <div className="prose prose-slate max-w-none text-sm font-medium leading-relaxed whitespace-pre-wrap text-slate-600">
+                    {gallery.aiCopy}
+                  </div>
+                </div>
+                <div className="p-8 border-t border-slate-50 bg-slate-50/50 flex justify-end">
+                  <button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(gallery.aiCopy);
+                      alert("Copied to clipboard!");
+                    }}
+                    className="h-12 px-8 rounded-2xl bg-slate-900 text-white font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all shadow-lg"
+                  >
+                    Copy Text
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Download Manager Overlay - Moved outside Lightbox */}
 
           {/* Edit Request Details Form (Slide-over style inside lightbox) */}
           {isRequestingEdit && (
-            <div className="absolute inset-0 z-[60] flex items-center justify-end p-8 bg-slate-950/40 backdrop-blur-sm animate-in fade-in duration-300">
+            <div className="absolute inset-0 z-[60] flex items-center justify-end p-4 md:p-8 bg-transparent pointer-events-none animate-in fade-in duration-300">
               <div 
-                className="w-full max-w-md bg-white rounded-[32px] shadow-2xl overflow-hidden flex flex-col h-full max-h-[700px] animate-in slide-in-from-right duration-500"
+                className="w-full max-w-5xl bg-white rounded-[32px] shadow-2xl overflow-hidden flex flex-col h-full max-h-[850px] animate-in slide-in-from-right duration-500 pointer-events-auto"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="p-8 border-b border-slate-50 flex items-center justify-between">
+                <div className="p-6 md:p-8 border-b border-slate-50 flex items-center justify-between shrink-0">
                   <div className="space-y-1">
                     <p className="text-[10px] font-black text-primary uppercase tracking-widest">
                       {drawingData ? "VISUAL INSTRUCTIONS ADDED" : "EDIT DETAILS"}
@@ -955,123 +1049,137 @@ export function GalleryPublicViewer({
                   </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
-                  {/* Drawing Section (Optional) */}
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center justify-between">
-                      Visual Marking (Optional)
-                      {drawingData && (
+                <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
+                  {/* Left Column: Visual Marking (Drawing) */}
+                  <div className="w-full lg:w-[40%] p-6 md:p-8 border-b lg:border-b-0 lg:border-r border-slate-50 overflow-y-auto custom-scrollbar">
+                    <div className="space-y-4">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center justify-between">
+                        Visual Marking (Optional)
+                        {drawingData && (
+                          <button 
+                            type="button"
+                            onClick={() => setIsDrawingMode(true)}
+                            className="text-primary hover:underline text-[9px] font-black"
+                          >
+                            EDIT DRAWING
+                          </button>
+                        )}
+                      </label>
+                      
+                      {drawingData ? (
+                        <div 
+                          onClick={() => setIsDrawingMode(true)}
+                          className="aspect-square rounded-2xl bg-slate-50 border border-slate-100 overflow-hidden relative group cursor-pointer"
+                        >
+                          <img src={getImageUrl(selectedAsset.url, "w1024h768")} className="h-full w-full object-contain opacity-40" alt="Preview" />
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+                              <PenTool className="h-5 w-5" />
+                            </div>
+                            <span className="text-[9px] font-black text-primary uppercase tracking-widest">Drawing Attached</span>
+                          </div>
+                        </div>
+                      ) : (
                         <button 
                           type="button"
                           onClick={() => setIsDrawingMode(true)}
-                          className="text-primary hover:underline text-[9px] font-black"
+                          className="w-full aspect-square rounded-2xl border-2 border-dashed border-slate-100 hover:border-primary/30 hover:bg-primary/[0.02] transition-all flex flex-col items-center justify-center gap-3 group"
                         >
-                          EDIT DRAWING
-                        </button>
-                      )}
-                    </label>
-                    
-                    {drawingData ? (
-                      <div 
-                        onClick={() => setIsDrawingMode(true)}
-                        className="aspect-square rounded-2xl bg-slate-50 border border-slate-100 overflow-hidden relative group cursor-pointer"
-                      >
-                        <img src={getImageUrl(selectedAsset.url, "w1024h768")} className="h-full w-full object-contain opacity-40" alt="Preview" />
-                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+                          <div className="h-12 w-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:text-primary group-hover:bg-primary/10 transition-all">
                             <PenTool className="h-5 w-5" />
                           </div>
-                          <span className="text-[9px] font-black text-primary uppercase tracking-widest">Drawing Attached</span>
+                          <div className="text-center">
+                            <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Draw on Photo</p>
+                            <p className="text-[9px] font-medium text-slate-400 mt-1 max-w-[180px] mx-auto">
+                              Circle specific areas you want our editors to focus on.
+                            </p>
+                          </div>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Right Column: Edit Types & Instructions */}
+                  <div className="w-full lg:w-[60%] flex flex-col overflow-hidden">
+                    <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8 custom-scrollbar">
+                      {/* Edit Tags (Multi-select) */}
+                      <div className="space-y-4">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Edit Type</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {editTags.map((tag: any) => {
+                            const isSelected = selectedTagIds.includes(tag.id);
+                            return (
+                              <button
+                                key={tag.id}
+                                type="button"
+                                onClick={() => {
+                                  if (isSelected) {
+                                    setSelectedTagIds(prev => prev.filter(id => id !== tag.id));
+                                  } else {
+                                    setSelectedTagIds(prev => [...prev, tag.id]);
+                                  }
+                                }}
+                                className={cn(
+                                  "flex items-center justify-between px-4 py-3 rounded-2xl text-[11px] font-bold transition-all border text-left",
+                                  isSelected 
+                                    ? "bg-primary border-primary text-white shadow-lg shadow-primary/20" 
+                                    : "bg-white border-slate-200 text-slate-600 hover:border-primary hover:text-primary"
+                                )}
+                              >
+                                <span>{tag.name}</span>
+                                <span className={cn(
+                                  "px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest",
+                                  isSelected ? "bg-white/20 text-white" : "bg-slate-50 text-slate-400"
+                                )}>
+                                  ${tag.cost}
+                                </span>
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
-                    ) : (
-                      <button 
-                        type="button"
-                        onClick={() => setIsDrawingMode(true)}
-                        className="w-full aspect-square rounded-2xl border-2 border-dashed border-slate-100 hover:border-primary/30 hover:bg-primary/[0.02] transition-all flex flex-col items-center justify-center gap-3 group"
-                      >
-                        <div className="h-12 w-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:text-primary group-hover:bg-primary/10 transition-all">
-                          <PenTool className="h-5 w-5" />
-                        </div>
-                        <div className="text-center">
-                          <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Draw on Photo</p>
-                          <p className="text-[9px] font-medium text-slate-400 mt-1 max-w-[180px]">
-                            Circle specific areas you want our editors to focus on.
-                          </p>
-                        </div>
-                      </button>
-                    )}
-                  </div>
 
-                  {/* Edit Tags (Multi-select) */}
-                  <div className="space-y-4">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Edit Type</label>
-                    <div className="flex flex-wrap gap-2">
-                      {editTags.map((tag: any) => {
-                        const isSelected = selectedTagIds.includes(tag.id);
-                        return (
-                          <button
-                            key={tag.id}
-                            type="button"
-                            onClick={() => {
-                              if (isSelected) {
-                                setSelectedTagIds(prev => prev.filter(id => id !== tag.id));
-                              } else {
-                                setSelectedTagIds(prev => [...prev, tag.id]);
-                              }
-                            }}
-                            className={cn(
-                              "px-4 py-2 rounded-full text-[11px] font-bold transition-all border",
-                              isSelected 
-                                ? "bg-primary border-primary text-white shadow-lg shadow-primary/20" 
-                                : "bg-white border-slate-200 text-slate-600 hover:border-primary hover:text-primary"
-                            )}
-                          >
-                            {tag.name} (${tag.cost})
-                          </button>
-                        );
-                      })}
+                      {/* Note */}
+                      <div className="space-y-3">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Additional Instructions</label>
+                        <textarea 
+                          value={editNote}
+                          onChange={(e) => setEditNote(e.target.value)}
+                          placeholder="e.g. Please remove the car and also the green bin on the left..."
+                          className="w-full h-40 rounded-2xl border border-slate-200 p-4 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-none"
+                        />
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Note */}
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Additional Instructions</label>
-                    <textarea 
-                      value={editNote}
-                      onChange={(e) => setEditNote(e.target.value)}
-                      placeholder="e.g. Please remove the car and also the green bin on the left..."
-                      className="w-full h-32 rounded-2xl border border-slate-200 p-4 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="p-8 border-t border-slate-50 bg-slate-50/50">
-                  {editSuccess ? (
-                    <div className="h-14 w-full rounded-2xl bg-emerald-500 text-white flex items-center justify-center gap-2 animate-in zoom-in duration-300">
-                      <Check className="h-5 w-5" />
-                      <span className="font-bold">Request Submitted!</span>
-                    </div>
-                  ) : (
-                    <button 
-                      type="button"
-                      onClick={handleSubmitEditRequest}
-                      disabled={isSubmittingEdit || (selectedTagIds.length === 0 && !editNote)}
-                      className="h-14 w-full rounded-2xl bg-slate-900 text-white font-bold flex items-center justify-center gap-2 hover:scale-[1.02] transition-all shadow-xl disabled:opacity-50 disabled:hover:scale-100"
-                    >
-                      {isSubmittingEdit ? (
-                        <>
-                          <Loader2 className="h-5 w-5 animate-spin" />
-                          Submitting...
-                        </>
+                    {/* Sticky Footer */}
+                    <div className="p-6 md:p-8 border-t border-slate-50 bg-slate-50/50 shrink-0">
+                      {editSuccess ? (
+                        <div className="h-14 w-full rounded-2xl bg-emerald-500 text-white flex items-center justify-center gap-2 animate-in zoom-in duration-300">
+                          <Check className="h-5 w-5" />
+                          <span className="font-bold">Request Submitted!</span>
+                        </div>
                       ) : (
-                        <>
-                          Submit Edit Request
-                          <ArrowRight className="h-4 w-4" />
-                        </>
+                        <button 
+                          type="button"
+                          onClick={handleSubmitEditRequest}
+                          disabled={isSubmittingEdit || (selectedTagIds.length === 0 && !editNote)}
+                          className="h-14 w-full rounded-2xl bg-slate-900 text-white font-bold flex items-center justify-center gap-2 hover:scale-[1.02] transition-all shadow-xl disabled:opacity-50 disabled:hover:scale-100"
+                        >
+                          {isSubmittingEdit ? (
+                            <>
+                              <Loader2 className="h-5 w-5 animate-spin" />
+                              Submitting...
+                            </>
+                          ) : (
+                            <>
+                              Submit Edit Request
+                              <ArrowRight className="h-4 w-4" />
+                            </>
+                          )}
+                        </button>
                       )}
-                    </button>
-                  )}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1089,6 +1197,21 @@ export function GalleryPublicViewer({
               onCancel={() => {
                 setIsDrawingMode(false);
                 setIsRequestingEdit(true);
+              }}
+            />
+          )}
+
+          {isAIPlacementMode && (
+            <DrawingCanvas 
+              imageUrl={`${getImageUrl(selectedAsset.url)}&size=w2048h1536`}
+              isMaskMode={true}
+              onSave={(data, maskUrl) => {
+                setAiMaskData(data);
+                if (maskUrl) setAiMaskUrl(maskUrl);
+                setIsAIPlacementMode(false);
+              }}
+              onCancel={() => {
+                setIsAIPlacementMode(false);
               }}
             />
           )}
@@ -1370,6 +1493,110 @@ export function GalleryPublicViewer({
             <div className="space-y-0.5">
               <p className="text-[11px] font-black uppercase tracking-widest text-white/50">Success</p>
               <p className="text-sm font-bold tracking-tight">Curated link copied to clipboard</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Choice Modal Overlay */}
+      {isChoiceModalOpen && selectedAsset && (
+        <div 
+          className="fixed inset-0 z-[200] bg-slate-950/80 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-500"
+          onClick={() => setIsChoiceModalOpen(false)}
+        >
+          <div 
+            className="w-full max-w-4xl bg-white rounded-[48px] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in duration-500"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-8 border-b border-slate-100 flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-[10px] font-black text-primary uppercase tracking-widest">Image Processing</p>
+                <h3 className="text-2xl font-bold text-slate-900 tracking-tight">What would you like to do?</h3>
+              </div>
+              <button 
+                onClick={() => setIsChoiceModalOpen(false)}
+                className="h-12 w-12 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center hover:bg-slate-100 transition-all active:scale-95"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Grid of Choices */}
+            <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Professional Studio Edit */}
+              <button 
+                onClick={() => {
+                  setIsChoiceModalOpen(false);
+                  setIsRequestingEdit(true);
+                }}
+                className="group p-8 rounded-[32px] border-2 border-slate-100 bg-white hover:border-primary/30 hover:bg-primary/[0.02] transition-all flex flex-col items-center text-center gap-6"
+              >
+                <div className="h-16 w-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <PenTool className="h-8 w-8" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-center gap-2">
+                    <p className="text-sm font-black text-slate-900 uppercase tracking-widest">Studio Edit</p>
+                    <span className="px-2 py-0.5 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest rounded-md">COST</span>
+                  </div>
+                  <p className="text-xs font-medium text-slate-400 leading-relaxed">
+                    Request our professional production crew to manually revise your image.
+                  </p>
+                </div>
+              </button>
+
+              {/* AI Edit Suite */}
+              <button 
+                onClick={() => {
+                  setIsChoiceModalOpen(false);
+                  setIsAISuiteOpen(true);
+                }}
+                className="group p-8 rounded-[32px] border-2 border-slate-100 bg-white hover:border-emerald-500/30 hover:bg-emerald-500/[0.02] transition-all flex flex-col items-center text-center gap-6"
+              >
+                <div className="h-16 w-16 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Zap className="h-8 w-8 fill-current" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-center gap-2">
+                    <p className="text-sm font-black text-slate-900 uppercase tracking-widest">AI Suite</p>
+                    <span className="px-2 py-0.5 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest rounded-md">COST</span>
+                  </div>
+                  <p className="text-xs font-medium text-slate-400 leading-relaxed">
+                    Instant automated enhancements using our AI-powered production suite.
+                  </p>
+                </div>
+              </button>
+
+              {/* Social Media Cropper */}
+              <button 
+                onClick={() => {
+                  setIsChoiceModalOpen(false);
+                  setIsSocialCropperOpen(true);
+                }}
+                className="group p-8 rounded-[32px] border-2 border-slate-100 bg-white hover:border-sky-500/30 hover:bg-sky-500/[0.02] transition-all flex flex-col items-center text-center gap-6"
+              >
+                <div className="h-16 w-16 rounded-2xl bg-sky-500/10 text-sky-500 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Instagram className="h-8 w-8" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-center gap-2">
+                    <p className="text-sm font-black text-slate-900 uppercase tracking-widest">Social Crop</p>
+                    <span className="px-2 py-0.5 bg-emerald-500 text-white text-[9px] font-black uppercase tracking-widest rounded-md">FREE</span>
+                  </div>
+                  <p className="text-xs font-medium text-slate-400 leading-relaxed">
+                    Instantly crop and download your image optimized for social media.
+                  </p>
+                </div>
+              </button>
+            </div>
+
+            {/* Footer Tip */}
+            <div className="p-6 bg-slate-50 border-t border-slate-100 flex items-center justify-center gap-3">
+              <Info className="h-4 w-4 text-slate-400" />
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                All studio and AI edits are tracked and invoiced based on your agency agreement.
+              </p>
             </div>
           </div>
         </div>

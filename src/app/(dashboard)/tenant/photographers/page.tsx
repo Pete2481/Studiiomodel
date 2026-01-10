@@ -23,7 +23,7 @@ export default async function PhotographersPage() {
   return (
     <div className="space-y-12">
       <ShellSettings 
-        title="Team Members" 
+        title="Studio Crew" 
         subtitle="Manage your production crew, update permissions, and keep contact info current." 
       />
       

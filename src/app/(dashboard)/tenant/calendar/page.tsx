@@ -105,7 +105,7 @@ async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
     }),
     tPrisma.client.findMany({ 
       where: !canViewAll && clientId ? { id: clientId, deletedAt: null } : { deletedAt: null }, 
-      select: { id: true, name: true, businessName: true, avatarUrl: true } 
+      select: { id: true, name: true, businessName: true, avatarUrl: true, settings: true } 
     }),
     tPrisma.service.findMany({ 
       where: { active: true },
@@ -203,7 +203,13 @@ async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
     };
   }).filter(Boolean);
 
-  const clients = dbClients.map(c => ({ id: String(c.id), name: String(c.name), businessName: String(c.businessName || ""), avatarUrl: c.avatarUrl || null }));
+  const clients = dbClients.map(c => ({ 
+    id: String(c.id), 
+    name: String(c.name), 
+    businessName: String(c.businessName || ""), 
+    avatarUrl: c.avatarUrl || null,
+    disabledServices: (c.settings as any)?.disabledServices || []
+  }));
   const services = dbServices.map(s => ({ id: String(s.id), name: String(s.name), price: Number(s.price), durationMinutes: Number(s.durationMinutes), icon: String(s.icon || "CAMERA"), slotType: (s as any).slotType || null, clientVisible: (s as any).clientVisible !== false, isFavorite: (s.settings as any)?.isFavorite || false }));
   const teamMembers = dbTeamMembers.map(m => ({ id: String(m.id), displayName: String(m.displayName), avatarUrl: m.avatarUrl || null }));
   const agents = dbAgents.map(a => ({ id: String(a.id), name: String(a.name), clientId: String(a.clientId), avatarUrl: a.avatarUrl || null }));

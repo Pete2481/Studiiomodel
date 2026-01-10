@@ -257,6 +257,14 @@ export function GalleryDrawer({
     }
   }, [formData.bookingId]);
 
+  // Filter services based on client visibility
+  const visibleServices = React.useMemo(() => {
+    const currentClient = localClients.find(c => c.id === formData.clientId);
+    if (!currentClient?.disabledServices) return localServices;
+    
+    return localServices.filter(s => !currentClient.disabledServices.includes(s.id));
+  }, [localServices, formData.clientId, localClients]);
+
   return (
     <>
       <div 
@@ -648,7 +656,7 @@ export function GalleryDrawer({
                             </div>
                           </div>
                           <div className="max-h-[240px] overflow-y-auto custom-scrollbar py-1">
-                            {localServices
+                            {visibleServices
                               .filter(s => s.name.toLowerCase().includes(serviceSearchQuery.toLowerCase()))
                               .map(s => {
                                 const isSelected = formData.serviceIds.includes(s.id);

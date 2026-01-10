@@ -166,7 +166,7 @@ async function GalleriesWrapper({ tenantId, galleryWhere, user }: any) {
     }),
     prisma.client.findMany({ 
       where: !canViewAll && user.clientId ? { id: user.clientId, deletedAt: null } : { tenantId, deletedAt: null }, 
-      select: { id: true, name: true } 
+      select: { id: true, name: true, settings: true } 
     }),
     prisma.booking.findMany({ 
       where: { ...galleryWhere, tenantId, deletedAt: null }, // Reuse the scoping for galleries
@@ -216,7 +216,11 @@ async function GalleriesWrapper({ tenantId, galleryWhere, user }: any) {
   return (
     <DashboardGalleries 
       initialGalleries={galleries}
-      clients={dbClients.map(c => ({ id: String(c.id), name: String(c.name) }))}
+      clients={dbClients.map(c => ({ 
+        id: String(c.id), 
+        name: String(c.name),
+        disabledServices: (c.settings as any)?.disabledServices || []
+      }))}
       bookings={dbBookings.map(b => ({ 
         id: String(b.id), 
         title: String(b.title), 

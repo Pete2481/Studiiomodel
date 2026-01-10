@@ -90,6 +90,7 @@ export async function updateTenantInvoicingSettings(data: {
   abn: string;
   taxLabel: string;
   taxRate: number;
+  taxInclusive?: boolean;
   accountName: string;
   bsb: string;
   accountNumber: string;
@@ -121,6 +122,7 @@ export async function updateTenantInvoicingSettings(data: {
         abn: data.abn,
         taxLabel: data.taxLabel,
         taxRate: dbTaxRate,
+        taxInclusive: data.taxInclusive ?? true,
         accountName: data.accountName,
         bsb: data.bsb,
         accountNumber: data.accountNumber,

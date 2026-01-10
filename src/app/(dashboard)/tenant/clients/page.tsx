@@ -24,7 +24,7 @@ export default async function ClientsPage() {
   return (
     <div className="space-y-12">
       <ShellSettings 
-        title="Client Directory" 
+        title="Client Agencies" 
         subtitle="Keep your agencies and key contacts in sync with portal access control." 
       />
       
@@ -85,6 +85,7 @@ async function ClientsDataWrapper({ tenantId }: { tenantId: string }) {
     galleryCount: c._count.galleries,
     priceOverrides: (c.settings as any)?.priceOverrides || {},
     permissions: (c.settings as any)?.permissions || {},
+    disabledServices: (c.settings as any)?.disabledServices || [],
     watermarkUrl: c.watermarkUrl || null,
     watermarkSettings: c.watermarkSettings || {},
     createdAt: c.createdAt.toISOString()

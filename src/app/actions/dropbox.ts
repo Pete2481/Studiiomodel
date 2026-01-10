@@ -220,7 +220,7 @@ export async function getGalleryAssets(galleryId: string) {
                   id: entry.id,
                   name: entry.name,
                   path: relativePath, 
-                  url: `/api/dropbox/assets/${galleryId}?path=${encodeURIComponent(relativePath)}&sharedLink=${encodeURIComponent(shareLink)}`,
+                  url: `/api/dropbox/assets/${galleryId}?path=${encodeURIComponent(relativePath)}&sharedLink=${encodeURIComponent(shareLink)}&id=${encodeURIComponent(entry.id)}`,
                   type: "image",
                   folderName: "Production Link"
                 };
@@ -240,7 +240,7 @@ export async function getGalleryAssets(galleryId: string) {
               id: data.id,
               name: data.name,
               path: "/", // Root of the link
-              url: `/api/dropbox/assets/${galleryId}?path=${encodeURIComponent("/")}&sharedLink=${encodeURIComponent(shareLink)}`,
+              url: `/api/dropbox/assets/${galleryId}?path=${encodeURIComponent("/")}&sharedLink=${encodeURIComponent(shareLink)}&id=${encodeURIComponent(data.id)}`,
               type: "image",
               folderName: "Direct Link"
             });
@@ -279,7 +279,7 @@ export async function getGalleryAssets(galleryId: string) {
                 id: entry.id,
                 name: entry.name,
                 path: entry.path_lower,
-                url: `/api/dropbox/assets/${galleryId}?path=${encodeURIComponent(entry.path_lower)}`,
+                url: `/api/dropbox/assets/${galleryId}?path=${encodeURIComponent(entry.path_lower)}&id=${encodeURIComponent(entry.id)}`,
                 type: "image",
                 folderName: folder.name
               }));
@@ -365,6 +365,144 @@ export async function copyDropboxAssets(sourcePath: string, targetTenantId: stri
     return { success: true };
   } catch (error) {
     return { success: false, error: "Dropbox transfer failed" };
+  }
+}
+
+/**
+ * Generates a temporary direct link for a Dropbox file.
+ * This is used to pass images to external services like AI models.
+ */
+export async function getDropboxTemporaryLink(path: string, tenantId: string) {
+  try {
+    const tPrisma = await getTenantPrisma(tenantId);
+    const tenant = await tPrisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { dropboxAccessToken: true, dropboxRefreshToken: true }
+    });
+
+    if (!tenant?.dropboxAccessToken) throw new Error("Dropbox not connected");
+
+    let accessToken = tenant.dropboxAccessToken;
+
+    const getLink = async (token: string) => {
+      return fetch("https://api.dropboxapi.com/2/files/get_temporary_link", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ path })
+      });
+    };
+
+    let response = await getLink(accessToken);
+
+    if (response.status === 401 && tenant.dropboxRefreshToken) {
+      const newToken = await refreshDropboxAccessToken(tenantId, tenant.dropboxRefreshToken);
+      if (newToken) {
+        accessToken = newToken;
+        response = await getLink(accessToken);
+      }
+    }
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error("Dropbox temporary link error details:", JSON.stringify(errorData, null, 2));
+      const errorSummary = errorData.error_summary || "Failed to get temporary link";
+      return { success: false, error: errorSummary };
+    }
+
+    const data = await response.json();
+    return { success: true, url: data.link, metadata: data.metadata };
+  } catch (error: any) {
+    console.error("GET TEMP LINK ERROR:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Saves an AI-generated image URL back to the tenant's Dropbox folder.
+ */
+export async function saveAIResultToDropbox({
+  tenantId,
+  resultUrl,
+  originalPath,
+  taskType
+}: {
+  tenantId: string;
+  resultUrl: string;
+  originalPath: string;
+  taskType: string;
+}) {
+  try {
+    const tPrisma = await getTenantPrisma(tenantId);
+    const tenant = await tPrisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { dropboxAccessToken: true, dropboxRefreshToken: true }
+    });
+
+    if (!tenant?.dropboxAccessToken) throw new Error("Dropbox not connected");
+
+    // 1. Download the image from the AI URL
+    const imageResponse = await fetch(resultUrl);
+    if (!imageResponse.ok) throw new Error("Failed to download AI result");
+    const imageBlob = await imageResponse.arrayBuffer();
+
+    // 2. Determine target path
+    // Original: /Production/House/Kitchen.jpg -> Target: /Production/House/Kitchen_AI_Sky.jpg
+    const pathParts = originalPath.split(".");
+    const ext = pathParts.pop();
+    const basePath = pathParts.join(".");
+    const suffix = taskType === "sky_replacement" ? "_AI_Sky" : 
+                   taskType === "day_to_dusk" ? "_AI_Dusk" : 
+                   taskType === "object_removal" ? "_AI_Clean" : "_AI_Staged";
+    const targetPath = `${basePath}${suffix}.${ext}`;
+
+    let accessToken = tenant.dropboxAccessToken;
+
+    const uploadFile = async (token: string) => {
+      return fetch("https://content.dropboxapi.com/2/files/upload", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/octet-stream",
+          "Dropbox-API-Arg": JSON.stringify({
+            path: targetPath,
+            mode: "overwrite",
+            autorename: true,
+            mute: false
+          })
+        },
+        body: imageBlob
+      });
+    };
+
+    let response = await uploadFile(accessToken);
+
+    if (response.status === 401 && tenant.dropboxRefreshToken) {
+      const newToken = await refreshDropboxAccessToken(tenantId, tenant.dropboxRefreshToken);
+      if (newToken) {
+        accessToken = newToken;
+        response = await uploadFile(accessToken);
+      }
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Dropbox upload error text:", errorText);
+      try {
+        const errorData = JSON.parse(errorText);
+        console.error("Dropbox upload error data:", errorData);
+      } catch (e) {
+        // Not JSON
+      }
+      return { success: false, error: "Failed to save to Dropbox: " + errorText };
+    }
+
+    return { success: true, path: targetPath };
+  } catch (error: any) {
+    console.error("SAVE AI RESULT ERROR:", error);
+    return { success: false, error: error.message };
   }
 }
 

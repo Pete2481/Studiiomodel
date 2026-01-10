@@ -3,6 +3,9 @@
 import React, { useState, useEffect } from "react";
 import { Plus, Search, Filter, Image as ImageIcon, Video, MoreHorizontal, ExternalLink, Settings, Trash2, ArrowRight, Heart, Lock, ShieldCheck, ChevronDown, Loader2 } from "lucide-react";
 import { cn, formatDropboxUrl } from "@/lib/utils";
+import { generateListingCopy, saveGalleryCopy } from "@/app/actions/listing-copy";
+import { Sparkles, FileText } from "lucide-react";
+import { AIListingModal } from "../modules/galleries/ai-listing-modal";
 import { GalleryDrawer } from "../modules/galleries/gallery-drawer";
 import { GalleryStatusDropdown } from "../modules/galleries/gallery-status-dropdown";
 import { deleteGallery, notifyGalleryClient, updateGalleryStatus } from "@/app/actions/gallery";
@@ -34,6 +37,19 @@ export function DashboardGalleries({
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedGallery, setSelectedGallery] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
+  const [activeCopyGallery, setActiveCopyGallery] = useState<any>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (openMenuId && !(event.target as Element).closest('.gallery-menu-container')) {
+        setOpenMenuId(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [openMenuId]);
 
   const handleCreate = () => {
     setSelectedGallery(null);
@@ -186,28 +202,56 @@ export function DashboardGalleries({
                   </p>
                 </div>
                 {user.role !== "CLIENT" && (
-                  <div className="relative group/menu">
-                    <button className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-slate-100 text-slate-400 transition-colors">
+                  <div className="relative gallery-menu-container">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenMenuId(openMenuId === gallery.id ? null : gallery.id);
+                      }}
+                      className={cn(
+                        "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+                        openMenuId === gallery.id ? "bg-slate-100 text-slate-900" : "hover:bg-slate-100 text-slate-400"
+                      )}
+                    >
                       <MoreHorizontal className="h-4 w-4" />
                     </button>
-                    <div className="absolute right-0 top-full mt-1 hidden group-hover/menu:block z-10">
-                      <div className="bg-white rounded-xl shadow-xl border border-slate-100 py-1 min-w-[140px]">
-                        <button 
-                          onClick={() => handleNotify(gallery.id)}
-                          className="w-full px-4 py-2 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2 border-b border-slate-50 pb-2"
-                        >
-                          <Bell className="h-3 w-3" />
-                          Notify Again
-                        </button>
-                        <button 
-                          onClick={() => handleDelete(gallery.id)}
-                          className="w-full px-4 py-2 text-left text-xs font-bold text-rose-500 hover:bg-rose-50 flex items-center gap-2 pt-2"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                          Delete
-                        </button>
+                    {openMenuId === gallery.id && (
+                      <div className="absolute right-0 bottom-full mb-2 z-[100]">
+                        <div className="bg-white rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.2)] border border-slate-100 py-1 min-w-[180px] animate-in fade-in slide-in-from-bottom-4 duration-300">
+                          <button 
+                            onClick={() => {
+                              setActiveCopyGallery(gallery);
+                              setIsCopyModalOpen(true);
+                              setOpenMenuId(null);
+                            }}
+                            className="w-full px-5 py-4 text-left text-xs font-bold text-[var(--primary)] hover:bg-slate-50 flex items-center gap-3 border-b border-slate-50 pb-4"
+                          >
+                            <Sparkles className="h-4 w-4" />
+                            Write Copy
+                          </button>
+                          <button 
+                            onClick={() => {
+                              handleNotify(gallery.id);
+                              setOpenMenuId(null);
+                            }}
+                            className="w-full px-5 py-4 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-50"
+                          >
+                            <Bell className="h-4 w-4" />
+                            Notify Again
+                          </button>
+                          <button 
+                            onClick={() => {
+                              handleDelete(gallery.id);
+                              setOpenMenuId(null);
+                            }}
+                            className="w-full px-5 py-4 text-left text-xs font-bold text-rose-500 hover:bg-rose-50 flex items-center gap-3"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Delete
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -264,6 +308,20 @@ export function DashboardGalleries({
           window.location.reload();
         }}
       />
+
+      {isCopyModalOpen && activeCopyGallery && (
+        <AIListingModal
+          isOpen={isCopyModalOpen}
+          onClose={() => {
+            setIsCopyModalOpen(false);
+            setActiveCopyGallery(null);
+          }}
+          galleryId={activeCopyGallery.id}
+          galleryTitle={activeCopyGallery.title}
+          initialCopy={activeCopyGallery.aiCopy}
+          isPublished={activeCopyGallery.isCopyPublished}
+        />
+      )}
     </section>
   );
 }

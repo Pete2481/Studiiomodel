@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect } from "react";
 import NextImage from "next/image";
-import { Bell, DollarSign, Plus, Search, Filter, Image as ImageIcon, Video, MoreHorizontal, ExternalLink, Settings, Trash2, Heart, List as ListIcon, LayoutGrid, Mail, Copy, CheckCircle2, Clock, Check, Loader2, Lock, ShieldCheck, ChevronDown } from "lucide-react";
+import { Bell, DollarSign, Plus, Search, Filter, Image as ImageIcon, Video, MoreHorizontal, ExternalLink, Settings, Trash2, Heart, List as ListIcon, LayoutGrid, Mail, Copy, CheckCircle2, Clock, Check, Loader2, Lock, ShieldCheck, ChevronDown, Sparkles } from "lucide-react";
 import { cn, formatDropboxUrl } from "@/lib/utils";
 import { GalleryDrawer } from "./gallery-drawer";
+import { AIListingModal } from "./ai-listing-modal";
 import { GalleryStatusDropdown } from "./gallery-status-dropdown";
 import { deleteGallery, notifyGalleryClient, updateGalleryStatus } from "@/app/actions/gallery";
 import { createInvoiceFromGallery } from "@/app/actions/invoice";
@@ -48,6 +49,8 @@ export function GalleryPageContent({
   const [selectedGallery, setSelectedGallery] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
+  const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
+  const [activeCopyGallery, setActiveCopyGallery] = useState<any>(null);
   const [isCreatingInvoice, setIsCreatingInvoice] = useState<string | null>(null);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -295,18 +298,28 @@ export function GalleryPageContent({
                       <button className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-slate-100 text-slate-400 transition-colors">
                         <MoreHorizontal className="h-4 w-4" />
                       </button>
-                      <div className="absolute right-0 top-full mt-1 hidden group-hover/menu:block z-10">
-                        <div className="bg-white rounded-xl shadow-xl border border-slate-100 py-1 min-w-[140px]">
+                      <div className="absolute right-0 bottom-full mb-1 hidden group-hover/menu:block z-[60]">
+                        <div className="bg-white rounded-xl shadow-2xl border border-slate-100 py-1 min-w-[160px] animate-in fade-in slide-in-from-bottom-2 duration-200">
+                          <button 
+                            onClick={() => {
+                              setActiveCopyGallery(gallery);
+                              setIsCopyModalOpen(true);
+                            }}
+                            className="w-full px-4 py-3 text-left text-xs font-bold text-[var(--primary)] hover:bg-slate-50 flex items-center gap-2 border-b border-slate-50 pb-3"
+                          >
+                            <Sparkles className="h-3.5 w-3.5" />
+                            Write Copy
+                          </button>
                           <button 
                             onClick={() => handleNotify(gallery.id)}
-                            className="w-full px-4 py-2 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2 border-b border-slate-50 pb-2"
+                            className="w-full px-4 py-3 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2 border-b border-slate-50"
                           >
                             <Bell className="h-3 w-3" />
                             Notify Again
                           </button>
                           <button 
                             onClick={() => handleDelete(gallery.id)}
-                            className="w-full px-4 py-2 text-left text-xs font-bold text-rose-500 hover:bg-rose-50 flex items-center gap-2 pt-2"
+                            className="w-full px-4 py-3 text-left text-xs font-bold text-rose-500 hover:bg-rose-50 flex items-center gap-2"
                           >
                             <Trash2 className="h-3 w-3" />
                             Delete
@@ -512,6 +525,16 @@ export function GalleryPageContent({
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <button 
+                            onClick={() => {
+                              setActiveCopyGallery(gallery);
+                              setIsCopyModalOpen(true);
+                            }}
+                            title="Write AI Copy"
+                            className="h-8 w-8 rounded-full border border-slate-200 flex items-center justify-center text-[var(--primary)] hover:border-[var(--primary)] hover:bg-[var(--primary)]/5 transition-all"
+                          >
+                            <Sparkles className="h-3.5 w-3.5" />
+                          </button>
+                          <button 
                             onClick={() => handleNotify(gallery.id)}
                             title="Notify Client Again"
                             className="h-8 w-8 rounded-full border border-slate-200 flex items-center justify-center text-slate-400 hover:text-primary hover:border-primary transition-all"
@@ -631,7 +654,22 @@ export function GalleryPageContent({
         isOpen={isPreviewOpen} 
         onClose={() => setIsPreviewOpen(false)} 
         invoice={selectedInvoice} 
+        onRefresh={() => window.location.reload()}
       />
+
+      {isCopyModalOpen && activeCopyGallery && (
+        <AIListingModal
+          isOpen={isCopyModalOpen}
+          onClose={() => {
+            setIsCopyModalOpen(false);
+            setActiveCopyGallery(null);
+          }}
+          galleryId={activeCopyGallery.id}
+          galleryTitle={activeCopyGallery.title}
+          initialCopy={activeCopyGallery.aiCopy}
+          isPublished={activeCopyGallery.isCopyPublished}
+        />
+      )}
     </div>
   );
 }

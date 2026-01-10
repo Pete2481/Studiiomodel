@@ -13,11 +13,12 @@ interface TextAnnotation {
 
 interface DrawingCanvasProps {
   imageUrl: string;
-  onSave: (drawingData: any) => void;
+  onSave: (drawingData: any, maskUrl?: string) => void;
   onCancel: () => void;
+  isMaskMode?: boolean;
 }
 
-export function DrawingCanvas({ imageUrl, onSave, onCancel }: DrawingCanvasProps) {
+export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode }: DrawingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -89,9 +90,9 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel }: DrawingCanvasProps
     paths.forEach(path => {
       if (path.points.length < 2) return;
       ctx.beginPath();
-      ctx.strokeStyle = path.tool === "eraser" ? "rgba(0,0,0,1)" : "rgba(255, 0, 0, 0.8)";
+      ctx.strokeStyle = path.tool === "eraser" ? "rgba(0,0,0,1)" : (isMaskMode ? "rgba(255, 255, 255, 0.5)" : "rgba(255, 0, 0, 0.8)");
       ctx.globalCompositeOperation = path.tool === "eraser" ? "destination-out" : "source-over";
-      ctx.lineWidth = path.tool === "eraser" ? 20 : 4;
+      ctx.lineWidth = path.tool === "eraser" ? (isMaskMode ? 100 : 40) : (isMaskMode ? 80 : 4);
       
       ctx.moveTo(path.points[0].x, path.points[0].y);
       for (let i = 1; i < path.points.length; i++) {
@@ -103,9 +104,9 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel }: DrawingCanvasProps
     // Draw current path
     if (currentPath.length >= 2) {
       ctx.beginPath();
-      ctx.strokeStyle = tool === "eraser" ? "rgba(0,0,0,1)" : "rgba(255, 0, 0, 0.8)";
+      ctx.strokeStyle = tool === "eraser" ? "rgba(0,0,0,1)" : (isMaskMode ? "rgba(255, 255, 255, 0.5)" : "rgba(255, 0, 0, 0.8)");
       ctx.globalCompositeOperation = tool === "eraser" ? "destination-out" : "source-over";
-      ctx.lineWidth = tool === "eraser" ? 20 : 4;
+      ctx.lineWidth = tool === "eraser" ? (isMaskMode ? 100 : 40) : (isMaskMode ? 80 : 4);
 
       ctx.moveTo(currentPath[0].x, currentPath[0].y);
       for (let i = 1; i < currentPath.length; i++) {
@@ -241,7 +242,43 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel }: DrawingCanvasProps
       content: t.content
     }));
 
-    onSave([...drawingPaths, ...textAnnotations]);
+    // If in mask mode, generate a black/white mask image
+    let maskUrl = undefined;
+    if (isMaskMode && canvasRef.current) {
+      const maskCanvas = document.createElement("canvas");
+      maskCanvas.width = canvasRef.current.width;
+      maskCanvas.height = canvasRef.current.height;
+      const mctx = maskCanvas.getContext("2d");
+      if (mctx) {
+        mctx.fillStyle = "black";
+        mctx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
+        
+        mctx.lineCap = "round";
+        mctx.lineJoin = "round";
+        mctx.strokeStyle = "white";
+        mctx.lineWidth = 80;
+
+        paths.forEach(path => {
+          if (path.tool === "eraser") {
+            mctx.globalCompositeOperation = "destination-out";
+          } else {
+            mctx.globalCompositeOperation = "source-over";
+          }
+          
+          if (path.points.length < 2) return;
+          mctx.beginPath();
+          mctx.moveTo(path.points[0].x, path.points[0].y);
+          for (let i = 1; i < path.points.length; i++) {
+            mctx.lineTo(path.points[i].x, path.points[i].y);
+          }
+          mctx.stroke();
+        });
+        
+        maskUrl = maskCanvas.toDataURL("image/png");
+      }
+    }
+
+    onSave([...drawingPaths, ...textAnnotations], maskUrl);
   };
 
   return (
@@ -264,7 +301,7 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel }: DrawingCanvasProps
                 "h-10 w-10 rounded-xl flex items-center justify-center transition-all",
                 tool === "pen" ? "bg-primary text-white shadow-lg shadow-primary/20" : "text-white/60 hover:text-white hover:bg-white/10"
               )}
-              title="Pen Tool"
+              title={isMaskMode ? "Placement Brush" : "Pen Tool"}
             >
               <PenTool className="h-4 w-4" />
             </button>
@@ -299,7 +336,7 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel }: DrawingCanvasProps
 
           <div className="flex items-center gap-2 px-4">
              <p className="text-[10px] font-black text-white/40 uppercase tracking-widest hidden sm:block">
-               Draw on image to mark changes
+               {isMaskMode ? "Paint areas for furniture placement" : "Draw on image to mark changes"}
              </p>
              <button 
               onClick={handleSave}
@@ -307,7 +344,7 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel }: DrawingCanvasProps
               className="h-10 px-6 rounded-xl bg-white text-slate-950 text-xs font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all shadow-xl disabled:opacity-50 disabled:hover:scale-100"
             >
               <Check className="h-4 w-4" />
-              Done Drawing
+              {isMaskMode ? "Confirm Placement" : "Done Drawing"}
             </button>
           </div>
         </div>

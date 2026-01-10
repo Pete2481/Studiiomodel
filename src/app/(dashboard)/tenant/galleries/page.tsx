@@ -92,7 +92,7 @@ async function GalleriesDataWrapper({ sessionUser, isGlobal, page }: { sessionUs
     tPrisma.gallery.count({ where: galleryWhere }),
     tPrisma.client.findMany({ 
       where: !canViewAll && clientId ? { id: clientId, deletedAt: null } : { deletedAt: null }, 
-      select: { id: true, name: true, businessName: true, avatarUrl: true } 
+      select: { id: true, name: true, businessName: true, avatarUrl: true, settings: true } 
     }),
     tPrisma.booking.findMany({ 
       where: !canViewAll && clientId ? { clientId, deletedAt: null } : { deletedAt: null },
@@ -119,7 +119,13 @@ async function GalleriesDataWrapper({ sessionUser, isGlobal, page }: { sessionUs
   return (
     <GalleryPageContent 
       galleries={galleries}
-      clients={dbClients}
+      clients={dbClients.map(c => ({
+        id: String(c.id),
+        name: String(c.name),
+        businessName: String(c.businessName || ""),
+        avatarUrl: c.avatarUrl ? String(c.avatarUrl) : null,
+        disabledServices: (c.settings as any)?.disabledServices || []
+      }))}
       bookings={bookingsData}
       agents={dbAgents}
       services={dbServices.map(s => ({ id: String(s.id), name: String(s.name), price: Number(s.price), icon: s.icon }))}

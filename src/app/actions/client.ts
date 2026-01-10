@@ -33,6 +33,7 @@ export async function upsertClient(data: any, skipNotification = false) {
       status, 
       permissions,
       priceOverrides,
+      disabledServices,
       watermarkUrl,
       watermarkSettings
     } = data;
@@ -53,7 +54,8 @@ export async function upsertClient(data: any, skipNotification = false) {
       watermarkSettings: watermarkSettings || {},
       settings: {
         permissions: permissions || {},
-        priceOverrides: priceOverrides || {}
+        priceOverrides: priceOverrides || {},
+        disabledServices: disabledServices || []
       },
     };
 
@@ -82,7 +84,8 @@ export async function upsertClient(data: any, skipNotification = false) {
           watermarkSettings: watermarkSettings || {},
           settings: {
             permissions: permissions || {},
-            priceOverrides: priceOverrides || {}
+            priceOverrides: priceOverrides || {},
+            disabledServices: disabledServices || []
           },
         }
       });
@@ -100,7 +103,8 @@ export async function upsertClient(data: any, skipNotification = false) {
           watermarkSettings: watermarkSettings || {},
           settings: {
             permissions: permissions || {},
-            priceOverrides: priceOverrides || {}
+            priceOverrides: priceOverrides || {},
+            disabledServices: disabledServices || []
           },
           slug: (businessName || name).toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
         }

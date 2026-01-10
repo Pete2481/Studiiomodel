@@ -13,7 +13,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { Suspense } from "react";
 import { ShellSettings } from "@/components/layout/shell-settings";
-import { Loader2 } from "lucide-react";
+import { CameraLoader } from "@/components/ui/camera-loader";
 
 export const dynamic = "force-dynamic";
 
@@ -29,8 +29,8 @@ export default async function EditorsPage() {
       />
       
       <Suspense fallback={
-        <div className="flex h-[50vh] w-full items-center justify-center">
-          <Loader2 className="h-10 w-10 text-primary animate-spin" />
+        <div className="flex h-[60vh] w-full items-center justify-center">
+          <CameraLoader size="lg" className="text-emerald-500" />
         </div>
       }>
         <EditorsDataWrapper session={session} />

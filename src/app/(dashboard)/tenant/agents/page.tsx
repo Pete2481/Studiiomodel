@@ -23,7 +23,7 @@ export default async function AgentsPage() {
   return (
     <div className="space-y-12">
       <ShellSettings 
-        title="Agents" 
+        title="Client Members" 
         subtitle={role === "CLIENT" ? "Manage your agency team." : "Manage all agency crew members."} 
       />
       

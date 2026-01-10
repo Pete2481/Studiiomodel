@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
     client_id: clientId,
     redirect_uri: redirectUri,
     token_access_type: "offline",
+    scope: "files.metadata.read files.content.read files.content.write sharing.read",
     state,
   });
 

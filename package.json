@@ -33,6 +33,7 @@
     "react-dom": "^19.2.3",
     "react-easy-crop": "^5.5.6",
     "recharts": "^3.6.0",
+    "replicate": "^1.4.0",
     "sharp": "^0.34.5",
     "stripe": "^20.1.0",
     "tailwind-merge": "^2.5.5"

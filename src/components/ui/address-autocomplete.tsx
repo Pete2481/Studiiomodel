@@ -19,6 +19,12 @@ interface AddressAutocompleteProps {
   required?: boolean;
 }
 
+declare global {
+  interface Window {
+    google: any;
+  }
+}
+
 export function AddressAutocomplete({
   value,
   onChange,
@@ -34,17 +40,57 @@ export function AddressAutocomplete({
   const containerRef = useRef<HTMLDivElement>(null);
   const [inputValue, setInputValue] = useState(value);
   const lastFetchedValue = useRef("");
+  const [googleReady, setGoogleReady] = useState(false);
+  const autocompleteService = useRef<any>(null);
 
-  // Update internal value when prop changes from outside
+  // Robust initialization
   useEffect(() => {
-    if (value !== inputValue) {
-      setInputValue(value);
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return;
+
+    const init = () => {
+      if (window.google?.maps?.places) {
+        autocompleteService.current = new window.google.maps.places.AutocompleteService();
+        setGoogleReady(true);
+      }
+    };
+
+    if (window.google?.maps?.places) {
+      init();
+      return;
     }
+
+    // Check if script already exists
+    const scriptId = "google-maps-places-script";
+    let script = document.getElementById(scriptId) as HTMLScriptElement;
+
+    if (!script) {
+      script = document.createElement("script");
+      script.id = scriptId;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+
+    // Poll for readiness if onload doesn't fire or script already exists
+    const interval = setInterval(() => {
+      if (window.google?.maps?.places) {
+        init();
+        clearInterval(interval);
+      }
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (value !== inputValue) setInputValue(value);
   }, [value]);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setIsOpen(false);
       }
     };
@@ -64,72 +110,73 @@ export function AddressAutocomplete({
     const timer = setTimeout(async () => {
       setIsLoading(true);
       lastFetchedValue.current = inputValue;
-      try {
-        // Photon API: https://photon.komoot.io/
-        // Australia bounding box approx: 113.0,-44.0,154.0,-10.0
-        let url = `https://photon.komoot.io/api/?q=${encodeURIComponent(inputValue)}&limit=5`;
-        
-        if (countryBias === "au") {
-          // Photon uses bbox as [minLon, minLat, maxLon, maxLat]
-          url += `&bbox=113.0,-44.0,154.0,-10.0`;
-        }
 
-        const response = await fetch(url);
-        const data = await response.json();
-        
-        if (data.features) {
-          const formatted = data.features.map((f: any) => {
-            const props = f.properties;
-            
-            // Format address parts nicely
-            const addressParts = [];
-            if (props.housenumber && props.street) {
-              addressParts.push(`${props.housenumber} ${props.street}`);
-            } else if (props.street) {
-              addressParts.push(props.street);
-            } else if (props.name) {
-              addressParts.push(props.name);
-            }
-
-            const areaParts = [];
-            if (props.city || props.town || props.suburb || props.district) {
-              areaParts.push(props.city || props.town || props.suburb || props.district);
-            }
-            if (props.state) areaParts.push(props.state);
-            if (props.postcode) areaParts.push(props.postcode);
-            
-            const mainLabel = addressParts.join(", ");
-            const secondaryLabel = areaParts.join(", ");
-            
-            const fullLabel = [mainLabel, secondaryLabel].filter(Boolean).join(", ");
-            
-            return {
-              id: (props.osm_id || Math.random()) + "-" + Math.random(),
-              label: fullLabel,
-              main: mainLabel,
-              secondary: secondaryLabel,
-              full: f
-            };
-          });
-          setSuggestions(formatted);
-          setIsOpen(true);
+      const fetchFallback = async () => {
+        try {
+          const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(inputValue)}&limit=5${countryBias === "au" ? "&bbox=113.0,-44.0,154.0,-10.0" : ""}`;
+          const res = await fetch(url);
+          const data = await res.json();
+          if (data.features) {
+            const formatted = data.features.map((f: any) => {
+              const p = f.properties;
+              const main = p.housenumber ? `${p.housenumber} ${p.street || p.name}` : (p.street || p.name);
+              const secondary = [p.city || p.town || p.suburb, p.state, p.postcode].filter(Boolean).join(", ");
+              return {
+                id: Math.random().toString(),
+                label: [main, secondary].filter(Boolean).join(", "),
+                main,
+                secondary,
+                source: "osm"
+              };
+            });
+            setSuggestions(formatted);
+            setIsOpen(true);
+          }
+        } catch (e) {
+          console.error("OSM Fallback Error", e);
+        } finally {
+          setIsLoading(false);
         }
-      } catch (error) {
-        console.error("Failed to fetch address suggestions:", error);
-      } finally {
-        setIsLoading(false);
+      };
+
+      if (googleReady && autocompleteService.current) {
+        let finished = false;
+        const timeout = setTimeout(() => {
+          if (!finished) fetchFallback();
+        }, 3000);
+
+        try {
+          autocompleteService.current.getPlacePredictions(
+            { input: inputValue, componentRestrictions: { country: countryBias } },
+            (predictions: any[], status: string) => {
+              finished = true;
+              clearTimeout(timeout);
+              if (status === "OK" && predictions?.length > 0) {
+                setSuggestions(predictions.map(p => ({
+                  id: p.place_id,
+                  label: p.description,
+                  main: p.structured_formatting.main_text,
+                  secondary: p.structured_formatting.secondary_text,
+                  source: "google"
+                })));
+                setIsOpen(true);
+                setIsLoading(false);
+              } else {
+                fetchFallback();
+              }
+            }
+          );
+          return;
+        } catch (e) {
+          fetchFallback();
+          return;
+        }
       }
+      fetchFallback();
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [inputValue, countryBias]);
-
-  const handleSelect = (suggestion: any) => {
-    setInputValue(suggestion.label);
-    lastFetchedValue.current = suggestion.label;
-    onChange(suggestion.label);
-    setIsOpen(false);
-  };
+  }, [inputValue, countryBias, googleReady]);
 
   return (
     <div ref={containerRef} className="relative w-full">
@@ -140,13 +187,10 @@ export function AddressAutocomplete({
           required={required}
           value={inputValue}
           onChange={(e) => {
-            const val = e.target.value;
-            setInputValue(val);
-            onChange(val);
+            setInputValue(e.target.value);
+            onChange(e.target.value);
           }}
-          onFocus={() => {
-            if (suggestions.length > 0) setIsOpen(true);
-          }}
+          onFocus={() => suggestions.length > 0 && setIsOpen(true)}
           placeholder={placeholder}
           className={cn("w-full", className)}
         />
@@ -157,12 +201,11 @@ export function AddressAutocomplete({
               type="button"
               onClick={() => {
                 setInputValue("");
-                lastFetchedValue.current = "";
                 onChange("");
                 setSuggestions([]);
                 setIsOpen(false);
               }}
-              className="text-slate-300 hover:text-slate-500 transition-colors"
+              className="text-slate-300 hover:text-slate-500"
             >
               <X className="h-4 w-4" />
             </button>
@@ -170,38 +213,37 @@ export function AddressAutocomplete({
         </div>
       </div>
 
-      {isOpen && suggestions.length > 0 && (inputValue.length >= 3) && (
-        <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-100 rounded-2xl shadow-2xl z-[110] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="py-2 max-h-[300px] overflow-y-auto custom-scrollbar">
+      {isOpen && suggestions.length > 0 && inputValue.length >= 3 && (
+        <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-100 rounded-2xl shadow-2xl z-[110] overflow-hidden">
+          <div className="py-2 max-h-[300px] overflow-y-auto">
             {suggestions.map((s) => (
               <button
                 key={s.id}
                 type="button"
-                onClick={() => handleSelect(s)}
-                className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-slate-50 transition-colors group"
+                onClick={() => {
+                  setInputValue(s.label);
+                  onChange(s.label);
+                  setIsOpen(false);
+                }}
+                className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-slate-50 group"
               >
-                <div className="mt-0.5 h-8 w-8 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center shrink-0 group-hover:bg-primary/10 group-hover:text-primary transition-colors">
+                <div className="mt-0.5 h-8 w-8 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center group-hover:bg-primary/10 group-hover:text-primary">
                   <MapPin className="h-4 w-4" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-bold text-slate-700 group-hover:text-slate-900 truncate">
-                    {s.main}
-                  </p>
-                  {s.secondary && (
-                    <p className="text-[10px] font-medium text-slate-400 truncate uppercase tracking-wider">
-                      {s.secondary}
-                    </p>
-                  )}
+                  <p className="text-sm font-bold text-slate-700 truncate">{s.main}</p>
+                  {s.secondary && <p className="text-[10px] font-medium text-slate-400 truncate uppercase">{s.secondary}</p>}
                 </div>
               </button>
             ))}
           </div>
           <div className="bg-slate-50/50 px-4 py-2 border-t border-slate-50">
-            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-[0.1em]">Suggestions by OpenStreetMap</p>
+            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest text-center">
+              Suggestions by {suggestions[0]?.source === "google" ? "Google Maps" : "OpenStreetMap"}
+            </p>
           </div>
         </div>
       )}
     </div>
   );
 }
-

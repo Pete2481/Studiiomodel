@@ -30,6 +30,8 @@ import {
   Menu,
   ChevronLeft,
   ChevronRight, 
+  ChevronDown,
+  ChevronUp,
   Link as LinkIcon, 
   Copy, 
   Check, 
@@ -163,6 +165,17 @@ function DashboardShellContent({
   const [mounted, setMounted] = useState(false);
   const [copied, setCopied] = useState(false);
   const [counts, setCounts] = useState<{ bookings?: number, galleries?: number, edits?: number }>(navCounts || {});
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
+    "Operations": true,
+    "Clients": true
+  });
+
+  const toggleExpand = (label: string) => {
+    setExpandedItems(prev => ({
+      ...prev,
+      [label]: !prev[label]
+    }));
+  };
 
   // Fetch Spark Counts in background
   useEffect(() => {
@@ -247,9 +260,79 @@ function DashboardShellContent({
         <div className="flex flex-col gap-1">
           {section.items.map((item: any) => {
             const Icon = IconMap[item.icon] || HelpCircle;
-            const isActive = pathname === item.href;
-            const count = counts[item.module as keyof typeof counts];
+            const hasSubItems = item.items && item.items.length > 0;
+            const isExpanded = expandedItems[item.label];
+            const isActive = pathname === item.href || (hasSubItems && item.items.some((sub: any) => pathname === sub.href));
             
+            // Calculate total count for parent if it has sub-items
+            const totalSubCount = hasSubItems 
+              ? item.items.reduce((acc: number, sub: any) => acc + (counts[sub.module as keyof typeof counts] || 0), 0)
+              : 0;
+            const count = hasSubItems ? totalSubCount : counts[item.module as keyof typeof counts];
+            
+            if (hasSubItems && !isSidebarCollapsed) {
+              return (
+                <div key={item.label} className="flex flex-col gap-1">
+                  <button
+                    onClick={() => toggleExpand(item.label)}
+                    className={cn(
+                      "group flex items-center justify-between rounded-xl px-3 py-2.5 text-[13px] font-semibold transition-all duration-200",
+                      isActive && !isExpanded
+                        ? "bg-primary text-white shadow-lg" 
+                        : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
+                    )}
+                  >
+                    <span className="flex items-center gap-3">
+                      <span className={cn(
+                        "flex h-8 w-8 flex-none items-center justify-center rounded-full transition-colors relative",
+                        isActive && !isExpanded ? "bg-white/20 text-white" : "bg-slate-50 group-hover:bg-primary group-hover:text-white"
+                      )}>
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <span className="animate-in fade-in">{item.label}</span>
+                    </span>
+                    <span className="flex items-center gap-2">
+                      {totalSubCount > 0 && !isExpanded && (
+                        <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white shadow-sm ring-2 ring-white animate-in zoom-in">
+                          {totalSubCount}
+                        </span>
+                      )}
+                      {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </span>
+                  </button>
+                  
+                  {isExpanded && (
+                    <div className="ml-4 pl-4 border-l border-slate-100 flex flex-col gap-1 animate-in slide-in-from-top-2 duration-200">
+                      {item.items.map((sub: any) => {
+                        const isSubActive = pathname === sub.href;
+                        const subCount = counts[sub.module as keyof typeof counts];
+                        return (
+                          <Link
+                            key={sub.href}
+                            href={sub.href}
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className={cn(
+                              "flex items-center justify-between px-3 py-2 rounded-lg text-[12px] font-medium transition-colors group",
+                              isSubActive 
+                                ? "text-primary bg-primary/5" 
+                                : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
+                            )}
+                          >
+                            <span>{sub.label}</span>
+                            {subCount && subCount > 0 && (
+                              <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white shadow-sm ring-1 ring-white animate-in zoom-in">
+                                {subCount}
+                              </span>
+                            )}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
             return (
               <Hint 
                 key={item.href} 
@@ -295,7 +378,7 @@ function DashboardShellContent({
         </div>
       </div>
     ));
-  }, [filteredNav, isSidebarCollapsed, pathname, counts, setIsMobileMenuOpen]);
+  }, [filteredNav, isSidebarCollapsed, pathname, counts, setIsMobileMenuOpen, expandedItems]);
 
   const memoizedChildren = useMemo(() => children, [children]);
 
@@ -406,18 +489,6 @@ function DashboardShellContent({
             </span>
             {!isSidebarCollapsed && <span className="text-sm font-bold text-slate-700 animate-in fade-in">Logout</span>}
           </button>
-
-          {!isSidebarCollapsed && (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-2 animate-in fade-in">
-              <p className="text-[11px] font-bold text-slate-900 uppercase tracking-wider">Quick tips</p>
-              <p className="text-[11px] font-medium text-slate-400 leading-relaxed">
-                {isRestrictedRole 
-                  ? "Switch a job to 'In Progress' when you start editing. Mark it 'Completed' to notify the lead agent."
-                  : "Drag & drop bookings into the calendar to reschedule instantly. Notify clients with one tap."
-                }
-              </p>
-            </div>
-          )}
 
           {/* Desktop Collapse Toggle */}
           <button 
