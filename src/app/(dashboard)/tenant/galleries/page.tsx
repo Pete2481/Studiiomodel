@@ -53,7 +53,7 @@ function GalleriesSkeleton() {
 async function GalleriesDataWrapper({ sessionUser, isGlobal, page }: { sessionUser: any, isGlobal: boolean, page: number }) {
   const limit = 8;
   const skip = (page - 1) * limit;
-  const tPrisma = isGlobal && sessionUser.isMasterAdmin ? prisma : await getTenantPrisma();
+  const tPrisma = (isGlobal && sessionUser.isMasterAdmin ? prisma : await getTenantPrisma()) as any;
   const { role, clientId } = sessionUser;
 
   const user = {

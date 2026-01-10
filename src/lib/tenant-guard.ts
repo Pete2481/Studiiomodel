@@ -14,7 +14,7 @@ import { auth } from "@/auth";
 export async function getTenantPrisma(overrideTenantId?: string) {
   // If we have an override (e.g. for public gallery actions), use it WITHOUT checking session
   if (overrideTenantId) {
-    return createScopedPrisma(overrideTenantId);
+    return createScopedPrisma(overrideTenantId) as any;
   }
 
   const session = await auth();
@@ -26,7 +26,7 @@ export async function getTenantPrisma(overrideTenantId?: string) {
   // Master admins see everything by default
   // In the future, if they "enter" a tenant, session.user.tenantId will be set
   if (session.user.isMasterAdmin && !session.user.tenantId) {
-    return prisma;
+    return prisma as any;
   }
 
   const tenantId = session.user.tenantId as string;
@@ -34,7 +34,7 @@ export async function getTenantPrisma(overrideTenantId?: string) {
     throw new Error("Unauthorized: No tenant context found in session");
   }
 
-  return createScopedPrisma(tenantId);
+  return createScopedPrisma(tenantId) as any;
 }
 
 /**

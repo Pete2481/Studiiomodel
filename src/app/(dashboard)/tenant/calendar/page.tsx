@@ -52,7 +52,7 @@ function CalendarSkeleton() {
 }
 
 async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any, isGlobal: boolean }) {
-  const tPrisma = isGlobal && sessionUser.isMasterAdmin ? prisma : await getTenantPrisma();
+  const tPrisma = (isGlobal && sessionUser.isMasterAdmin ? prisma : await getTenantPrisma()) as any;
   const { role, teamMemberId, clientId, agentId } = sessionUser;
 
   const user = {

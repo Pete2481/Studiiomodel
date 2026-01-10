@@ -57,7 +57,7 @@ function BookingsSkeleton() {
 
 async function BookingsDataWrapper({ sessionUser, isGlobal }: { sessionUser: any, isGlobal: boolean }) {
   const tenantId = sessionUser.tenantId;
-  const tPrisma = isGlobal && sessionUser.isMasterAdmin ? prisma : await getTenantPrisma();
+  const tPrisma = (isGlobal && sessionUser.isMasterAdmin ? prisma : await getTenantPrisma()) as any;
 
   const user = {
     name: sessionUser.name || "User",

@@ -44,7 +44,7 @@ export default async function EditRequestsPage(props: {
 }
 
 async function EditDataWrapper({ sessionUser, isGlobal }: { sessionUser: any, isGlobal: boolean }) {
-  const tPrisma = isGlobal && sessionUser.isMasterAdmin ? prisma : await getTenantPrisma();
+  const tPrisma = (isGlobal && sessionUser.isMasterAdmin ? prisma : await getTenantPrisma()) as any;
   const tenantId = sessionUser.tenantId;
 
   const user = {
