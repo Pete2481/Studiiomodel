@@ -267,7 +267,6 @@ export async function GET(
 
     const taxLabel = tenant.taxLabel || "GST";
     const taxRatePercent = (taxRate * 100).toFixed(0);
-    const isTaxInclusive = (tenant as any).taxInclusive ?? true;
 
     drawTotalLine("SUBTOTAL", money(subtotal));
     if (discount > 0) drawTotalLine("DISCOUNT", `-${money(discount)}`);
