@@ -150,21 +150,21 @@ async function BookingsDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
       clientNotes: String(b.clientNotes || ""),
       isPlaceholder: !!b.isPlaceholder,
       slotType: b.slotType || null,
-      services: (b.services || []).map(s => ({ serviceId: String(s.serviceId), name: String(s.service?.name || "Unknown Service") })),
-      assignments: (b.assignments || []).map(a => ({ teamMemberId: String(a.teamMemberId), teamMember: { displayName: String(a.teamMember?.displayName || "To assign"), avatarUrl: a.teamMember?.avatarUrl ? String(a.teamMember.avatarUrl) : null } }))
+      services: (b.services || []).map((s: any) => ({ serviceId: String(s.serviceId), name: String(s.service?.name || "Unknown Service") })),
+      assignments: (b.assignments || []).map((a: any) => ({ teamMemberId: String(a.teamMemberId), teamMember: { displayName: String(a.teamMember?.displayName || "To assign"), avatarUrl: a.teamMember?.avatarUrl ? String(a.teamMember.avatarUrl) : null } }))
     };
   });
 
-  const clients = dbClients.map(c => ({ 
+  const clients = dbClients.map((c: any) => ({ 
     id: String(c.id), 
     name: String(c.name), 
     businessName: String(c.businessName || ""), 
     avatarUrl: c.avatarUrl ? String(c.avatarUrl) : null,
     disabledServices: (c.settings as any)?.disabledServices || []
   }));
-  const services = dbServices.map(s => ({ id: String(s.id), name: String(s.name), price: Number(s.price), durationMinutes: Number(s.durationMinutes), icon: String(s.icon || "CAMERA"), slotType: s.slotType || null, clientVisible: s.clientVisible !== false, isFavorite: (s.settings as any)?.isFavorite || false }));
-  const teamMembers = dbTeamMembers.map(m => ({ id: String(m.id), displayName: String(m.displayName), avatarUrl: m.avatarUrl || null }));
-  const agents = dbAgents.map(a => ({ id: String(a.id), name: String(a.name), clientId: String(a.clientId), avatarUrl: a.avatarUrl || null }));
+  const services = dbServices.map((s: any) => ({ id: String(s.id), name: String(s.name), price: Number(s.price), durationMinutes: Number(s.durationMinutes), icon: String(s.icon || "CAMERA"), slotType: s.slotType || null, clientVisible: s.clientVisible !== false, isFavorite: (s.settings as any)?.isFavorite || false }));
+  const teamMembers = dbTeamMembers.map((m: any) => ({ id: String(m.id), displayName: String(m.displayName), avatarUrl: m.avatarUrl || null }));
+  const agents = dbAgents.map((a: any) => ({ id: String(a.id), name: String(a.name), clientId: String(a.clientId), avatarUrl: a.avatarUrl || null }));
 
   return (
     <BookingsPageContent 
