@@ -47,7 +47,8 @@ export class BookingService {
       select: { aiLogisticsEnabled: true, businessHours: true }
     });
 
-    const isAiEnabled = tenant?.aiLogisticsEnabled;
+    // Hard Switch: Force AI to false for now while we refactor the logic
+    const isAiEnabled = false; // tenant?.aiLogisticsEnabled;
     const businessHours = tenant?.businessHours as any;
 
     // 0.5. Fetch service details for AI calculations

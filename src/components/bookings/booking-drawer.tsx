@@ -120,6 +120,9 @@ export function BookingDrawer({
 
   // AI Logistics: Auto-calculate Sun Times
   useEffect(() => {
+    // Feature parked for now - Coming Soon
+    return;
+
     async function handleAILogistics() {
       // Only trigger if enabled, a slot type is selected, and we have an address + date
       if (!aiLogisticsEnabled || !derivedSlotType || !formData.address || !formData.date || isBlockedType) return;

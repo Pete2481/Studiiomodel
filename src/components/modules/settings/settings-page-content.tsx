@@ -1138,72 +1138,34 @@ export function SettingsPageContent({ tenant, user, teamMember }: SettingsPageCo
 
         {activeTab === "scheduling" && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="ui-card border-slate-100 p-10 space-y-10">
-              <div className="flex items-center justify-between border-b border-slate-50 pb-8">
-                <div>
-                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">Scheduling & Logistics</h2>
-                  <p className="text-sm font-medium text-slate-500 max-w-md">Enable AI-powered travel time analysis and dynamic sun-locked booking.</p>
+            <div className="ui-card border-slate-100 p-10 space-y-10 min-h-[500px] flex flex-col items-center justify-center text-center">
+              <div className="h-20 w-20 rounded-[32px] bg-primary/10 text-primary flex items-center justify-center mb-6 animate-pulse">
+                <Sparkles className="h-10 w-10" />
+              </div>
+              <div className="max-w-md space-y-4">
+                <h2 className="text-3xl font-black text-slate-900 tracking-tight uppercase">Smart Dispatch & AI Logistics</h2>
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest mb-4">
+                  Coming Early 2026
                 </div>
-                <button 
-                  onClick={handleSaveLogistics}
-                  disabled={isSaving}
-                  className="ui-button-primary flex items-center gap-2 px-6"
-                  style={{ boxShadow: `0 10px 15px -3px var(--primary-soft)` }}
-                >
-                  <Save className="h-4 w-4" /> 
-                  {isSaving ? "Saving..." : "Save Scheduling Settings"}
-                </button>
+                <p className="text-slate-500 font-medium leading-relaxed">
+                  We are currently perfecting our AI engine to handle automated travel buffers, sun-locked timing, and intelligent crew routing.
+                </p>
+                <p className="text-slate-400 text-sm font-medium">
+                  Stay tuned for a more efficient way to manage your studio's scheduling.
+                </p>
               </div>
 
-              <div className="space-y-8">
-                <div className="flex items-center justify-between p-8 rounded-[32px] bg-slate-50 border border-slate-100 group transition-all hover:border-primary/20">
-                  <div className="flex gap-6">
-                    <div className="h-14 w-14 rounded-2xl bg-white shadow-sm flex items-center justify-center text-primary shrink-0 border border-primary/5 group-hover:scale-110 transition-transform">
-                      <Sparkles className="h-7 w-7" />
-                    </div>
-                    <div className="space-y-1">
-                      <h4 className="text-lg font-bold text-slate-900">Fluid AI Logistics Engine</h4>
-                      <p className="text-sm font-medium text-slate-500 max-w-lg leading-relaxed">
-                        When enabled, manual Sunrise/Dusk slots are replaced with dynamic windows based on real-time sun data. 
-                        The engine also calculates drive times between crew members to optimize your studio's efficiency.
-                      </p>
-                    </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-2xl mt-12">
+                {[
+                  { label: "Travel Buffers", icon: Clock },
+                  { label: "Sun-Locked Slots", icon: Palette },
+                  { label: "Smart Routing", icon: Activity }
+                ].map((feature, i) => (
+                  <div key={i} className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex flex-col items-center gap-2">
+                    <feature.icon className="h-5 w-5 text-slate-400" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">{feature.label}</span>
                   </div>
-                  
-                  <button 
-                    onClick={() => setFormData({ ...formData, aiLogisticsEnabled: !formData.aiLogisticsEnabled })}
-                    className={cn(
-                      "h-8 w-14 rounded-full transition-all relative shrink-0",
-                      formData.aiLogisticsEnabled ? "bg-primary shadow-lg shadow-primary/20" : "bg-slate-200"
-                    )}
-                  >
-                    <div className={cn(
-                      "absolute top-1 left-1 h-6 w-6 bg-white rounded-full transition-transform shadow-sm",
-                      formData.aiLogisticsEnabled ? "translate-x-6" : "translate-x-0"
-                    )} />
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="p-6 rounded-[28px] border border-slate-100 space-y-4">
-                    <div className="flex items-center gap-3 text-slate-900">
-                      <Clock className="h-4 w-4" />
-                      <span className="text-xs font-black uppercase tracking-widest">Travel Buffers</span>
-                    </div>
-                    <p className="text-xs font-medium text-slate-500 leading-relaxed">
-                      AI will automatically prevent bookings that don't allow sufficient travel time between properties using the Google Maps Distance Matrix.
-                    </p>
-                  </div>
-                  <div className="p-6 rounded-[28px] border border-slate-100 space-y-4">
-                    <div className="flex items-center gap-3 text-slate-900">
-                      <Palette className="h-4 w-4" />
-                      <span className="text-xs font-black uppercase tracking-widest">Sun-Locked Timing</span>
-                    </div>
-                    <p className="text-xs font-medium text-slate-500 leading-relaxed">
-                      Sunrise and Dusk shoots will be automatically fixed to the optimal light window (arrival ~25 mins before sunset/sunrise).
-                    </p>
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
           </div>
