@@ -642,10 +642,6 @@ export function GalleryPageContent({
       <GalleryDrawer 
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
-        clients={clients}
-        bookings={bookings}
-        agents={agents}
-        services={services}
         initialGallery={selectedGallery}
         onRefresh={() => window.location.reload()}
       />

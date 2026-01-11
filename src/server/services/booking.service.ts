@@ -57,21 +57,21 @@ export class BookingService {
     });
 
     // Calculate total duration for the primary booking
-    const totalDuration = services.reduce((acc, s) => acc + s.durationMinutes, 0);
+    const totalDuration = services.reduce((acc: number, s: any) => acc + s.durationMinutes, 0);
 
     // 0.6. Smart Booking Split (Dusk/Drone logic)
     let secondaryBooking = null;
     let primaryServiceIds = [...serviceIds];
     
     if (isAiEnabled && !id && !isBlocked && services.length > 1) {
-      const specializedServices = services.filter(s => s.slotType === "DUSK" || s.slotType === "SUNRISE");
-      const standardServices = services.filter(s => !s.slotType);
+      const specializedServices = services.filter((s: any) => s.slotType === "DUSK" || s.slotType === "SUNRISE");
+      const standardServices = services.filter((s: any) => !s.slotType);
       
       if (specializedServices.length > 0 && standardServices.length > 0) {
         console.log(`[AI_LOGISTICS] Splitting mixed booking: ${specializedServices.length} specialized, ${standardServices.length} standard.`);
         
         // 1. Keep standard services in the primary booking
-        primaryServiceIds = standardServices.map(s => s.id);
+        primaryServiceIds = standardServices.map((s: any) => s.id);
         
         // 2. Prepare data for the specialized booking
         const specializedType = specializedServices[0].slotType as "DUSK" | "SUNRISE";
@@ -84,19 +84,25 @@ export class BookingService {
           console.log(`[AI_LOGISTICS] Auto-placed ${specializedType} slot at ${specializedStart.toISOString()}`);
         }
 
-        const specDuration = specializedServices.reduce((acc, s) => acc + s.durationMinutes, 0);
+        const specDuration = specializedServices.reduce((acc: number, s: any) => acc + s.durationMinutes, 0);
         const specializedEnd = new Date(new Date(specializedStart).getTime() + specDuration * 60000);
 
         secondaryBooking = {
           ...data,
           id: undefined, // Ensure it's a create
           title: `${title} (${specializedType})`,
-          serviceIds: specializedServices.map(s => s.id),
+          serviceIds: specializedServices.map((s: any) => s.id),
           slotType: specializedType,
           startAt: specializedStart,
           endAt: specializedEnd
         };
       }
+    }
+
+    // Adjust endAt based on total duration of services if AI is enabled
+    let finalEndAt = endAt;
+    if (isAiEnabled && !isBlocked && totalDuration > 0) {
+      finalEndAt = new Date(new Date(startAt).getTime() + totalDuration * 60000);
     }
 
     // 0.7. Travel Time Validation
@@ -202,12 +208,6 @@ export class BookingService {
           }
         });
       }
-    }
-
-    // Adjust endAt based on total duration of services if AI is enabled
-    let finalEndAt = endAt;
-    if (isAiEnabled && !isBlocked && totalDuration > 0) {
-      finalEndAt = new Date(new Date(startAt).getTime() + totalDuration * 60000);
     }
 
     const bookingData: any = {

@@ -456,5 +456,58 @@ export async function updateTenantLogisticsSettings(data: {
   }
 }
 
+export async function updateTenantCalendarSyncSettings(data: {
+  googleCalendarSyncEnabled: boolean;
+}) {
+  try {
+    const session = await auth();
+    const tenantId = await getSessionTenantId();
+    if (!session || !tenantId) return { success: false, error: "Unauthorized" };
+
+    if (session.user.role !== "TENANT_ADMIN" && session.user.role !== "ADMIN") {
+      return { success: false, error: "Permission Denied: Admin only." };
+    }
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { settings: true }
+    });
+
+    const currentSettings = (tenant?.settings as any) || {};
+
+    await prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        settings: {
+          ...currentSettings,
+          googleCalendarSyncEnabled: data.googleCalendarSyncEnabled
+        }
+      }
+    });
+
+    revalidatePath("/tenant/settings");
+    return { success: true };
+  } catch (error: any) {
+    console.error("UPDATE CALENDAR SYNC SETTINGS ERROR:", error);
+    return { success: false, error: error.message || "Failed to update calendar sync settings" };
+  }
+}
+
+export async function triggerCalendarSync() {
+  try {
+    const session = await auth();
+    const tenantId = await getSessionTenantId();
+    if (!session || !tenantId) return { success: false, error: "Unauthorized" };
+
+    // Placeholder for actual sync logic which would happen in a background job or worker
+    console.log(`[SYNC] Triggering calendar sync for tenant: ${tenantId}`);
+    
+    return { success: true };
+  } catch (error: any) {
+    console.error("TRIGGER CALENDAR SYNC ERROR:", error);
+    return { success: false, error: error.message || "Failed to trigger calendar sync" };
+  }
+}
+
 // EOF
 
