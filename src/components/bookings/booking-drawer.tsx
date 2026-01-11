@@ -66,6 +66,8 @@ export function BookingDrawer({
   });
 
   const isBlockedType = formData.status === "blocked";
+  const requiresClient = !isBlockedType && !isClient;
+  const canSubmit = isBlockedType || isClient || Boolean(formData.clientId);
 
   // Filter services based on client visibility
   const visibleServices = React.useMemo(() => {
@@ -1369,6 +1371,11 @@ export function BookingDrawer({
           </div>
 
           <div className="flex items-center gap-6">
+            {!canSubmit && requiresClient && (
+              <p className="text-[10px] font-black uppercase tracking-widest text-rose-500">
+                Select a client to create a booking
+              </p>
+            )}
             <button 
               onClick={onClose}
               className="text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors"
@@ -1378,8 +1385,9 @@ export function BookingDrawer({
             <button 
               type="submit"
               form="booking-form"
-              disabled={isSubmitting}
-              className="h-12 px-8 rounded-full bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:opacity-90 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+              disabled={isSubmitting || !canSubmit}
+              title={!canSubmit && requiresClient ? "Select a client to create this booking." : undefined}
+              className="h-12 px-8 rounded-full bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:opacity-90 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {isSubmitting ? (
                 <>
