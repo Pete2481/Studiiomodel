@@ -50,6 +50,19 @@ Capturing the essence of Byron Bay's relaxed luxury, this rare and remarkable pr
 - 240m to The Top Shop café, 650m to the beach, 6 mins to Wategos
 `;
 
+function extractJsonBlock(raw: string) {
+  const text = (raw || "").trim();
+  if (!text) return "";
+  // Remove ```json fences if present
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenced?.[1]) return fenced[1].trim();
+  // Otherwise, attempt to grab the first {...} block
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start !== -1 && end !== -1 && end > start) return text.slice(start, end + 1).trim();
+  return text;
+}
+
 export async function generateListingCopy(galleryId: string) {
   // Use REPLICATE_API_TOKEN from process.env explicitly to ensure it's picked up
   const token = process.env.REPLICATE_API_TOKEN;
@@ -219,16 +232,40 @@ Write a "AWESOME" property listing that makes a buyer fall in love.
 4. PRESERVE the architectural character mentioned in the analysis.
 
 STRUCTURE:
-- HEADLINE: Captivating and powerful.
-- BODY COPY: 3-4 rich paragraphs that tell a story. Focus on the feeling of living there.
-- THE FEATURES: A curated bulleted list of 8-10 key selling points.
-- TONE: Sophisticated, relaxed, and premium.
+- You will produce THREE versions of the same listing in THREE styles:
+  1) SIGNATURE: your current Byron relaxed-luxury voice (balanced, premium).
+  2) EXTENDED: longer, more emotive, once-in-a-generation storytelling (like a prestige hinterland narrative). More detail, more feeling, more persuasion.
+  3) CONCISE: medium/shorter, tight and executive, still premium and specific, minimal fluff.
+
+STRICT REQUIREMENTS:
+- Use the address + landmarks context for lifestyle/location.
+- Use ONLY details supported by the analysis JSON. If a detail is unknown, omit it.
+- Output MUST be strict JSON only. No markdown, no commentary.
+
+Return EXACTLY this JSON shape:
+{
+  "signature": {
+    "headline": "string",
+    "body": "string",
+    "features": ["string"]
+  },
+  "concise": {
+    "headline": "string",
+    "body": "string",
+    "features": ["string"]
+  },
+  "extended": {
+    "headline": "string",
+    "body": "string",
+    "features": ["string"]
+  }
+}
 
 --- MASTER TEMPLATE FOR STYLE ---
 ${MASTER_TEMPLATE}
 --- END MASTER TEMPLATE ---
 
-Write the final professional copy now.
+Write the JSON now.
 `;
 
     // Final pass context: Use the exterior if available
@@ -247,7 +284,39 @@ Write the final professional copy now.
         ? finalOutput
         : JSON.stringify(finalOutput);
 
-    return { success: true, copy: resultText };
+    const jsonText = extractJsonBlock(resultText);
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(jsonText);
+    } catch (e) {
+      console.error("[AI_COPY] Failed to parse JSON:", { jsonText: jsonText.slice(0, 500) });
+      return { success: false, error: "AI returned an invalid response. Please try again." };
+    }
+
+    const signature = parsed?.signature;
+    const concise = parsed?.concise;
+    const extended = parsed?.extended;
+    const isValid =
+      signature?.headline && signature?.body && Array.isArray(signature?.features) &&
+      concise?.headline && concise?.body && Array.isArray(concise?.features) &&
+      extended?.headline && extended?.body && Array.isArray(extended?.features);
+
+    if (!isValid) {
+      console.error("[AI_COPY] Missing required keys:", { keys: Object.keys(parsed || {}) });
+      return { success: false, error: "AI response was missing required fields. Please try again." };
+    }
+
+    const toText = (v: any) =>
+      `${String(v.headline || "").trim()}\n\n${String(v.body || "").trim()}\n\n${(v.features || []).map((f: any) => `- ${String(f).trim()}`).join("\n")}`.trim();
+
+    return {
+      success: true,
+      variants: {
+        signature: toText(signature),
+        concise: toText(concise),
+        extended: toText(extended),
+      }
+    };
   } catch (error: any) {
     console.error("GENERATE COPY ERROR:", error);
     return { success: false, error: error.message };
