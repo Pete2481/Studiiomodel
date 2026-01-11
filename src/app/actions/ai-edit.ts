@@ -48,12 +48,25 @@ export async function processImageWithAI(
     // 1. If it's a Storage asset (Dropbox or Drive), we MUST get a temporary direct link
     // so Replicate can download it. The internal proxy URLs (localhost) won't work.
     if (dbxPath && tenantId) {
-      const urlParams = new URLSearchParams(publicImageUrl.split("?")[1] || "");
+      const urlObj = (() => {
+        try {
+          return new URL(publicImageUrl);
+        } catch {
+          return null;
+        }
+      })();
+
+      const urlParams = urlObj?.searchParams || new URLSearchParams(publicImageUrl.split("?")[1] || "");
       const dbxId = urlParams.get("id");
       const isLocalHost = publicImageUrl.includes("localhost") || publicImageUrl.includes("127.0.0.1") || publicImageUrl.startsWith("/");
+      const isProxyUrl =
+        publicImageUrl.includes("/api/dropbox/assets/") ||
+        publicImageUrl.includes("/api/google-drive/assets/") ||
+        publicImageUrl.startsWith("/api/dropbox/assets/") ||
+        publicImageUrl.startsWith("/api/google-drive/assets/");
       
-      if (isLocalHost) {
-        console.log(`[AI_EDIT] Localhost/Proxy URL detected, forcing temporary link for ID: ${dbxId} or Path: ${dbxPath}`);
+      if (isLocalHost || isProxyUrl) {
+        console.log(`[AI_EDIT] Proxy/Local URL detected, forcing temporary link for ID: ${dbxId} or Path: ${dbxPath}`);
         
         // Resolve tenant to check provider
         const tenant = await prisma.tenant.findUnique({
@@ -170,7 +183,10 @@ export async function processImageWithAI(
 
     while (retries <= maxRetries) {
       try {
-        output = await replicate.run(model, { input: { ...input, image: publicImageUrl } });
+        // Do NOT blindly inject `image` into every model (some use image_input/mask schemas).
+        const runInput: any = { ...input };
+        if (runInput.image) runInput.image = publicImageUrl;
+        output = await replicate.run(model, { input: runInput });
         break; // Success!
       } catch (runError: any) {
         if (runError.status === 429 && retries < maxRetries) {

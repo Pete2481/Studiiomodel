@@ -1058,7 +1058,7 @@ export function GalleryPublicViewer({
           {/* Social Cropper Overlay - Still needs selectedAsset, but moved for cleaner hierarchy */}
           {isSocialCropperOpen && selectedAsset && (
             <SocialCropper 
-              imageUrl={`${getImageUrl(selectedAsset.url)}&size=w2048h1536`}
+              imageUrl={getImageUrl(selectedAsset.url, "w2048h1536")}
               imageName={selectedAsset.name}
               onClose={() => setIsSocialCropperOpen(false)}
               onSave={(blob) => {
@@ -1084,9 +1084,7 @@ export function GalleryPublicViewer({
                 setIsAISuiteOpen(false);
                 setAiMaskData(null);
               }}
-              assetUrl={selectedAsset.url.startsWith("http") 
-                ? selectedAsset.url 
-                : `${window.location.origin}${getImageUrl(selectedAsset.url)}&size=w2048h1536&id=${selectedAsset.id}`}
+              assetUrl={getImageUrl(selectedAsset.url, "w2048h1536")}
               assetName={selectedAsset.name}
               dbxPath={selectedAsset.path}
               tenantId={gallery.tenantId}
@@ -1310,7 +1308,7 @@ export function GalleryPublicViewer({
           {/* Drawing Mode Overlay - Rendered AFTER everything with top-tier Z-index */}
           {isDrawingMode && (
             <DrawingCanvas 
-              imageUrl={`${getImageUrl(selectedAsset.url)}&size=w2048h1536`}
+              imageUrl={getImageUrl(selectedAsset.url, "w2048h1536")}
               onSave={(data) => {
                 setDrawingData(data);
                 setIsDrawingMode(false);
@@ -1325,7 +1323,7 @@ export function GalleryPublicViewer({
 
           {isAIPlacementMode && (
             <DrawingCanvas 
-              imageUrl={`${getImageUrl(selectedAsset.url)}&size=w2048h1536`}
+              imageUrl={getImageUrl(selectedAsset.url, "w2048h1536")}
               isMaskMode={true}
               onSave={async (data, maskUrl) => {
                 setAiMaskData(data);
@@ -1756,7 +1754,7 @@ export function GalleryPublicViewer({
 
       {isAnnotationOpen && selectedAsset && (
         <ProAnnotationCanvas 
-          imageUrl={`${getImageUrl(selectedAsset.url)}&size=w2048h1536`}
+          imageUrl={getImageUrl(selectedAsset.url, "w2048h1536")}
           logoUrl={gallery.clientBranding?.url || tenant.logoUrl}
           onSave={(data, blob) => {
             setAnnotationData(data);
