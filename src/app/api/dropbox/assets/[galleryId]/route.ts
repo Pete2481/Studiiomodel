@@ -147,7 +147,7 @@ export async function GET(
     // 5. Optimization & Watermarking
     const blob = await dbResponse.blob();
     const arrayBuffer = await blob.arrayBuffer();
-    let buffer = Buffer.from(arrayBuffer);
+    let buffer: any = Buffer.from(arrayBuffer);
     let contentType = "image/jpeg";
 
     try {

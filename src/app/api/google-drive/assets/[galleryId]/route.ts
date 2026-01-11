@@ -65,8 +65,9 @@ export async function GET(
       { fileId, alt: "media" },
       { responseType: "arraybuffer" }
     );
-
-    let buffer = Buffer.from(response.data as ArrayBuffer);
+    
+    // Explicitly type as any to avoid Buffer<ArrayBuffer> vs Buffer<ArrayBufferLike> build errors
+    let buffer: any = Buffer.from(response.data as ArrayBuffer);
     let contentType = response.headers["content-type"] || "image/jpeg";
 
     // 5. Apply Optimization if a size is requested

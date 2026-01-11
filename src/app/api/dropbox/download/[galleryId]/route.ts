@@ -147,7 +147,7 @@ export async function GET(
     // PERFORMANCE: Only use Buffer if branding is needed. Otherwise, stream it.
     if (applyBranding && gallery.client?.watermarkUrl) {
       const blob = await response.blob();
-      const buffer = Buffer.from(await blob.arrayBuffer());
+      const buffer: any = Buffer.from(await blob.arrayBuffer());
       
       try {
         const logoUrl = gallery.client.watermarkUrl;
