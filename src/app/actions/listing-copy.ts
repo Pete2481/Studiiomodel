@@ -71,7 +71,8 @@ export async function generateListingCopy(galleryId: string) {
     const gallery = await tPrisma.gallery.findUnique({
       where: { id: galleryId },
       include: { 
-        property: true
+        property: true,
+        tenant: { select: { storageProvider: true } }
       }
     });
 
@@ -121,7 +122,7 @@ export async function generateListingCopy(galleryId: string) {
       ? `Nearby landmarks and lifestyle spots: ${landmarks.join(", ")}.`
       : "";
 
-    const provider = (gallery.tenant as any).storageProvider || "DROPBOX";
+    const provider = (gallery.tenant as any)?.storageProvider || "DROPBOX";
 
     // 3. Get temporary links for selection
     const imageLinks = await Promise.all(
