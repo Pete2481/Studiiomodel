@@ -402,4 +402,59 @@ export async function updateTenantNotificationSettings(data: {
   }
 }
 
+export async function updateTenantStorageSettings(data: {
+  storageProvider: "DROPBOX" | "GOOGLE_DRIVE";
+}) {
+  try {
+    const session = await auth();
+    const tenantId = await getSessionTenantId();
+    if (!session || !tenantId) return { success: false, error: "Unauthorized" };
+
+    if (session.user.role !== "TENANT_ADMIN" && session.user.role !== "ADMIN") {
+      return { success: false, error: "Permission Denied: Admin only." };
+    }
+
+    await prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        storageProvider: data.storageProvider
+      }
+    });
+
+    revalidatePath("/tenant/settings");
+    return { success: true };
+  } catch (error: any) {
+    console.error("UPDATE STORAGE SETTINGS ERROR:", error);
+    return { success: false, error: error.message || "Failed to update storage settings" };
+  }
+}
+
+export async function updateTenantLogisticsSettings(data: {
+  aiLogisticsEnabled: boolean;
+}) {
+  try {
+    const session = await auth();
+    const tenantId = await getSessionTenantId();
+    if (!session || !tenantId) return { success: false, error: "Unauthorized" };
+
+    if (session.user.role !== "TENANT_ADMIN" && session.user.role !== "ADMIN") {
+      return { success: false, error: "Permission Denied: Admin only." };
+    }
+
+    await prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        aiLogisticsEnabled: data.aiLogisticsEnabled
+      }
+    });
+
+    revalidatePath("/tenant/settings");
+    return { success: true };
+  } catch (error: any) {
+    console.error("UPDATE LOGISTICS SETTINGS ERROR:", error);
+    return { success: false, error: error.message || "Failed to update logistics settings" };
+  }
+}
+
 // EOF
+

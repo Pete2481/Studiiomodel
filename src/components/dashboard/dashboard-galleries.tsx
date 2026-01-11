@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Plus, Search, Filter, Image as ImageIcon, Video, MoreHorizontal, ExternalLink, Settings, Trash2, ArrowRight, Heart, Lock, ShieldCheck, ChevronDown, Loader2 } from "lucide-react";
-import { cn, formatDropboxUrl } from "@/lib/utils";
+import { Plus, Search, Filter, Image as ImageIcon, Video, MoreHorizontal, ExternalLink, Settings, Trash2, ArrowRight, Heart, Lock, ShieldCheck, ChevronDown, Loader2, Folder } from "lucide-react";
+import { cn, formatDropboxUrl, cleanDropboxLink } from "@/lib/utils";
 import { generateListingCopy, saveGalleryCopy } from "@/app/actions/listing-copy";
 import { Sparkles, FileText } from "lucide-react";
 import { AIListingModal } from "../modules/galleries/ai-listing-modal";
@@ -16,20 +16,12 @@ import Image from "next/image";
 
 interface DashboardGalleriesProps {
   initialGalleries: any[];
-  clients: any[];
-  bookings: any[];
-  agents: any[];
-  services: any[];
   user: any;
   isActionLocked?: boolean;
 }
 
 export function DashboardGalleries({ 
   initialGalleries, 
-  clients, 
-  bookings, 
-  agents,
-  services,
   user,
   isActionLocked = false
 }: DashboardGalleriesProps) {
@@ -40,6 +32,34 @@ export function DashboardGalleries({
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
   const [activeCopyGallery, setActiveCopyGallery] = useState<any>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+
+  // Helper to get optimized proxy URLs
+  const getImageUrl = (url: string, galleryId: string, size: string = "w640h480") => {
+    if (!url) return "";
+    
+    // If it's already a proxy URL, just return it
+    if (url.startsWith('/api/')) return url;
+
+    // If it's a Dropbox link, use the proxy
+    if (url.includes("dropbox.com") || url.includes("dropboxusercontent.com")) {
+      // Normalize to www.dropbox.com and remove query params for the base shared link
+      const cleanUrl = cleanDropboxLink(url);
+      // Use path=/ for direct file shared links (Dropbox API requirement)
+      return `/api/dropbox/assets/${galleryId}?path=/&sharedLink=${encodeURIComponent(cleanUrl)}&size=${size}&shared=true`;
+    }
+
+    // If it's a Google Drive link, use the proxy
+    if (url.includes("drive.google.com") || url.includes("googleusercontent.com")) {
+      const gDriveMatch = url.match(/\/d\/([^/]+)/) || url.match(/[?&]id=([^&]+)/);
+      const gDriveId = gDriveMatch?.[1];
+      if (gDriveId) {
+        return `/api/google-drive/assets/${galleryId}?id=${gDriveId}&size=${size}`;
+      }
+    }
+
+    return url;
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -145,25 +165,41 @@ export function DashboardGalleries({
           <div key={gallery.id} className="group relative flex flex-col overflow-hidden rounded-[32px] border border-slate-200 bg-white transition-all hover:shadow-xl hover:shadow-slate-200/50">
             {/* Cover Image */}
             <div className="aspect-[4/3] overflow-hidden relative bg-slate-100">
-              {gallery.cover?.includes("/api/dropbox/assets") ? (
-                <img 
-                  src={gallery.cover?.includes("dropbox.com") || gallery.cover?.includes("dropboxusercontent.com")
-                    ? `/api/dropbox/assets/${gallery.id}?path=/cover.jpg&sharedLink=${encodeURIComponent(gallery.cover.replace("dl.dropboxusercontent.com", "www.dropbox.com"))}&size=w640h480` 
-                    : formatDropboxUrl(gallery.cover)}
-                  alt={gallery.title}
-                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
-                  loading={idx < 4 ? "eager" : "lazy"}
-                />
-              ) : (
-                <Image 
-                  src={formatDropboxUrl(gallery.cover)}
-                  alt={gallery.title} 
-                  fill
-                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
-                  className="object-cover transition-transform duration-500 group-hover:scale-110"
-                  priority={idx < 4}
-                />
-              )}
+              {(() => {
+                const coverUrl = gallery.cover;
+                const formattedUrl = formatDropboxUrl(coverUrl);
+                const isLikelyFolder = formattedUrl?.includes("/drive/folders/") || formattedUrl?.includes("/drive/u/");
+                
+                if (isLikelyFolder) {
+                  return (
+                    <div className="h-full w-full flex flex-col items-center justify-center gap-2 bg-slate-50 border-b border-slate-100">
+                      <Folder className="h-8 w-8 text-slate-300" />
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Production Folder</span>
+                    </div>
+                  );
+                }
+
+                const optimizedCoverUrl = getImageUrl(coverUrl, gallery.id, "w640h480");
+                const finalSrc = failedImages.has(gallery.id) ? formattedUrl : optimizedCoverUrl;
+
+                return (
+                  <Image 
+                    src={finalSrc}
+                    alt={gallery.title} 
+                    fill
+                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
+                    className="object-cover transition-transform duration-500 group-hover:scale-110"
+                    priority={idx < 4}
+                    onError={() => {
+                      setFailedImages(prev => {
+                        const next = new Set(prev);
+                        next.add(gallery.id);
+                        return next;
+                      });
+                    }}
+                  />
+                );
+              })()}
               <div className="absolute inset-0 bg-slate-900/0 group-hover:bg-slate-900/40 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
                 <div className="flex gap-2">
                   <Link 
@@ -298,10 +334,6 @@ export function DashboardGalleries({
       <GalleryDrawer 
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
-        clients={clients}
-        bookings={bookings}
-        agents={agents}
-        services={services}
         initialGallery={selectedGallery}
         onRefresh={() => {
           // Use a hard refresh to ensure the dashboard renders the new data instantly

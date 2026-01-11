@@ -130,7 +130,8 @@ async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
         sunriseSlotsPerDay: true, 
         duskSlotsPerDay: true, 
         calendarSecret: true,
-        settings: true
+        settings: true,
+        aiLogisticsEnabled: true
       }
     }),
     sessionUser.teamMemberId ? prisma.teamMember.findUnique({
@@ -225,6 +226,7 @@ async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
       customStatuses={customStatuses}
       businessHours={(tenant as any)?.businessHours || null}
       calendarSecret={calendarSecret}
+      aiLogisticsEnabled={(tenant as any)?.aiLogisticsEnabled || false}
       slotSettings={{
         sunriseSlotTime: (tenant as any)?.sunriseSlotTime || "06:00",
         duskSlotTime: (tenant as any)?.duskSlotTime || "18:30",

@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
+import dynamic from "next/dynamic";
 import { 
   Camera, 
   Download, 
@@ -28,19 +30,24 @@ import {
   PenTool,
   Lock,
   Zap,
-  FileText
+  FileText,
+  MapPin,
+  BoxSelect
 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { getGalleryAssets } from "@/app/actions/dropbox";
+import { cn, formatDropboxUrl, cleanDropboxLink } from "@/lib/utils";
+import { getGalleryAssets } from "@/app/actions/storage";
 import { toggleFavorite } from "@/app/actions/gallery";
 import { createEditRequest } from "@/app/actions/edit-request";
 import { permissionService } from "@/lib/permission-service";
-import { DrawingCanvas } from "./drawing-canvas";
-import { SocialCropper } from "./social-cropper";
-import { DownloadManager } from "./download-manager";
-import { VideoEditor } from "./video-editor";
-import { ShareModal } from "./share-modal";
-import { AISuiteDrawer } from "./ai-suite-drawer";
+
+// Lazy-load heavy components to reduce TBT (Total Blocking Time)
+const DrawingCanvas = dynamic(() => import("./drawing-canvas").then(m => m.DrawingCanvas), { ssr: false });
+const SocialCropper = dynamic(() => import("./social-cropper").then(m => m.SocialCropper), { ssr: false });
+const DownloadManager = dynamic(() => import("./download-manager").then(m => m.DownloadManager), { ssr: false });
+const VideoEditor = dynamic(() => import("./video-editor").then(m => m.VideoEditor), { ssr: false });
+const ShareModal = dynamic(() => import("./share-modal").then(m => m.ShareModal), { ssr: false });
+const AISuiteDrawer = dynamic(() => import("./ai-suite-drawer").then(m => m.AISuiteDrawer), { ssr: false });
+const ProAnnotationCanvas = dynamic(() => import("./pro-annotation-canvas").then(m => m.ProAnnotationCanvas), { ssr: false });
 
 interface GalleryPublicViewerProps {
   gallery: any;
@@ -48,6 +55,7 @@ interface GalleryPublicViewerProps {
   editTags?: any[];
   user?: any;
   initialAssets?: any[];
+  initialCursor?: string | null;
   isShared?: boolean;
 }
 
@@ -55,15 +63,19 @@ export function GalleryPublicViewer({
   gallery, 
   tenant, 
   editTags = [], 
-  user,
+  user: initialUser,
   initialAssets = [],
+  initialCursor = null,
   isShared = false
 }: GalleryPublicViewerProps) {
   const router = useRouter();
   const [assets, setAssets] = useState<any[]>(initialAssets);
+  const [cursor, setCursor] = useState<string | null>(initialCursor);
+  const [user, setUser] = useState<any>(initialUser);
   const [videos, setVideos] = useState<any[]>(gallery.metadata?.videoLinks || []);
   const [activeVideoIdx, setActiveVideoIdx] = useState(0);
-  const [isLoading, setIsLoading] = useState(initialAssets.length === 0);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<any>(null);
   const [activeFilter, setActiveFilter] = useState<"all" | "images" | "videos" | "favorites">("all");
   const [error, setError] = useState<string | null>(null);
@@ -81,50 +93,106 @@ export function GalleryPublicViewer({
   const [aiMaskUrl, setAiMaskUrl] = useState<string | null>(null);
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
   const [isChoiceModalOpen, setIsChoiceModalOpen] = useState(false);
+  const [isAnnotationOpen, setIsAnnotationOpen] = useState(false);
+  const [annotationData, setAnnotationData] = useState<any>(null);
+  const [bannerFailed, setBannerFailed] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
 
-  const [visibleCount, setVisibleCount] = useState(25);
+  const [visibleCount, setVisibleCount] = useState(24);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
+  // 1. Fetch user session client-side after hydration to avoid blocking SSR
+  useEffect(() => {
+    if (!initialUser) {
+      fetch("/api/auth/session")
+        .then(res => res.json())
+        .then(data => {
+          if (data?.user) {
+            setUser({
+              role: data.user.role,
+              clientId: data.user.clientId,
+              permissions: data.user.permissions || {}
+            });
+          }
+        })
+        .catch(err => console.error("Session fetch error:", err));
+    }
+  }, [initialUser]);
+
+  // Load more assets via pagination
+  const loadMoreAssets = async () => {
+    if (isLoadingMore || !cursor) return;
+
+    setIsLoadingMore(true);
+    try {
+      const result = await getGalleryAssets(gallery.id, 24, cursor);
+      if (result.success) {
+        setAssets(prev => {
+          const newAssets = result.assets || [];
+          // Avoid duplicates
+          const existingIds = new Set(prev.map(a => a.id));
+          const filteredNew = newAssets.filter(a => !existingIds.has(a.id));
+          return [...prev, ...filteredNew];
+        });
+        setCursor(result.nextCursor || null);
+      }
+    } catch (err) {
+      console.error("Load more error:", err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
   // Helper to append shared flag and size for incognito access to locked galleries
-  const getImageUrl = (url: string, size?: string) => {
+  const getImageUrl = (url: string, size: string = "w1024h768") => {
     if (!url) return "";
     
-    // If it's already an absolute external URL, don't try to transform it into a relative path
-    if (url.startsWith("http") && !url.includes(window.location.origin)) {
-      let finalUrl = url;
-      if (isShared && !finalUrl.includes("shared=true")) {
-        finalUrl += `${finalUrl.includes("?") ? "&" : "?"}shared=true`;
+    // SSR Safety Check: origin is only available on client
+    const isClient = typeof window !== 'undefined';
+    const origin = isClient ? window.location.origin : '';
+    
+    // If it's already a proxy URL (/api/...) just append parameters
+    if (url.startsWith("/api/")) {
+      try {
+        const urlObj = new URL(url, isClient ? origin : "http://localhost");
+        if (isShared) urlObj.searchParams.set("shared", "true");
+        // Always ensure we have a size if provided
+        if (size && !urlObj.searchParams.has("size")) urlObj.searchParams.set("size", size);
+        return urlObj.pathname + urlObj.search;
+      } catch (e) {
+        return url;
       }
-      if (size && !finalUrl.includes("size=")) {
-        finalUrl += `${finalUrl.includes("?") ? "&" : "?"}size=${size}`;
-      }
-      return finalUrl;
     }
 
-    // Use URL object for robust parsing for internal paths
+    // DROPBOX
+    if (url.includes("dropbox.com") || url.includes("dropboxusercontent.com")) {
+      // Normalize to www.dropbox.com and remove query params for the base shared link
+      const cleanUrl = cleanDropboxLink(url);
+      // Use path=/ for direct file shared links (Dropbox API requirement)
+      let proxyUrl = `/api/dropbox/assets/${gallery.id}?path=/&sharedLink=${encodeURIComponent(cleanUrl)}&size=${size}`;
+      if (isShared) proxyUrl += "&shared=true";
+      return proxyUrl;
+    }
+
+    // GOOGLE DRIVE
+    if (url.includes("drive.google.com") || url.includes("googleusercontent.com")) {
+      const gDriveMatch = url.match(/\/d\/([^/]+)/) || url.match(/[?&]id=([^&]+)/);
+      const gDriveId = gDriveMatch?.[1];
+      if (gDriveId) {
+        let proxyUrl = `/api/google-drive/assets/${gallery.id}?id=${gDriveId}&size=${size}`;
+        if (isShared) proxyUrl += "&shared=true";
+        return proxyUrl;
+      }
+    }
+
+    // Standard internal path handling
     try {
-      const urlObj = new URL(url, window.location.origin);
-      
-      if (isShared) {
-        urlObj.searchParams.set("shared", "true");
-      }
-      
-      if (size) {
-        urlObj.searchParams.set("size", size);
-      }
-      
+      const urlObj = new URL(url, isClient ? origin : "http://localhost");
+      if (isShared) urlObj.searchParams.set("shared", "true");
+      if (size) urlObj.searchParams.set("size", size);
       return urlObj.pathname + urlObj.search;
     } catch (e) {
-      // Fallback to manual string manipulation if URL parsing fails
-      let finalUrl = url;
-      if (isShared && !finalUrl.includes("shared=true")) {
-        finalUrl += `${finalUrl.includes("?") ? "&" : "?"}shared=true`;
-      }
-      if (size && !finalUrl.includes("size=")) {
-        finalUrl += `${finalUrl.includes("?") ? "&" : "?"}size=${size}`;
-      }
-      return finalUrl;
+      return url;
     }
   };
 
@@ -184,36 +252,26 @@ export function GalleryPublicViewer({
 
   // ... existing loadAssets useEffect ...
 
-  // Load real assets from multiple Dropbox folders
+  // Load real assets if not provided (fallback)
   useEffect(() => {
-    // If we already have initial assets, we can skip the initial load
-    // but we might still want to refresh if they are empty
-    if (initialAssets.length > 0) {
-      setIsLoading(false);
-      return;
-    }
-
-    async function loadAssets() {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const result = await getGalleryAssets(gallery.id);
-        if (result.success) {
-          setAssets(result.assets || []);
-        } else {
-          setError(result.error || "Failed to load assets from Dropbox");
-          console.error("Asset Load Fail:", result.error);
+    if (assets.length === 0 && !cursor) {
+      async function loadInitial() {
+        setIsLoading(true);
+        try {
+          const result = await getGalleryAssets(gallery.id, 24);
+          if (result.success) {
+            setAssets(result.assets || []);
+            setCursor(result.nextCursor || null);
+          }
+        } catch (err) {
+          console.error("Initial load error:", err);
+        } finally {
+          setIsLoading(false);
         }
-      } catch (err) {
-        setError("A connection error occurred while syncing assets");
-        console.error("Asset Load Error:", err);
-      } finally {
-        setIsLoading(false);
       }
+      loadInitial();
     }
-
-    loadAssets();
-  }, [gallery.id, initialAssets]);
+  }, [gallery.id, assets.length, cursor]);
 
   const handleToggleFavorite = async (e: React.MouseEvent, item: any) => {
     e.stopPropagation();
@@ -282,8 +340,8 @@ export function GalleryPublicViewer({
   };
 
   const handleSubmitEditRequest = async () => {
-    if (selectedTagIds.length === 0 && !editNote && videoTimestamp === null && videoComments.length === 0) {
-      alert("Please select at least one tag, add a note, or tag a time.");
+    if (selectedTagIds.length === 0 && !editNote && videoTimestamp === null && videoComments.length === 0 && !annotationData) {
+      alert("Please select at least one tag, add a note, or create markups.");
       return;
     }
 
@@ -320,6 +378,7 @@ export function GalleryPublicViewer({
           thumbnailUrl: isVideo ? null : (selectedAsset.thumbnailUrl || selectedAsset.url),
           metadata: {
             drawing: drawingData,
+            annotationData: annotationData, // NEW: Include professional markup data
             videoTimestamp: videoTimestamp,
             mediaType: isVideo ? "video" : "image",
             imageName: isVideo ? selectedVideo.title : selectedAsset.name,
@@ -340,11 +399,13 @@ export function GalleryPublicViewer({
       setTimeout(() => {
         setIsRequestingEdit(false);
         setIsDrawingMode(false);
+        setIsAnnotationOpen(false);
         setIsVideoEditing(false);
         setEditSuccess(false);
         setEditNote("");
         setSelectedTagIds([]);
         setDrawingData(null);
+        setAnnotationData(null); // Clear annotation data
         setVideoTimestamp(null);
         setVideoComments([]);
       }, 2000);
@@ -379,15 +440,20 @@ export function GalleryPublicViewer({
 
   // Intersection Observer for infinite scroll
   useEffect(() => {
-    if (!combinedMedia || combinedMedia.length <= visibleCount) return;
-
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting) {
-          setVisibleCount((prev) => Math.min(prev + 25, combinedMedia.length));
+          // 1. If we have more in memory than visible, show more
+          if (combinedMedia.length > visibleCount) {
+            setVisibleCount((prev) => Math.min(prev + 24, combinedMedia.length));
+          } 
+          // 2. If we've shown everything in memory and have a cursor, fetch from server
+          else if (cursor && !isLoadingMore) {
+            loadMoreAssets();
+          }
         }
       },
-      { threshold: 0.1, rootMargin: "200px" }
+      { threshold: 0.1, rootMargin: "400px" }
     );
 
     if (loadMoreRef.current) {
@@ -395,7 +461,7 @@ export function GalleryPublicViewer({
     }
 
     return () => observer.disconnect();
-  }, [combinedMedia, visibleCount]);
+  }, [combinedMedia.length, visibleCount, cursor, isLoadingMore]);
 
   return (
     <div 
@@ -501,35 +567,77 @@ export function GalleryPublicViewer({
       </header>
 
       {/* Hero Section: Banner First */}
-      {gallery.bannerImageUrl ? (
-        <section className="px-6 pt-6">
-          <div className="max-w-7xl mx-auto relative h-[60vh] w-full overflow-hidden rounded-[48px] shadow-2xl shadow-slate-200">
-            <img 
-              src={gallery.bannerImageUrl} 
-              alt={gallery.title}
-              className="h-full w-full object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent z-10" />
-            <div className="absolute bottom-12 left-12 text-white space-y-1 z-20">
-              <h2 className="text-4xl font-bold tracking-tight">{gallery.title}</h2>
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/80">By {gallery.teamMembers}</p>
-            </div>
-          </div>
-        </section>
-      ) : videos.length > 0 ? (
-        <section className="px-6 pt-6">
-          <div className="max-w-7xl mx-auto bg-black relative aspect-video w-full max-h-[70vh] overflow-hidden rounded-[48px] shadow-2xl group">
-            <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
-              <iframe 
-                src={formatVideoUrl(videos[0].url)}
-                className="w-full h-full border-0"
-                allow="autoplay; fullscreen; picture-in-picture"
-                allowFullScreen
-              />
-            </div>
-          </div>
-        </section>
-      ) : null}
+      {(() => {
+        const bannerUrl = gallery.bannerImageUrl;
+        const isFolder = bannerUrl?.includes("/drive/folders/") || bannerUrl?.includes("/drive/u/");
+        
+        if (bannerUrl && !isFolder) {
+          const optimizedBanner = getImageUrl(bannerUrl, "w1024h768");
+          const finalBannerSrc = bannerFailed ? formatDropboxUrl(bannerUrl) : optimizedBanner;
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/8ba4527e-5b8b-42ce-b005-e0cd58eb2355',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'gallery-public-viewer.tsx:571',message:'Banner Image src',data:{optimizedBanner, finalBannerSrc},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+          return (
+            <section className="px-6 pt-6">
+              <div className="max-w-7xl mx-auto relative h-[60vh] w-full overflow-hidden rounded-[48px] shadow-2xl shadow-slate-200 bg-slate-100">
+                <Image 
+                  src={finalBannerSrc} 
+                  alt={gallery.title}
+                  fill
+                  priority
+                  className="object-cover"
+                  sizes="(max-width: 1280px) 100vw, 1280px"
+                  onError={() => setBannerFailed(true)}
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent z-10" />
+                <div className="absolute bottom-12 left-12 text-white space-y-1 z-20">
+                  <h2 className="text-4xl font-bold tracking-tight">{gallery.title}</h2>
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/80">By {gallery.teamMembers}</p>
+                </div>
+              </div>
+            </section>
+          );
+        }
+
+        if (videos.length > 0) {
+          return (
+            <section className="px-6 pt-6">
+              <div className="max-w-7xl mx-auto bg-black relative aspect-video w-full max-h-[70vh] overflow-hidden rounded-[48px] shadow-2xl group">
+                <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+                  <iframe 
+                    src={formatVideoUrl(videos[0].url)}
+                    className="w-full h-full border-0"
+                    allow="autoplay; fullscreen; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+              </div>
+            </section>
+          );
+        }
+
+        // Fallback to first image if no banner/video
+        if (assets.length > 0) {
+          return (
+            <section className="px-6 pt-6">
+              <div className="max-w-7xl mx-auto relative h-[40vh] w-full overflow-hidden rounded-[48px] shadow-2xl shadow-slate-200">
+                <img 
+                  src={getImageUrl(assets[0].url, "w1024h768")} 
+                  alt={gallery.title}
+                  className="h-full w-full object-cover blur-sm opacity-50 scale-110"
+                />
+                <div className="absolute inset-0 bg-slate-900/40" />
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-12">
+                  <h2 className="text-5xl font-black text-white tracking-tighter uppercase">{gallery.title}</h2>
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mt-4">Production Collection</p>
+                </div>
+              </div>
+            </section>
+          );
+        }
+
+        return null;
+      })()}
 
       {/* Main Content */}
       <main className="flex-1 bg-white">
@@ -577,13 +685,13 @@ export function GalleryPublicViewer({
 
           {/* Grid */}
           {isLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-              {[1, 2, 3, 4, 5, 6].map(i => (
-                <div key={i} className="aspect-[4/3] rounded-[32px] bg-slate-50 animate-pulse border border-slate-100 flex items-center justify-center">
-                  <ImageIcon className="h-8 w-8 text-slate-100" />
-                </div>
-              ))}
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+            {[1, 2, 3, 4, 5, 6].map(i => (
+              <div key={i} className="aspect-[3/2] rounded-[32px] bg-slate-50 animate-pulse border border-slate-100 flex items-center justify-center">
+                <ImageIcon className="h-8 w-8 text-slate-100" />
+              </div>
+            ))}
+          </div>
           ) : error ? (
             <div className="py-32 text-center max-w-md mx-auto">
               <div className="h-16 w-16 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -652,6 +760,8 @@ export function GalleryPublicViewer({
                         alt={item.name}
                         className="w-full h-auto object-cover transition-transform duration-700 group-hover:scale-105"
                         getImageUrl={getImageUrl}
+                        priority={idx < 6}
+                        directUrl={item.directUrl}
                       />
                     )}
                     
@@ -951,6 +1061,19 @@ export function GalleryPublicViewer({
               imageUrl={`${getImageUrl(selectedAsset.url)}&size=w2048h1536`}
               imageName={selectedAsset.name}
               onClose={() => setIsSocialCropperOpen(false)}
+              onSave={(blob) => {
+                setIsSocialCropperOpen(false);
+                const editedAsset = {
+                  ...selectedAsset,
+                  id: `social-${selectedAsset.id}`,
+                  name: `Social-${selectedAsset.name}`,
+                  isMarkup: true, // Triggers DownloadManager to use markupBlob
+                  markupBlob: blob,
+                  url: URL.createObjectURL(blob)
+                };
+                setDownloadAssets([editedAsset]);
+                setIsDownloadManagerOpen(true);
+              }}
             />
           )}
 
@@ -973,7 +1096,6 @@ export function GalleryPublicViewer({
               }}
               onComplete={(newUrl) => {
                 // Future: We could update the asset in the gallery
-                console.log("AI complete:", newUrl);
               }}
             />
           )}
@@ -1205,7 +1327,7 @@ export function GalleryPublicViewer({
             <DrawingCanvas 
               imageUrl={`${getImageUrl(selectedAsset.url)}&size=w2048h1536`}
               isMaskMode={true}
-              onSave={(data, maskUrl) => {
+              onSave={async (data, maskUrl) => {
                 setAiMaskData(data);
                 if (maskUrl) setAiMaskUrl(maskUrl);
                 setIsAIPlacementMode(false);
@@ -1463,15 +1585,23 @@ export function GalleryPublicViewer({
       </footer>
 
       {/* Download Manager Overlay - Moved outside Lightbox to work with "Download All" */}
-      {isDownloadManagerOpen && (
-        <DownloadManager 
-          galleryId={gallery.id}
-          assets={downloadAssets}
-          sharedLink={gallery.metadata?.dropboxLink}
-          onClose={() => setIsDownloadManagerOpen(false)}
-          clientBranding={gallery.clientBranding}
-        />
-      )}
+          {isDownloadManagerOpen && (
+            <DownloadManager 
+              galleryId={gallery.id}
+              assets={downloadAssets}
+              sharedLink={gallery.metadata?.dropboxLink}
+              onClose={() => {
+                // Cleanup temporary URLs to prevent memory leaks
+                downloadAssets.forEach(asset => {
+                  if (asset.url?.startsWith('blob:')) {
+                    URL.revokeObjectURL(asset.url);
+                  }
+                });
+                setIsDownloadManagerOpen(false);
+              }}
+              clientBranding={gallery.clientBranding}
+            />
+          )}
 
       {isShareModalOpen && (
         <ShareModal 
@@ -1523,7 +1653,7 @@ export function GalleryPublicViewer({
             </div>
 
             {/* Grid of Choices */}
-            <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="p-8 grid grid-cols-1 md:grid-cols-4 gap-6">
               {/* Professional Studio Edit */}
               <button 
                 onClick={() => {
@@ -1541,7 +1671,29 @@ export function GalleryPublicViewer({
                     <span className="px-2 py-0.5 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest rounded-md">COST</span>
                   </div>
                   <p className="text-xs font-medium text-slate-400 leading-relaxed">
-                    Request our professional production crew to manually revise your image.
+                    Manual production crew revisions.
+                  </p>
+                </div>
+              </button>
+
+              {/* Pro Annotations */}
+              <button 
+                onClick={() => {
+                  setIsChoiceModalOpen(false);
+                  setIsAnnotationOpen(true);
+                }}
+                className="group p-8 rounded-[32px] border-2 border-slate-100 bg-white hover:border-blue-500/30 hover:bg-blue-500/[0.02] transition-all flex flex-col items-center text-center gap-6"
+              >
+                <div className="h-16 w-16 rounded-2xl bg-blue-500/10 text-blue-500 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <MapPin className="h-8 w-8" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-center gap-2">
+                    <p className="text-sm font-black text-slate-900 uppercase tracking-widest">Pro Markup</p>
+                    <span className="px-2 py-0.5 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest rounded-md">COST</span>
+                  </div>
+                  <p className="text-xs font-medium text-slate-400 leading-relaxed">
+                    Add logo drop-pins & property boundaries.
                   </p>
                 </div>
               </button>
@@ -1563,12 +1715,12 @@ export function GalleryPublicViewer({
                     <span className="px-2 py-0.5 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest rounded-md">COST</span>
                   </div>
                   <p className="text-xs font-medium text-slate-400 leading-relaxed">
-                    Instant automated enhancements using our AI-powered production suite.
+                    Instant automated AI enhancements.
                   </p>
                 </div>
               </button>
 
-              {/* Social Media Cropper */}
+              {/* Social Media Cropper & Editor */}
               <button 
                 onClick={() => {
                   setIsChoiceModalOpen(false);
@@ -1581,11 +1733,11 @@ export function GalleryPublicViewer({
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-center gap-2">
-                    <p className="text-sm font-black text-slate-900 uppercase tracking-widest">Social Crop</p>
+                    <p className="text-sm font-black text-slate-900 uppercase tracking-widest">Social Edit</p>
                     <span className="px-2 py-0.5 bg-emerald-500 text-white text-[9px] font-black uppercase tracking-widest rounded-md">FREE</span>
                   </div>
                   <p className="text-xs font-medium text-slate-400 leading-relaxed">
-                    Instantly crop and download your image optimized for social media.
+                    Crop and color adjust for social media.
                   </p>
                 </div>
               </button>
@@ -1600,6 +1752,37 @@ export function GalleryPublicViewer({
             </div>
           </div>
         </div>
+      )}
+
+      {isAnnotationOpen && selectedAsset && (
+        <ProAnnotationCanvas 
+          imageUrl={`${getImageUrl(selectedAsset.url)}&size=w2048h1536`}
+          logoUrl={gallery.clientBranding?.url || tenant.logoUrl}
+          onSave={(data, blob) => {
+            setAnnotationData(data);
+            setIsAnnotationOpen(false);
+            
+            if (blob) {
+              // Create a special asset for the marked-up image
+              const markedUpAsset = {
+                ...selectedAsset,
+                id: `markup-${selectedAsset.id}`,
+                name: `MarkedUp-${selectedAsset.name}`,
+                isMarkup: true,
+                markupBlob: blob,
+                url: URL.createObjectURL(blob)
+              };
+              setDownloadAssets([markedUpAsset]);
+              setIsDownloadManagerOpen(true);
+            } else {
+              // Fallback to standard edit request if no blob generated
+              setIsRequestingEdit(true);
+            }
+          }}
+          onCancel={() => {
+            setIsAnnotationOpen(false);
+          }}
+        />
       )}
     </div>
   );
@@ -1631,62 +1814,58 @@ function FilterTab({ active, onClick, label, count, isSpecial }: any) {
 }
 
 /**
- * Progressive Image Loader
- * Loads a tiny "Spark" thumb first, then swaps for a high-res one
+ * Progressive Image Loader using next/image
  */
-function ProgressiveImage({ src, alt, className, getImageUrl }: { src: string, alt: string, className: string, getImageUrl: (url: string, size?: string) => string }) {
-  const [currentSrc, setCurrentSrc] = useState(getImageUrl(src, "w64h64"));
-  const [isHighResLoaded, setIsHighResLoaded] = useState(false);
-  const [isVisible, setIsVisible] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
+function ProgressiveImage({ src, alt, className, getImageUrl, priority, directUrl }: { 
+  src: string,
+  alt: string,
+  className: string,
+  getImageUrl: (url: string, size?: string) => string,
+  priority?: boolean,
+  directUrl?: string
+}) {
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  const optimizedSrc = getImageUrl(src, "w480h320");
+  
+  // Robust fallback logic:
+  // 1. Try optimized proxy URL
+  // 2. If it fails, try the original direct link (if available)
+  // 3. Last resort: format the current src (proxy) which usually won't help but is a safe fallback
+  const finalSrc = hasError 
+    ? (directUrl || formatDropboxUrl(src)) 
+    : optimizedSrc;
+  
+  // #region agent log
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          setIsVisible(true);
-          observer.disconnect();
-        }
-      },
-      { threshold: 0.01, rootMargin: "400px" }
-    );
-
-    if (containerRef.current) {
-      observer.observe(containerRef.current);
+    if (hasError) {
+      console.warn("[IMAGE] Loading failed for optimized src, falling back to:", finalSrc);
     }
-
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (!isVisible) return;
-
-    // Start loading the medium-res version
-    const highRes = new Image();
-    highRes.src = getImageUrl(src, "w480h320");
-    highRes.onload = () => {
-      setCurrentSrc(highRes.src);
-      setIsHighResLoaded(true);
-    };
-  }, [src, isVisible, getImageUrl]);
+  }, [hasError, finalSrc]);
+  // #endregion
 
   return (
-    <div ref={containerRef} className="relative w-full overflow-hidden rounded-[32px] bg-slate-50 min-h-[250px] flex items-center justify-center">
-      <img 
-        src={currentSrc} 
+    <div 
+      className="relative w-full overflow-hidden rounded-[32px] bg-slate-50"
+      style={{ aspectRatio: '3/2' }}
+    >
+      <Image 
+        src={finalSrc}
         alt={alt}
+        fill
+        priority={priority}
         className={cn(
           className,
-          "transition-all duration-700 w-full",
-          !isHighResLoaded ? "blur-xl scale-110 opacity-50" : "blur-0 scale-100 opacity-100"
+          "object-cover transition-all duration-500",
+          !isLoaded ? "blur-md scale-105 opacity-50" : "blur-0 scale-100 opacity-100"
         )}
-        loading="lazy"
+        onLoad={() => setIsLoaded(true)}
+        onError={() => {
+          console.error("[IMAGE] Failed to load:", finalSrc);
+          setHasError(true);
+        }}
+        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
       />
-      {!isHighResLoaded && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <Loader2 className="h-5 w-5 animate-spin text-slate-200" />
-        </div>
-      )}
     </div>
   );
 }

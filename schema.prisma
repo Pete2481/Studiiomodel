@@ -95,6 +95,17 @@ model Tenant {
   dropboxRootPath     String?          @default("/Production/")
   dropboxConnectedAt  DateTime?
 
+  // Google Drive Integration
+  googleDriveRefreshToken String?       @db.Text
+  googleDriveEmail        String?
+  googleDriveConnectedAt  DateTime?
+
+  // AI & Logistics
+  aiLogisticsEnabled  Boolean          @default(false)
+
+  // Storage Config
+  storageProvider     StorageProvider  @default(DROPBOX)
+
   // Business Hours (0=Sun, 1=Mon, ..., 6=Sat)
   businessHours       Json?            @default("{\"0\":{\"open\":false,\"start\":\"09:00\",\"end\":\"17:00\"},\"1\":{\"open\":true,\"start\":\"09:00\",\"end\":\"17:00\"},\"2\":{\"open\":true,\"start\":\"09:00\",\"end\":\"17:00\"},\"3\":{\"open\":true,\"start\":\"09:00\",\"end\":\"17:00\"},\"4\":{\"open\":true,\"start\":\"09:00\",\"end\":\"17:00\"},\"5\":{\"open\":true,\"start\":\"09:00\",\"end\":\"17:00\"},\"6\":{\"open\":true,\"start\":\"09:00\",\"end\":\"17:00\"}}")
 
@@ -385,6 +396,7 @@ model Booking {
   clientId          String?
   propertyId        String?
   requestedByUserId String?
+  externalUid       String?             @unique
   source            BookingSource       @default(TENANT)
   status            BookingStatus       @default(REQUESTED)
   title             String
@@ -574,10 +586,17 @@ enum BookingStatus {
 enum BookingSource {
   TENANT
   CLIENT
+  EXTERNAL
+}
+
+enum StorageProvider {
+  DROPBOX
+  GOOGLE_DRIVE
 }
 
 enum MediaProvider {
   DROPBOX
+  GOOGLE_DRIVE
   DIRECT_UPLOAD
   EXTERNAL
 }

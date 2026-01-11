@@ -26,11 +26,21 @@ const nextConfig = {
         protocol: 'https',
         hostname: 'studiio-assets.s3.amazonaws.com',
       },
+      {
+        protocol: 'https',
+        hostname: 'drive.google.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'lh3.googleusercontent.com',
+      },
     ],
     localPatterns: [
       {
         pathname: '/api/dropbox/assets/**',
-        search: '?*',
+      },
+      {
+        pathname: '/api/google-drive/assets/**',
       },
     ],
     minimumCacheTTL: 31536000,

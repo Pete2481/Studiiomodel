@@ -16,9 +16,10 @@ interface SlotManagementModalProps {
     duskSlotsPerDay: number;
   };
   currentDate: Date;
+  aiLogisticsEnabled?: boolean;
 }
 
-export function SlotManagementModal({ isOpen, onClose, tenantSettings, currentDate }: SlotManagementModalProps) {
+export function SlotManagementModal({ isOpen, onClose, tenantSettings, currentDate, aiLogisticsEnabled = false }: SlotManagementModalProps) {
   const [settings, setSettings] = useState(tenantSettings);
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<"SETTINGS" | "OVERRIDE">("OVERRIDE");
@@ -77,29 +78,68 @@ export function SlotManagementModal({ isOpen, onClose, tenantSettings, currentDa
           </button>
         </div>
 
-        <div className="flex border-b border-slate-100 bg-white">
-          <button 
-            onClick={() => setActiveTab("OVERRIDE")}
-            className={cn(
-              "flex-1 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all",
-              activeTab === "OVERRIDE" ? "text-primary border-b-2 border-primary bg-primary/5" : "text-slate-400 hover:text-slate-600"
-            )}
-          >
-            Daily Overrides
-          </button>
-          <button 
-            onClick={() => setActiveTab("SETTINGS")}
-            className={cn(
-              "flex-1 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all",
-              activeTab === "SETTINGS" ? "text-primary border-b-2 border-primary bg-primary/5" : "text-slate-400 hover:text-slate-600"
-            )}
-          >
-            Global Rules
-          </button>
-        </div>
+        {!aiLogisticsEnabled && (
+          <div className="flex border-b border-slate-100 bg-white">
+            <button 
+              onClick={() => setActiveTab("OVERRIDE")}
+              className={cn(
+                "flex-1 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all",
+                activeTab === "OVERRIDE" ? "text-primary border-b-2 border-primary bg-primary/5" : "text-slate-400 hover:text-slate-600"
+              )}
+            >
+              Daily Overrides
+            </button>
+            <button 
+              onClick={() => setActiveTab("SETTINGS")}
+              className={cn(
+                "flex-1 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all",
+                activeTab === "SETTINGS" ? "text-primary border-b-2 border-primary bg-primary/5" : "text-slate-400 hover:text-slate-600"
+              )}
+            >
+              Global Rules
+            </button>
+          </div>
+        )}
 
         <div className="p-8 space-y-8">
-          {activeTab === "OVERRIDE" ? (
+          {aiLogisticsEnabled ? (
+            <div className="space-y-6 animate-in fade-in duration-500">
+              <div className="p-8 rounded-[32px] bg-slate-900 text-white space-y-6 relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-6 opacity-10">
+                  <Settings className="h-12 w-12" />
+                </div>
+                <div>
+                  <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">AI Logistics Active</h4>
+                  <p className="text-xs font-medium leading-relaxed opacity-80 mt-2">
+                    Manual Sunrise/Dusk slots are disabled because Fluid AI Logistics is controlling your schedule.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="p-4 bg-white/10 rounded-2xl border border-white/10">
+                    <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-2">How it works today:</p>
+                    <ul className="space-y-2">
+                      <li className="text-[10px] font-medium opacity-90 flex items-center gap-2">
+                        <div className="h-1 w-1 rounded-full bg-primary" />
+                        Sun times are calculated per property.
+                      </li>
+                      <li className="text-[10px] font-medium opacity-90 flex items-center gap-2">
+                        <div className="h-1 w-1 rounded-full bg-primary" />
+                        Arrivals set to 25m before light window.
+                      </li>
+                      <li className="text-[10px] font-medium opacity-90 flex items-center gap-2">
+                        <div className="h-1 w-1 rounded-full bg-primary" />
+                        Travel buffers enforced between crew.
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+              <p className="text-[10px] font-bold text-slate-400 italic text-center px-4 leading-relaxed">
+                To revert to manual fixed-time slots, disable "Fluid AI Logistics" in System Settings.
+              </p>
+            </div>
+          ) : activeTab === "OVERRIDE" ? (
             <div className="space-y-6">
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Manage slots for {format(currentDate, "EEEE, MMMM d")}</p>

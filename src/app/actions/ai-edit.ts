@@ -4,7 +4,7 @@ import Replicate from "replicate";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
-import { getDropboxTemporaryLink } from "./dropbox";
+import { getTemporaryLink } from "./storage";
 
 export type AITaskType = "sky_replacement" | "day_to_dusk" | "object_removal" | "virtual_staging";
 
@@ -45,7 +45,7 @@ export async function processImageWithAI(
 
     let publicImageUrl = assetUrl;
 
-    // 1. If it's a Dropbox asset, we MUST get a temporary direct link
+    // 1. If it's a Storage asset (Dropbox or Drive), we MUST get a temporary direct link
     // so Replicate can download it. The internal proxy URLs (localhost) won't work.
     if (dbxPath && tenantId) {
       const urlParams = new URLSearchParams(publicImageUrl.split("?")[1] || "");
@@ -54,14 +54,21 @@ export async function processImageWithAI(
       
       if (isLocalHost) {
         console.log(`[AI_EDIT] Localhost/Proxy URL detected, forcing temporary link for ID: ${dbxId} or Path: ${dbxPath}`);
-        // If we have a Dropbox File ID, use that as it's more reliable than the relative path
+        
+        // Resolve tenant to check provider
+        const tenant = await prisma.tenant.findUnique({
+          where: { id: tenantId },
+          select: { storageProvider: true }
+        });
+        const provider = (tenant as any)?.storageProvider || "DROPBOX";
+
+        // If we have a File ID, use that as it's more reliable than the relative path
         const lookupPath = dbxId || dbxPath;
-        const dbxResult = await getDropboxTemporaryLink(lookupPath, tenantId);
-        if (dbxResult.success && dbxResult.url) {
-          publicImageUrl = dbxResult.url;
+        const storageResult = await getTemporaryLink(lookupPath, tenantId, provider);
+        if (storageResult.success && storageResult.url) {
+          publicImageUrl = storageResult.url;
         } else {
-          // If we can't get a temp link, we might be able to extract the shared link if it exists
-          const urlParams = new URLSearchParams(publicImageUrl.split("?")[1] || "");
+          // If we can't get a temp link, check for Dropbox shared link fallback
           const sharedLink = urlParams.get("sharedLink");
           if (sharedLink && (sharedLink.includes("dropbox.com") || sharedLink.includes("dropboxusercontent.com"))) {
             let directUrl = sharedLink.replace("www.dropbox.com", "dl.dropboxusercontent.com").replace("dl=0", "raw=1");
@@ -78,7 +85,7 @@ export async function processImageWithAI(
             }
             publicImageUrl = directUrl;
           } else {
-            return { success: false, error: "AI cannot access local images. Please ensure Dropbox is connected." };
+            return { success: false, error: `AI cannot access local images. Please ensure ${provider} is connected.` };
           }
         }
       } else if (publicImageUrl.includes("dropbox.com") || publicImageUrl.includes("dropboxusercontent.com")) {
@@ -112,12 +119,21 @@ export async function processImageWithAI(
         break;
 
       case "object_removal":
-        if (!prompt) return { success: false, error: "Prompt required for object removal" };
-        model = "reve/edit-fast";
-        input = {
-          image: publicImageUrl,
-          prompt: `Remove the following from the image: ${prompt}. Seamlessly blend the background.`,
-        };
+        // UPGRADED: Using Google's Nano-Banana for professional-grade inpainting
+        if (maskUrl) {
+          model = "google/nano-banana";
+          input = {
+            image_input: [publicImageUrl, maskUrl],
+            prompt: "Remove the objects highlighted in the mask and seamlessly rebuild the background floors and walls. Preserve the original lighting and architectural details exactly. High resolution, 4k, professional photography.",
+            aspect_ratio: "match_input_image"
+          };
+        } else {
+          model = "reve/edit-fast";
+          input = {
+            image: publicImageUrl,
+            prompt: prompt || "Remove objects and seamlessly blend the background.",
+          };
+        }
         break;
 
       case "virtual_staging":
@@ -167,16 +183,60 @@ export async function processImageWithAI(
       }
     }
     
-    // Replicate's reve/edit-fast output is a file object.
-    // We get the URL by calling .url() on it as shown in your screenshots.
-    const outputUrl = typeof output.url === 'function' ? output.url() : (Array.isArray(output) ? output[0] : output);
+    // Helper to robustly extract a string URL from Replicate output
+    const extractUrl = async (data: any): Promise<string | null> => {
+      if (!data) return null;
+      
+      // 1. If it's a string, it's likely already the URL
+      if (typeof data === 'string' && (data.startsWith('http') || data.startsWith('data:'))) return data;
+      
+      // 2. If it's an array, recurse on the first element
+      if (Array.isArray(data) && data.length > 0) return await extractUrl(data[0]);
+      
+      // 3. Check for Replicate's FileOutput object (most common)
+      // The SDK often provides a .url() method that uploads to Replicate's storage
+      if (data && typeof data.url === 'function') {
+        try {
+          const url = await data.url();
+          if (url) return url;
+        } catch (e) {
+          console.warn("[AI_EDIT] .url() call failed, falling back to stream reading");
+        }
+      }
+      
+      // 4. Check for direct .url property
+      if (data && typeof data.url === 'string') return data.url;
+
+      // 5. Handle ReadableStream / Readable (Node.js)
+      if (data && (typeof data.read === 'function' || data[Symbol.asyncIterator] || (data.constructor && data.constructor.name === 'ReadableStream'))) {
+        try {
+          const chunks = [];
+          for await (const chunk of data) {
+            chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+          }
+          const buffer = Buffer.concat(chunks);
+          return `data:image/jpeg;base64,${buffer.toString('base64')}`;
+        } catch (e) {
+          console.error("[AI_EDIT] Failed to read stream:", e);
+        }
+      }
+
+      if (data && typeof data.toString === 'function' && data.toString() !== "[object Object]") {
+        const str = data.toString();
+        if (str.startsWith('http') || str.startsWith('data:')) return str;
+      }
+      return null;
+    };
+
+    const outputUrl = await extractUrl(output);
 
     if (!outputUrl) {
-      return { success: false, error: "AI failed to generate output" };
+      console.error("[AI_EDIT_ERROR] No output URL found in Replicate response:", JSON.stringify(output));
+      return { success: false, error: "AI failed to generate a valid image URL" };
     }
 
     // --- HD UPSCALING STEP ---
-    console.log(`[AI_EDIT] Upscaling output to HD using nightmareai/real-esrgan...`);
+    console.log(`[AI_EDIT] Upscaling output to HD using nightmareai/real-esrgan for URL length: ${outputUrl.length}`);
     try {
       const upscaleOutput: any = await replicate.run(
         "nightmareai/real-esrgan:b3ef194191d13140337468c916c2c5b96dd0cb06dffc032a022a31807f6a5ea8",
@@ -188,14 +248,15 @@ export async function processImageWithAI(
           }
         }
       );
-      const finalUrl = typeof upscaleOutput.url === 'function' ? upscaleOutput.url() : (Array.isArray(upscaleOutput) ? upscaleOutput[0] : upscaleOutput);
+      
+      const finalUrl = await extractUrl(upscaleOutput);
       if (finalUrl) {
-        console.log(`[AI_EDIT] HD Upscale complete: ${finalUrl}`);
+        console.log(`[AI_EDIT] HD Upscale complete: ${finalUrl?.substring(0, 100)}...`);
         return { success: true, outputUrl: finalUrl };
       }
     } catch (upscaleError) {
       console.error("[AI_EDIT_UPSCALER_ERROR]:", upscaleError);
-      // Fallback to original low-res output if upscaler fails
+      // Fallback to original output if upscaler fails
       return { success: true, outputUrl };
     }
 

@@ -260,7 +260,7 @@ export function ClientPageContent({
 
       {/* Client Table Header */}
       <div className="hidden lg:grid lg:grid-cols-[2fr_1.5fr_1fr_1fr_1fr_0.5fr] gap-4 px-8 py-4 bg-slate-50/50 rounded-2xl border border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-        <span>Client / Agency</span>
+        <span>Client</span>
         <span>Contact Details</span>
         <span>Stats</span>
         <span>Portal Access</span>
@@ -328,7 +328,7 @@ export function ClientPageContent({
               </span>
             </div>
 
-            {/* Agents Management */}
+            {/* Contacts Management */}
             <div className="flex items-center justify-end gap-2">
               <ImpersonateClientButton clientId={client.id} />
               <button 
@@ -338,7 +338,7 @@ export function ClientPageContent({
                 }}
                 className="h-10 px-6 rounded-full border-2 border-rose-200 text-rose-500 font-bold text-xs hover:bg-rose-50 transition-all active:scale-95 flex items-center gap-2"
               >
-                Agents
+                Contacts
               </button>
             </div>
 

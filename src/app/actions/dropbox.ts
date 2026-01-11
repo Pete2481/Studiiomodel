@@ -3,6 +3,7 @@
 import { auth } from "@/auth";
 import { getTenantPrisma } from "@/lib/tenant-guard";
 import { prisma } from "@/lib/prisma";
+import { cleanDropboxLink } from "@/lib/utils";
 
 /**
  * Refreshes the Dropbox access token using the refresh token.
@@ -121,9 +122,10 @@ export async function browseDropboxFolders(path: string = "") {
 }
 
 /**
- * Fetches all assets (images) from multiple Dropbox folders or a share link for a specific gallery.
+ * Fetches assets (images) from multiple Dropbox folders or a share link for a specific gallery.
+ * Supports pagination via limit and cursor.
  */
-export async function getGalleryAssets(galleryId: string) {
+export async function getGalleryAssets(galleryId: string, limit: number = 100, cursor?: string) {
   try {
     // 1. Resolve tenant first via unscoped prisma to find context
     const galleryInfo = await prisma.gallery.findFirst({
@@ -151,9 +153,11 @@ export async function getGalleryAssets(galleryId: string) {
 
     const metadata = gallery.metadata as any;
     const folders = metadata?.imageFolders || [];
-    const shareLink = metadata?.dropboxLink;
+    const rawShareLink = metadata?.dropboxLink;
+    const shareLink = rawShareLink ? cleanDropboxLink(rawShareLink) : "";
     
     let allAssets: any[] = [];
+    let nextCursor: string | undefined = undefined;
 
     // Helper for API calls with auto-refresh
     const dropboxFetch = async (url: string, body: any) => {
@@ -183,146 +187,129 @@ export async function getGalleryAssets(galleryId: string) {
       return res;
     };
 
+    const processEntries = (entries: any[], folderName: string, sourceLink?: string) => {
+      return entries
+        .filter((entry: any) => entry[".tag"] === "file" && entry.name.match(/\.(jpg|jpeg|png|webp)$/i))
+        .map((entry: any) => {
+          // Dropbox API get_thumbnail_v2 expects a path from the shared link.
+          // Prepending a slash is often standard for these calls.
+          const relativePath = sourceLink ? ("/" + entry.name) : entry.path_lower;
+          
+          // Ensure sharedLink is cleaned and append shared=true to the proxy URL
+          const cleanedSourceLink = sourceLink ? cleanDropboxLink(sourceLink) : "";
+          const url = sourceLink 
+            ? `/api/dropbox/assets/${galleryId}?path=${encodeURIComponent(relativePath)}&sharedLink=${encodeURIComponent(cleanedSourceLink)}&id=${encodeURIComponent(entry.id)}&shared=true`
+            : `/api/dropbox/assets/${galleryId}?path=${encodeURIComponent(entry.path_lower)}&id=${encodeURIComponent(entry.id)}`;
+
+          // Include the original direct URL as a fallback if possible
+          // For shared folders, we can try appending the filename to the raw link
+          let directUrl = "";
+          if (sourceLink) {
+            const cleaned = cleanDropboxLink(sourceLink).replace("www.dropbox.com", "dl.dropboxusercontent.com");
+            if (cleaned.includes("?")) {
+              directUrl = cleaned.replace("?", `/${encodeURIComponent(entry.name)}?`) + "&raw=1";
+            } else {
+              directUrl = `${cleaned}/${encodeURIComponent(entry.name)}?raw=1`;
+            }
+          }
+
+          return {
+            id: entry.id,
+            name: entry.name,
+            path: relativePath,
+            url: url,
+            directUrl: directUrl, // Fallback for failed proxy
+            type: "image",
+            folderName: folderName
+          };
+        });
+    };
+
+    // PAGINATION LOGIC
+    // If a cursor is provided, we just continue from that cursor.
+    // NOTE: This assumes the cursor is for the "current" source being paginated.
+    if (cursor) {
+      const response = await dropboxFetch("https://api.dropboxapi.com/2/files/list_folder/continue", { cursor });
+      if (response.ok) {
+        const data = await response.json();
+        // We need to know which folder/link this cursor belonged to.
+        // For now, we assume "Production" or use metadata if we wanted to be fancy.
+        allAssets = processEntries(data.entries, "Production", shareLink);
+        if (data.has_more) nextCursor = data.cursor;
+        return { success: true, assets: allAssets, nextCursor };
+      }
+      return { success: false, error: "Failed to continue pagination" };
+    }
+
     // 1. Handle Share Link (Fastest Path)
     if (shareLink && shareLink.trim() !== "") {
-      console.log("[DEBUG] Fetching metadata for shared link:", shareLink);
       const response = await dropboxFetch("https://api.dropboxapi.com/2/sharing/get_shared_link_metadata", {
         url: shareLink
       });
 
       if (response.ok) {
         const data = await response.json();
-        console.log("[DEBUG] Shared link metadata received:", JSON.stringify(data));
-        
-        const rootPathLower = data.path_lower || "";
-        
-        // CASE A: It's a folder link
         if (data[".tag"] === "folder") {
-          console.log("[DEBUG] Listing folder from shared link...");
           const listResponse = await dropboxFetch("https://api.dropboxapi.com/2/files/list_folder", {
             path: "", 
             shared_link: { url: shareLink },
-            recursive: false
+            recursive: false,
+            limit: Math.min(limit, 1000)
           });
 
           if (listResponse.ok) {
             const listData = await listResponse.json();
-            console.log(`[DEBUG] Found ${listData.entries.length} entries in shared link`);
-            const sharedAssets = listData.entries
-              .filter((entry: any) => entry[".tag"] === "file" && entry.name.match(/\.(jpg|jpeg|png|webp)$/i))
-              .map((entry: any) => {
-                // For shared links, the path in get_thumbnail_v2 should be 
-                // relative to the shared link root. If we are listing the 
-                // root (path: ""), then the relative path is just "/filename"
-                const relativePath = "/" + entry.name;
-
-                return {
-                  id: entry.id,
-                  name: entry.name,
-                  path: relativePath, 
-                  url: `/api/dropbox/assets/${galleryId}?path=${encodeURIComponent(relativePath)}&sharedLink=${encodeURIComponent(shareLink)}&id=${encodeURIComponent(entry.id)}`,
-                  type: "image",
-                  folderName: "Production Link"
-                };
-              });
-            console.log(`[DEBUG] Extracted ${sharedAssets.length} valid images`);
-            allAssets = [...allAssets, ...sharedAssets];
-          } else {
-            const errText = await listResponse.text();
-            console.error("[DEBUG] LIST FOLDER ERROR:", errText);
+            allAssets = processEntries(listData.entries, "Production Link", shareLink);
+            if (listData.has_more) nextCursor = listData.cursor;
+            
+            // If we have enough assets or a cursor, return now
+            if (allAssets.length >= limit || nextCursor) {
+              return { success: true, assets: allAssets.slice(0, limit), nextCursor };
+            }
           }
-        } 
-        // CASE B: It's a direct file link
-        else if (data[".tag"] === "file") {
-          console.log("[DEBUG] Single file detected from shared link");
+        } else if (data[".tag"] === "file") {
           if (data.name.match(/\.(jpg|jpeg|png|webp)$/i)) {
             allAssets.push({
               id: data.id,
               name: data.name,
-              path: "/", // Root of the link
+              path: "/",
               url: `/api/dropbox/assets/${galleryId}?path=${encodeURIComponent("/")}&sharedLink=${encodeURIComponent(shareLink)}&id=${encodeURIComponent(data.id)}`,
               type: "image",
               folderName: "Direct Link"
             });
           }
         }
-        else {
-          console.log("[DEBUG] Shared link is neither folder nor file. Tag:", data[".tag"]);
-        }
-      } else {
-        const errText = await response.text();
-        console.error("[DEBUG] METADATA ERROR:", errText);
       }
     }
 
-    // 2. Parallelize folder scanning for speed
-    const folderPromises = folders.map(async (folder: any) => {
-      let folderAssets: any[] = [];
-      let hasMore = true;
-      let cursor = "";
+    // 2. Scan folders if we still need more assets
+    if (allAssets.length < limit && folders.length > 0) {
+      // For simplicity, we'll just pull from the first folder for now if multiple exist
+      // or combine them until we hit the limit.
+      for (const folder of folders) {
+        if (allAssets.length >= limit) break;
 
-      try {
-        // Initial fetch
-        let response = await dropboxFetch("https://api.dropboxapi.com/2/files/list_folder", {
+        const response = await dropboxFetch("https://api.dropboxapi.com/2/files/list_folder", {
           path: folder.path,
           recursive: false,
-          include_media_info: true
+          include_media_info: true,
+          limit: Math.min(limit - allAssets.length, 1000)
         });
 
         if (response.ok) {
-          let data = await response.json();
-          
-          const processEntries = (entries: any[]) => {
-            return entries
-              .filter((entry: any) => entry[".tag"] === "file" && entry.name.match(/\.(jpg|jpeg|png|webp)$/i))
-              .map((entry: any) => ({
-                id: entry.id,
-                name: entry.name,
-                path: entry.path_lower,
-                url: `/api/dropbox/assets/${galleryId}?path=${encodeURIComponent(entry.path_lower)}&id=${encodeURIComponent(entry.id)}`,
-                type: "image",
-                folderName: folder.name
-              }));
-          };
-
-          folderAssets = [...folderAssets, ...processEntries(data.entries)];
-          hasMore = data.has_more;
-          cursor = data.cursor;
-
-          // CURSOR LOOP: Keep pulling if there are more than 1000 items
-          while (hasMore) {
-            console.log(`[DROPBOX] Pulling next batch for ${folder.name} (has_more: true)`);
-            const nextResponse = await dropboxFetch("https://api.dropboxapi.com/2/files/list_folder/continue", {
-              cursor: cursor
-            });
-
-            if (nextResponse.ok) {
-              const nextData = await nextResponse.json();
-              folderAssets = [...folderAssets, ...processEntries(nextData.entries)];
-              hasMore = nextData.has_more;
-              cursor = nextData.cursor;
-            } else {
-              hasMore = false;
-            }
-          }
+          const data = await response.json();
+          const folderAssets = processEntries(data.entries, folder.name);
+          allAssets = [...allAssets, ...folderAssets];
+          if (data.has_more) nextCursor = data.cursor;
         }
-      } catch (err) {
-        console.error(`Error fetching folder ${folder.name}:`, err);
       }
+    }
 
-      return folderAssets;
-    });
-
-    const results = await Promise.all(folderPromises);
-    results.forEach(folderAssets => {
-      folderAssets.forEach((asset: any) => {
-        if (!allAssets.some(a => a.path === asset.path)) {
-          allAssets.push(asset);
-        }
-      });
-    });
-
-    return { success: true, assets: allAssets };
+    return { 
+      success: true, 
+      assets: allAssets.slice(0, limit), 
+      nextCursor 
+    };
   } catch (error: any) {
     console.error("GET GALLERY ASSETS ERROR:", error);
     return { success: false, error: "Failed to load assets" };

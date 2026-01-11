@@ -124,7 +124,7 @@ async function BookingsDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
     }),
     tPrisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { id: true, businessHours: true, settings: true, sunriseSlotTime: true, duskSlotTime: true, sunriseSlotsPerDay: true, duskSlotsPerDay: true }
+      select: { id: true, businessHours: true, settings: true, sunriseSlotTime: true, duskSlotTime: true, sunriseSlotsPerDay: true, duskSlotsPerDay: true, aiLogisticsEnabled: true }
     })
   ]);
 
@@ -176,6 +176,7 @@ async function BookingsDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
       agents={agents}
       customStatuses={customStatuses}
       businessHours={tenant?.businessHours || null}
+      aiLogisticsEnabled={tenant?.aiLogisticsEnabled || false}
       slotSettings={{
         sunriseSlotTime: tenant?.sunriseSlotTime || "06:00",
         duskSlotTime: tenant?.duskSlotTime || "18:30",

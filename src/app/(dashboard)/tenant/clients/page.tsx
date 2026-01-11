@@ -24,8 +24,8 @@ export default async function ClientsPage() {
   return (
     <div className="space-y-12">
       <ShellSettings 
-        title="Client Agencies" 
-        subtitle="Keep your agencies and key contacts in sync with portal access control." 
+        title="Clients" 
+        subtitle="Keep your key client contacts in sync with portal access control." 
       />
       
       <Suspense fallback={<ClientsSkeleton />}>

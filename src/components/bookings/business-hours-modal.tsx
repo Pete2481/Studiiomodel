@@ -10,6 +10,7 @@ interface BusinessHoursModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialHours: any;
+  aiLogisticsEnabled?: boolean;
 }
 
 const DAYS = [
@@ -22,7 +23,7 @@ const DAYS = [
   { id: 6, label: "Saturday" },
 ];
 
-export function BusinessHoursModal({ isOpen, onClose, initialHours }: BusinessHoursModalProps) {
+export function BusinessHoursModal({ isOpen, onClose, initialHours, aiLogisticsEnabled = false }: BusinessHoursModalProps) {
   const [hours, setHours] = useState(initialHours || {
     "0": { open: false, start: "09:00", end: "17:00" },
     "1": { open: true, start: "09:00", end: "17:00" },
@@ -84,7 +85,9 @@ export function BusinessHoursModal({ isOpen, onClose, initialHours }: BusinessHo
         <LoadingOverlay isVisible={isSaving} message="Updating your hours..." />
         
         <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <h2 className="text-xl font-bold text-slate-900 tracking-tight">Business Hours & Sun Slots</h2>
+          <h2 className="text-xl font-bold text-slate-900 tracking-tight">
+            {aiLogisticsEnabled ? "Studio Business Hours" : "Business Hours & Sun Slots"}
+          </h2>
           <button onClick={onClose} className="h-10 w-10 flex items-center justify-center rounded-full hover:bg-white text-slate-400 transition-colors shadow-sm">
             <X className="h-5 w-5" />
           </button>
@@ -97,11 +100,11 @@ export function BusinessHoursModal({ isOpen, onClose, initialHours }: BusinessHo
             <div className="flex-1">Business Hours</div>
             <div className="w-24 text-center flex items-center justify-center gap-1.5">
               <Sunrise className="h-3 w-3 text-amber-400" />
-              Sunrise
+              {aiLogisticsEnabled ? "Max AM" : "Sunrise"}
             </div>
             <div className="w-24 text-center flex items-center justify-center gap-1.5">
               <Sunset className="h-3 w-3 text-indigo-400" />
-              Dusk
+              {aiLogisticsEnabled ? "Max PM" : "Dusk"}
             </div>
           </div>
 

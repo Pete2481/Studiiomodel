@@ -39,14 +39,20 @@ export function DownloadManager({ galleryId, assets, onClose, sharedLink, client
         const asset = assets[i];
         setCurrentFile(asset.name);
         
-        // Fetch original from proxy
-        const response = await fetch(
-          `/api/dropbox/download/${galleryId}?path=${encodeURIComponent(asset.path)}&sharedLink=${encodeURIComponent(sharedLink || "")}&applyBranding=${applyBranding}`
-        );
+        let blob: Blob;
 
-        if (!response.ok) throw new Error(`Failed to download ${asset.name}`);
+        // If it's a client-side markup, use the blob directly
+        if (asset.isMarkup && asset.markupBlob) {
+          blob = asset.markupBlob;
+        } else {
+          // Fetch original from proxy
+          const response = await fetch(
+            `/api/dropbox/download/${galleryId}?path=${encodeURIComponent(asset.path)}&sharedLink=${encodeURIComponent(sharedLink || "")}&applyBranding=${applyBranding}`
+          );
 
-        let blob = await response.blob();
+          if (!response.ok) throw new Error(`Failed to download ${asset.name}`);
+          blob = await response.blob();
+        }
 
         // 1. Logic for Resizing (Web/Social)
         // If resolution is not 'original', we use a hidden canvas to resize
@@ -109,7 +115,7 @@ export function DownloadManager({ galleryId, assets, onClose, sharedLink, client
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[300] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
       <div 
         className="w-full max-w-lg bg-white rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-500"
         onClick={(e) => e.stopPropagation()}

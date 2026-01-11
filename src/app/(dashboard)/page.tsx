@@ -145,51 +145,49 @@ async function MetricCardsWrapper({ tenantId, editWhere, galleryWhere, bookingWh
 }
 
 async function GalleriesWrapper({ tenantId, galleryWhere, user }: any) {
-  const canViewAll = user.role === "TENANT_ADMIN" || user.role === "ADMIN";
-  const [dbGalleries, dbClients, dbBookings, dbAgents, dbServices, isSubscribed] = await Promise.all([
+  const [dbGalleries, isSubscribed] = await Promise.all([
     prisma.gallery.findMany({ 
       where: galleryWhere, 
       orderBy: { createdAt: 'desc' }, 
       take: 12, 
-      include: { 
-        client: { select: { id: true, name: true, businessName: true } }, 
-        property: { select: { id: true, name: true } }, 
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        isLocked: true,
+        watermarkEnabled: true,
+        bannerImageUrl: true,
+        clientId: true,
+        agentId: true,
+        bookingId: true,
+        metadata: true,
+        client: { select: { id: true, name: true, businessName: true } },
+        property: { select: { id: true, name: true } },
         media: {
-          take: 1, // Fetch only the first media item as a fallback for the cover
+          take: 1,
           orderBy: { createdAt: 'asc' },
           select: { url: true, thumbnailUrl: true }
-        }, 
-        services: { include: { service: { select: { id: true, name: true, price: true } } } }, 
-        favorites: { select: { id: true } }, 
-        booking: { include: { assignments: { include: { teamMember: { select: { displayName: true } } } } } } 
-      } 
+        },
+        services: { select: { service: { select: { id: true } } } },
+        _count: { select: { favorites: true } },
+        booking: { 
+          select: { 
+            assignments: { 
+              select: { 
+                teamMember: { select: { displayName: true } } 
+              } 
+            } 
+          } 
+        }
+      }
     }),
-    prisma.client.findMany({ 
-      where: !canViewAll && user.clientId ? { id: user.clientId, deletedAt: null } : { tenantId, deletedAt: null }, 
-      select: { id: true, name: true, settings: true } 
-    }),
-    prisma.booking.findMany({ 
-      where: { ...galleryWhere, tenantId, deletedAt: null }, // Reuse the scoping for galleries
-      select: { 
-        id: true, 
-        title: true, 
-        clientId: true, 
-        property: { select: { name: true } }, 
-        services: { include: { service: { select: { id: true, name: true, price: true } } } } 
-      } 
-    }),
-    prisma.agent.findMany({ 
-      where: !canViewAll && user.clientId ? { clientId: user.clientId, deletedAt: null } : { tenantId, deletedAt: null }, 
-      select: { id: true, name: true, clientId: true } 
-    }),
-    prisma.service.findMany({ where: { tenantId, deletedAt: null }, select: { id: true, name: true, price: true, icon: true } }),
     checkSubscriptionStatus(tenantId)
   ]);
 
   const galleries = dbGalleries.map(g => {
     const bannerUrl = g.bannerImageUrl ? formatDropboxUrl(g.bannerImageUrl) : null;
     const firstMediaUrl = g.media[0] ? formatDropboxUrl(String(g.media[0].thumbnailUrl || g.media[0].url)) : null;
-    const safeMetadata = g.metadata ? JSON.parse(JSON.stringify(g.metadata)) : {};
+    const safeMetadata = g.metadata ? (g.metadata as any) : {};
 
     return {
       id: String(g.id), 
@@ -203,36 +201,20 @@ async function GalleriesWrapper({ tenantId, galleryWhere, user }: any) {
       isLocked: !!g.isLocked, 
       watermarkEnabled: !!g.watermarkEnabled, 
       bannerImageUrl: g.bannerImageUrl || null, 
-      metadata: safeMetadata, 
-      serviceIds: g.services.map(s => String(s.service.id)), 
+      // Pick only the minimal fields from metadata to avoid large JSON payload
+      metadata: safeMetadata,
       mediaCount: Number(safeMetadata.imageCount || 0), 
       videoCount: Number(safeMetadata.videoLinks?.length || 0), 
-      favoriteCount: Number(g.favorites.length), 
+      favoriteCount: Number(g._count.favorites), 
       photographers: g.booking?.assignments?.map(a => String(a.teamMember.displayName)).join(", ") || "No team assigned",
       cover: bannerUrl || firstMediaUrl || "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80",
+      serviceIds: g.services.map(s => String(s.service.id)),
     };
   });
 
   return (
     <DashboardGalleries 
       initialGalleries={galleries}
-      clients={dbClients.map(c => ({ 
-        id: String(c.id), 
-        name: String(c.name),
-        disabledServices: (c.settings as any)?.disabledServices || []
-      }))}
-      bookings={dbBookings.map(b => ({ 
-        id: String(b.id), 
-        title: String(b.title), 
-        clientId: String(b.clientId), 
-        property: { name: String(b.property?.name || "") }, 
-        services: b.services.map(s => ({ 
-          id: String(s.id),
-          service: { id: String(s.service.id), name: String(s.service.name), price: Number(s.service.price) } 
-        })) 
-      }))}
-      agents={dbAgents.map(a => ({ id: String(a.id), name: String(a.name), clientId: String(a.clientId) }))}
-      services={dbServices.map(s => ({ id: String(s.id), name: String(s.name), price: Number(s.price), icon: s.icon }))}
       user={user}
       isActionLocked={!isSubscribed}
     />
@@ -297,9 +279,9 @@ async function BookingPipelineWrapper({ tenantId, bookingWhere, user }: any) {
 
 function MetricCardsSkeleton() {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 w-full">
-      {[1, 2, 3, 4].map(i => (
-        <div key={i} className="h-32 bg-slate-100 rounded-[32px] animate-pulse" />
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 w-full">
+      {[1, 2, 3, 4, 5].map(i => (
+        <div key={i} className="h-32 bg-slate-100 rounded-[32px] animate-pulse border border-slate-50" />
       ))}
     </div>
   );
@@ -308,10 +290,34 @@ function MetricCardsSkeleton() {
 function GalleriesSkeleton() {
   return (
     <div className="space-y-6 w-full">
-      <div className="h-8 w-48 bg-slate-100 rounded-lg animate-pulse" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="space-y-2">
+          <div className="h-7 w-48 bg-slate-100 rounded-lg animate-pulse" />
+          <div className="h-4 w-64 bg-slate-50 rounded-lg animate-pulse" />
+        </div>
+        <div className="flex gap-3">
+          <div className="h-10 w-24 bg-slate-100 rounded-full animate-pulse" />
+          <div className="h-10 w-32 bg-slate-100 rounded-full animate-pulse" />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {[1, 2, 3, 4].map(i => (
-          <div key={i} className="h-64 bg-slate-100 rounded-[32px] animate-pulse" />
+          <div key={i} className="flex flex-col overflow-hidden rounded-[32px] border border-slate-100 bg-white">
+            <div className="aspect-[4/3] bg-slate-100 animate-pulse" />
+            <div className="p-6 space-y-4">
+              <div className="space-y-2">
+                <div className="h-5 w-3/4 bg-slate-100 rounded-lg animate-pulse" />
+                <div className="h-3 w-1/2 bg-slate-50 rounded-lg animate-pulse" />
+              </div>
+              <div className="pt-4 border-t border-slate-50 flex justify-between items-center">
+                <div className="flex gap-2">
+                  <div className="h-4 w-8 bg-slate-50 rounded animate-pulse" />
+                  <div className="h-4 w-8 bg-slate-50 rounded animate-pulse" />
+                </div>
+                <div className="h-4 w-16 bg-slate-50 rounded animate-pulse" />
+              </div>
+            </div>
+          </div>
         ))}
       </div>
     </div>
@@ -321,10 +327,19 @@ function GalleriesSkeleton() {
 function BookingPipelineSkeleton() {
   return (
     <div className="space-y-6">
-      <div className="h-12 w-full bg-slate-100 rounded-full animate-pulse" />
+      <div className="flex items-center justify-between">
+        <div className="space-y-2">
+          <div className="h-6 w-48 bg-slate-100 rounded-lg animate-pulse" />
+          <div className="h-4 w-64 bg-slate-50 rounded-lg animate-pulse" />
+        </div>
+        <div className="flex gap-3">
+          <div className="h-10 w-32 bg-slate-100 rounded-full animate-pulse" />
+          <div className="h-10 w-40 bg-slate-100 rounded-full animate-pulse" />
+        </div>
+      </div>
       <div className="space-y-4">
         {[1, 2, 3].map(i => (
-          <div key={i} className="h-20 bg-slate-100 rounded-[32px] animate-pulse" />
+          <div key={i} className="h-24 bg-slate-100 rounded-[32px] animate-pulse border border-slate-50" />
         ))}
       </div>
     </div>

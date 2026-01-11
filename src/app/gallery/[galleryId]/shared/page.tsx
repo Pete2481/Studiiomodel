@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { GalleryPublicViewer } from "@/components/modules/galleries/gallery-public-viewer";
 import { formatDropboxUrl } from "@/lib/utils";
 import { auth } from "@/auth";
-import { getGalleryAssets } from "@/app/actions/dropbox";
+import { getGalleryAssets } from "@/app/actions/storage";
 import { Suspense } from "react";
 import { Camera, ImageIcon } from "lucide-react";
 import { Metadata } from "next";
@@ -154,7 +154,7 @@ export default async function SharedGalleryPage({
     name: String(gallery.tenant.name),
     logoUrl: gallery.tenant.logoUrl ? String(gallery.tenant.logoUrl) : null,
     brandColor: String(gallery.tenant.brandColor || "#10B981"),
-    isConnected: !!gallery.tenant.dropboxAccessToken,
+    isConnected: !!(gallery.tenant.dropboxAccessToken || (gallery.tenant as any).googleDriveRefreshToken),
     settings: gallery.tenant.settings || {}
   };
 

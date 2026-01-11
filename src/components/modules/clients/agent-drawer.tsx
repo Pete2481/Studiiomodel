@@ -114,7 +114,7 @@ export function AgentDrawer({
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure? This agent will be removed.")) return;
+    if (!confirm("Are you sure? This contact will be removed.")) return;
     const result = await deleteAgent(id);
     if (result.success) {
       onRefresh();
@@ -142,7 +142,7 @@ export function AgentDrawer({
         <div className="px-10 py-8 flex items-start justify-between border-b border-slate-50">
           <div className="space-y-1">
             <p className="text-[10px] font-bold text-primary uppercase tracking-widest">
-              AGENCY CREW
+              AGENCY CONTACTS
             </p>
             <h2 className="text-2xl font-bold text-slate-900 tracking-tight">
               {agencyName}
@@ -179,7 +179,7 @@ export function AgentDrawer({
                 </div>
                 <div className="space-y-1">
                   <h3 className="font-bold text-slate-900">Profile Picture</h3>
-                  <p className="text-xs text-slate-400">Click to upload agent avatar.</p>
+                  <p className="text-xs text-slate-400">Click to upload contact avatar.</p>
                 </div>
               </div>
 
@@ -234,7 +234,7 @@ export function AgentDrawer({
                 <div className="p-6 rounded-3xl bg-slate-50 border border-slate-100 flex items-center justify-between">
                   <div className="space-y-1">
                     <h4 className="text-sm font-bold text-slate-900">See All Agency Data</h4>
-                    <p className="text-xs text-slate-400">If OFF, agent only sees their own jobs.</p>
+                    <p className="text-xs text-slate-400">If OFF, contact only sees their own jobs.</p>
                   </div>
                   <button 
                     type="button"
@@ -261,7 +261,7 @@ export function AgentDrawer({
                   disabled={isSubmitting}
                   className="flex-1 h-12 rounded-2xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:opacity-90 transition-all active:scale-95 disabled:opacity-50"
                 >
-                  {isSubmitting ? "Saving..." : selectedAgent ? "Update Agent" : "Add Agent"}
+                  {isSubmitting ? "Saving..." : selectedAgent ? "Update Contact" : "Add Contact"}
                 </button>
                 <button 
                   type="button"
@@ -278,12 +278,12 @@ export function AgentDrawer({
           ) : (
             <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-300">
               <div className="flex items-center justify-between">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Current Agents ({agents.length})</h3>
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Current Contacts ({agents.length})</h3>
                 <button 
                   onClick={() => setShowForm(true)}
                   className="text-xs font-bold text-primary hover:underline"
                 >
-                  + Add New Agent
+                  + Add New Contact
                 </button>
               </div>
 
@@ -339,12 +339,12 @@ export function AgentDrawer({
                 {agents.length === 0 && (
                   <div className="py-12 text-center bg-slate-50/50 rounded-[32px] border-2 border-dashed border-slate-100">
                     <User className="h-8 w-8 text-slate-200 mx-auto mb-3" />
-                    <p className="text-sm font-medium text-slate-400">No agents added yet.</p>
+                    <p className="text-sm font-medium text-slate-400">No contacts added yet.</p>
                     <button 
                       onClick={() => setShowForm(true)}
                       className="mt-4 px-6 py-2 bg-white rounded-full text-xs font-bold text-slate-600 shadow-sm border border-slate-100 hover:bg-slate-50 transition-colors"
                     >
-                      Add first agent
+                      Add first contact
                     </button>
                   </div>
                 )}

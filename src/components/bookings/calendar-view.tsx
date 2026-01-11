@@ -21,6 +21,7 @@ interface CalendarViewProps {
   defaultLat?: number;
   defaultLon?: number;
   businessHours?: any;
+  aiLogisticsEnabled?: boolean;
 }
 
 export function CalendarView({ 
@@ -30,7 +31,8 @@ export function CalendarView({
   onDateClick,
   onExternalDrop, 
   user,
-  businessHours
+  businessHours,
+  aiLogisticsEnabled = false
 }: CalendarViewProps) {
   const calendarRef = useRef<any>(null);
   const [hoveredEvent, setHoveredEvent] = useState<{ event: any, x: number, y: number } | null>(null);
@@ -82,29 +84,32 @@ export function CalendarView({
     }
 
     // 2. Add Placeholder slots as background availability (DATE SPECIFIC - no smearing)
-    bookings.filter(b => b.isPlaceholder && b.startAt && b.endAt).forEach(b => {
-      // If client, hide availability that overlaps with a block-out
-      if (user?.role === "CLIENT") {
-        const isBlocked = bookings.some(block => 
-          block.status === 'BLOCKED' && 
-          new Date(b.startAt) < new Date(block.endAt) && 
-          new Date(b.endAt) > new Date(block.startAt)
-        );
-        if (isBlocked) return;
-      }
+    if (!aiLogisticsEnabled) {
+      bookings.filter(b => b.isPlaceholder && b.startAt && b.endAt).forEach(b => {
+        // If client, hide availability that overlaps with a block-out
+        if (user?.role === "CLIENT") {
+          const isBlocked = bookings.some(block => 
+            block.status === 'BLOCKED' && 
+            new Date(b.startAt) < new Date(block.endAt) && 
+            new Date(b.endAt) > new Date(block.startAt)
+          );
+          if (isBlocked) return;
+        }
 
-      events.push({
-        start: b.startAt,
-        end: b.endAt,
-        display: 'background',
-        groupId: 'available',
-        color: '#ffffff'
+        events.push({
+          start: b.startAt,
+          end: b.endAt,
+          display: 'background',
+          groupId: 'available',
+          color: '#ffffff'
+        });
       });
-    });
+    }
 
     // 3. Add real bookings and interactive placeholders
     bookings.forEach(b => {
       if (!b.startAt || !b.endAt) return;
+      if (aiLogisticsEnabled && b.isPlaceholder) return; // Hide placeholders when AI is on
 
       const status = b.status?.toUpperCase() || 'REQUESTED';
       

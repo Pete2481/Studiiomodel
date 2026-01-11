@@ -32,21 +32,25 @@ export async function upsertAgent(data: any) {
     }
 
     const tPrisma = await getTenantPrisma();
-    const { id, ...rest } = data;
+    const { id, clientId, ...rest } = data;
 
     if (id) {
       const agent = await tPrisma.agent.update({
         where: { id },
         data: {
           ...rest,
+          ...(clientId ? { client: { connect: { id: clientId } } } : {}),
           updatedAt: new Date(),
         }
       });
       return { success: true, agent };
     } else {
+      if (!clientId) return { success: false, error: "Client ID is required" };
+      
       const agent = await tPrisma.agent.create({
         data: {
           ...rest,
+          client: { connect: { id: clientId } },
           status: rest.status || "ACTIVE",
         }
       });

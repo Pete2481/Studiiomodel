@@ -31,8 +31,8 @@ import {
   Plane
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { browseDropboxFolders } from "@/app/actions/dropbox";
-import { upsertGallery } from "@/app/actions/gallery";
+import { browseFolders } from "@/app/actions/storage";
+import { upsertGallery, getGalleryReferenceData } from "@/app/actions/gallery";
 import { QuickClientModal } from "../clients/quick-client-modal";
 import { QuickServiceModal } from "../services/quick-service-modal";
 import { QuickAgentModal } from "../agents/quick-agent-modal";
@@ -41,10 +41,6 @@ import { Hint } from "@/components/ui";
 interface GalleryDrawerProps {
   isOpen: boolean;
   onClose: () => void;
-  clients: any[];
-  bookings: any[];
-  agents: any[];
-  services: any[];
   initialGallery?: any;
   onRefresh: () => void;
 }
@@ -52,15 +48,12 @@ interface GalleryDrawerProps {
 export function GalleryDrawer({ 
   isOpen, 
   onClose, 
-  clients, 
-  bookings, 
-  agents,
-  services,
   initialGallery,
   onRefresh 
 }: GalleryDrawerProps) {
   const [activeSection, setActiveTab] = useState<"setup" | "assets">("setup");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingRefData, setIsLoadingRefData] = useState(false);
   
   // Dropdown States
   const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
@@ -73,21 +66,34 @@ export function GalleryDrawer({
   const [isQuickClientOpen, setIsQuickClientOpen] = useState(false);
   const [isQuickServiceOpen, setIsQuickServiceOpen] = useState(false);
   const [isQuickAgentOpen, setIsQuickAgentOpen] = useState(false);
-  const [localClients, setLocalClients] = useState(clients);
-  const [localServices, setLocalServices] = useState(services);
-  const [localAgents, setLocalAgents] = useState(agents);
+  
+  const [localClients, setLocalClients] = useState<any[]>([]);
+  const [localServices, setLocalServices] = useState<any[]>([]);
+  const [localAgents, setLocalAgents] = useState<any[]>([]);
+  const [bookings, setBookings] = useState<any[]>([]);
 
+  // On-demand reference data fetching
   useEffect(() => {
-    setLocalClients(clients);
-  }, [clients]);
-
-  useEffect(() => {
-    setLocalServices(services);
-  }, [services]);
-
-  useEffect(() => {
-    setLocalAgents(agents);
-  }, [agents]);
+    if (isOpen && localClients.length === 0 && !isLoadingRefData) {
+      const fetchRefData = async () => {
+        setIsLoadingRefData(true);
+        try {
+          const result = await getGalleryReferenceData();
+          if (result.success && result.data) {
+            setLocalClients(result.data.clients);
+            setLocalServices(result.data.services);
+            setLocalAgents(result.data.agents);
+            setBookings(result.data.bookings);
+          }
+        } catch (err) {
+          console.error("Failed to load reference data:", err);
+        } finally {
+          setIsLoadingRefData(false);
+        }
+      };
+      fetchRefData();
+    }
+  }, [isOpen, localClients.length, isLoadingRefData]);
 
   const IconMap: Record<string, any> = {
     CAMERA: Camera,
@@ -132,6 +138,8 @@ export function GalleryDrawer({
   const [isDropboxLoading, setIsDropboxLoading] = useState(false);
 
   useEffect(() => {
+    if (!isOpen) return; // Don't reset while closed or closing
+
     if (initialGallery) {
       setFormData({
         id: initialGallery.id,
@@ -177,12 +185,13 @@ export function GalleryDrawer({
         }
       });
     }
-  }, [initialGallery, isOpen]);
+  }, [initialGallery?.id, isOpen]); // Only reset when ID changes or drawer opens
 
   const handleBrowseFolders = async (path: string = "") => {
     setIsBrowsing(true);
     setIsDropboxLoading(true);
-    const result = await browseDropboxFolders(path);
+    // In a real scenario we'd pass the current provider
+    const result = await browseFolders(path);
     setIsDropboxLoading(false);
     if (result.success) {
       setFolders(result.folders || []);
@@ -385,45 +394,52 @@ export function GalleryDrawer({
                             </div>
                           </div>
                           <div className="max-h-[240px] overflow-y-auto custom-scrollbar py-1">
-                            {localClients
-                              .filter(c => 
-                                c.name.toLowerCase().includes(clientSearchQuery.toLowerCase()) || 
-                                (c.businessName && c.businessName.toLowerCase().includes(clientSearchQuery.toLowerCase()))
-                              )
-                              .map(c => {
-                                const isSelected = formData.clientId === c.id;
-                                return (
-                                  <button
-                                    key={c.id}
-                                    type="button"
-                                    onClick={() => {
-                                      setFormData({ ...formData, clientId: c.id, bookingId: "" });
-                                      setIsClientDropdownOpen(false);
-                                    }}
-                                    className={cn(
-                                      "w-full flex items-center justify-between px-4 py-2.5 text-left transition-colors group",
-                                      isSelected ? "bg-primary/10" : "hover:bg-slate-50"
-                                    )}
-                                  >
-                                    <div className="flex items-center gap-3">
-                                      <div className="h-8 w-8 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
-                                        {c.avatarUrl ? (
-                                          <img src={c.avatarUrl} className="h-full w-full object-cover" alt={c.businessName || c.name} />
-                                        ) : (
-                                          <User className="h-4 w-4" />
-                                        )}
+                            {isLoadingRefData ? (
+                              <div className="py-8 text-center">
+                                <Loader2 className="h-5 w-5 animate-spin text-primary mx-auto mb-2" />
+                                <p className="text-[10px] font-medium text-slate-400">Loading agencies...</p>
+                              </div>
+                            ) : (
+                              localClients
+                                .filter(c => 
+                                  c.name.toLowerCase().includes(clientSearchQuery.toLowerCase()) || 
+                                  (c.businessName && c.businessName.toLowerCase().includes(clientSearchQuery.toLowerCase()))
+                                )
+                                .map(c => {
+                                  const isSelected = formData.clientId === c.id;
+                                  return (
+                                    <button
+                                      key={c.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setFormData({ ...formData, clientId: c.id, bookingId: "" });
+                                        setIsClientDropdownOpen(false);
+                                      }}
+                                      className={cn(
+                                        "w-full flex items-center justify-between px-4 py-2.5 text-left transition-colors group",
+                                        isSelected ? "bg-primary/10" : "hover:bg-slate-50"
+                                      )}
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        <div className="h-8 w-8 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
+                                          {c.avatarUrl ? (
+                                            <img src={c.avatarUrl} className="h-full w-full object-cover" alt={c.businessName || c.name} />
+                                          ) : (
+                                            <User className="h-4 w-4" />
+                                          )}
+                                        </div>
+                                        <div className="min-w-0">
+                                          <p className={cn("text-sm font-bold truncate transition-colors", isSelected ? "text-primary" : "text-slate-700")}>
+                                            {c.businessName || c.name}
+                                          </p>
+                                          {c.businessName && <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{c.name}</p>}
+                                        </div>
                                       </div>
-                                      <div className="min-w-0">
-                                        <p className={cn("text-sm font-bold truncate transition-colors", isSelected ? "text-primary" : "text-slate-700")}>
-                                          {c.businessName || c.name}
-                                        </p>
-                                        {c.businessName && <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{c.name}</p>}
-                                      </div>
-                                    </div>
-                                    {isSelected && <Check className="h-4 w-4 text-primary" />}
-                                  </button>
-                                );
-                              })}
+                                      {isSelected && <Check className="h-4 w-4 text-primary" />}
+                                    </button>
+                                  );
+                                })
+                            )}
                           </div>
                         </div>
                       </>
@@ -495,50 +511,59 @@ export function GalleryDrawer({
                               </div>
                             </div>
                             <div className="max-h-[200px] overflow-y-auto custom-scrollbar py-1">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setFormData({ ...formData, agentId: "" });
-                                  setIsAgentDropdownOpen(false);
-                                }}
-                                className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-400 hover:bg-slate-50 italic"
-                              >
-                                No lead agent
-                              </button>
-                              {localAgents
-                                .filter(a => a.clientId === formData.clientId)
-                                .filter(a => a.name.toLowerCase().includes(agentSearchQuery.toLowerCase()))
-                                .map(a => {
-                                  const isSelected = formData.agentId === a.id;
-                                  return (
-                                    <button
-                                      key={a.id}
-                                      type="button"
-                                      onClick={() => {
-                                        setFormData({ ...formData, agentId: a.id });
-                                        setIsAgentDropdownOpen(false);
-                                      }}
-                                      className={cn(
-                                        "w-full flex items-center justify-between px-4 py-2.5 text-left transition-colors group",
-                                        isSelected ? "bg-primary/10" : "hover:bg-slate-50"
-                                      )}
-                                    >
-                                      <div className="flex items-center gap-3">
-                                        <div className="h-8 w-8 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
-                                          {a.avatarUrl ? (
-                                            <img src={a.avatarUrl} className="h-full w-full object-cover" alt={a.name} />
-                                          ) : (
-                                            <User className="h-4 w-4" />
+                              {isLoadingRefData ? (
+                                <div className="py-8 text-center">
+                                  <Loader2 className="h-5 w-5 animate-spin text-primary mx-auto mb-2" />
+                                  <p className="text-[10px] font-medium text-slate-400">Loading agents...</p>
+                                </div>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setFormData({ ...formData, agentId: "" });
+                                      setIsAgentDropdownOpen(false);
+                                    }}
+                                    className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-400 hover:bg-slate-50 italic"
+                                  >
+                                    No lead agent
+                                  </button>
+                                  {localAgents
+                                    .filter(a => a.clientId === formData.clientId)
+                                    .filter(a => a.name.toLowerCase().includes(agentSearchQuery.toLowerCase()))
+                                    .map(a => {
+                                      const isSelected = formData.agentId === a.id;
+                                      return (
+                                        <button
+                                          key={a.id}
+                                          type="button"
+                                          onClick={() => {
+                                            setFormData({ ...formData, agentId: a.id });
+                                            setIsAgentDropdownOpen(false);
+                                          }}
+                                          className={cn(
+                                            "w-full flex items-center justify-between px-4 py-2.5 text-left transition-colors group",
+                                            isSelected ? "bg-primary/10" : "hover:bg-slate-50"
                                           )}
-                                        </div>
-                                        <p className={cn("text-sm font-bold truncate transition-colors", isSelected ? "text-primary" : "text-slate-700")}>
-                                          {a.name}
-                                        </p>
-                                      </div>
-                                      {isSelected && <Check className="h-4 w-4 text-primary" />}
-                                    </button>
-                                  );
-                                })}
+                                        >
+                                          <div className="flex items-center gap-3">
+                                            <div className="h-8 w-8 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
+                                              {a.avatarUrl ? (
+                                                <img src={a.avatarUrl} className="h-full w-full object-cover" alt={a.name} />
+                                              ) : (
+                                                <User className="h-4 w-4" />
+                                              )}
+                                            </div>
+                                            <p className={cn("text-sm font-bold truncate transition-colors", isSelected ? "text-primary" : "text-slate-700")}>
+                                              {a.name}
+                                            </p>
+                                          </div>
+                                          {isSelected && <Check className="h-4 w-4 text-primary" />}
+                                        </button>
+                                      );
+                                    })}
+                                </>
+                              )}
                             </div>
                           </div>
                         </>
@@ -656,50 +681,59 @@ export function GalleryDrawer({
                             </div>
                           </div>
                           <div className="max-h-[240px] overflow-y-auto custom-scrollbar py-1">
-                            {visibleServices
-                              .filter(s => s.name.toLowerCase().includes(serviceSearchQuery.toLowerCase()))
-                              .map(s => {
-                                const isSelected = formData.serviceIds.includes(s.id);
-                                const Icon = IconMap[s.icon?.toUpperCase() || "CAMERA"] || Camera;
-                                return (
-                                  <button
-                                    key={s.id}
-                                    type="button"
-                                    onClick={() => {
-                                      const ids = isSelected
-                                        ? formData.serviceIds.filter((id: string) => id !== s.id)
-                                        : [...formData.serviceIds, s.id];
-                                      setFormData({ ...formData, serviceIds: ids });
-                                    }}
-                                    className={cn(
-                                      "w-full flex items-center justify-between px-4 py-2.5 text-left transition-colors group",
-                                      isSelected ? "bg-primary/10" : "hover:bg-slate-50"
-                                    )}
-                                  >
-                                    <div className="flex items-center gap-3">
-                                      <div className="h-8 w-8 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center group-hover:bg-primary/10 group-hover:text-primary transition-colors shrink-0 shadow-inner">
-                                        <Icon className="h-4 w-4" />
-                                      </div>
-                                      <div className="min-w-0">
-                                        <p className={cn(
-                                          "text-sm font-bold truncate transition-colors",
-                                          isSelected ? "text-primary" : "text-slate-700 group-hover:text-slate-900"
-                                        )}>
-                                          {s.name}
-                                        </p>
-                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
-                                          ${Number(s.price).toFixed(2)}
-                                        </p>
-                                      </div>
-                                    </div>
-                                    {isSelected && <Check className="h-4 w-4 text-primary animate-in zoom-in duration-200" />}
-                                  </button>
-                                );
-                              })}
-                            {localServices.filter(s => s.name.toLowerCase().includes(serviceSearchQuery.toLowerCase())).length === 0 && (
-                              <div className="px-4 py-8 text-center">
-                                <p className="text-xs font-medium text-slate-400">No services found</p>
+                            {isLoadingRefData ? (
+                              <div className="py-8 text-center">
+                                <Loader2 className="h-5 w-5 animate-spin text-primary mx-auto mb-2" />
+                                <p className="text-[10px] font-medium text-slate-400">Loading catalogue...</p>
                               </div>
+                            ) : (
+                              <>
+                                {visibleServices
+                                  .filter(s => s.name.toLowerCase().includes(serviceSearchQuery.toLowerCase()))
+                                  .map(s => {
+                                    const isSelected = formData.serviceIds.includes(s.id);
+                                    const Icon = IconMap[s.icon?.toUpperCase() || "CAMERA"] || Camera;
+                                    return (
+                                      <button
+                                        key={s.id}
+                                        type="button"
+                                        onClick={() => {
+                                          const ids = isSelected
+                                            ? formData.serviceIds.filter((id: string) => id !== s.id)
+                                            : [...formData.serviceIds, s.id];
+                                          setFormData({ ...formData, serviceIds: ids });
+                                        }}
+                                        className={cn(
+                                          "w-full flex items-center justify-between px-4 py-2.5 text-left transition-colors group",
+                                          isSelected ? "bg-primary/10" : "hover:bg-slate-50"
+                                        )}
+                                      >
+                                        <div className="flex items-center gap-3">
+                                          <div className="h-8 w-8 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center group-hover:bg-primary/10 group-hover:text-primary transition-colors shrink-0 shadow-inner">
+                                            <Icon className="h-4 w-4" />
+                                          </div>
+                                          <div className="min-w-0">
+                                            <p className={cn(
+                                              "text-sm font-bold truncate transition-colors",
+                                              isSelected ? "text-primary" : "text-slate-700 group-hover:text-slate-900"
+                                            )}>
+                                              {s.name}
+                                            </p>
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
+                                              ${Number(s.price).toFixed(2)}
+                                            </p>
+                                          </div>
+                                        </div>
+                                        {isSelected && <Check className="h-4 w-4 text-primary animate-in zoom-in duration-200" />}
+                                      </button>
+                                    );
+                                  })}
+                                {visibleServices.filter(s => s.name.toLowerCase().includes(serviceSearchQuery.toLowerCase())).length === 0 && (
+                                  <div className="px-4 py-8 text-center">
+                                    <p className="text-xs font-medium text-slate-400">No services found</p>
+                                  </div>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>
@@ -768,10 +802,10 @@ export function GalleryDrawer({
                   </div>
                 </div>
 
-                {/* Dropbox Share Link - NEW */}
+                {/* Production Share Link (Dropbox or Google Drive) */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Dropbox Share Link (Fastest)</label>
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Production Share Link (Dropbox or Google Drive)</label>
                     <div className="h-4 w-4 rounded-full bg-primary/10 flex items-center justify-center text-primary group cursor-help">
                       <Info className="h-2.5 w-2.5" />
                     </div>
@@ -779,10 +813,10 @@ export function GalleryDrawer({
                   <input 
                     value={formData.dropboxLink}
                     onChange={(e) => setFormData({ ...formData, dropboxLink: e.target.value })}
-                    placeholder="Paste Dropbox Shareable Folder Link here..."
+                    placeholder="Paste Dropbox or Google Drive Folder Link here..."
                     className="ui-input-tight text-xs border-primary/20 bg-primary/5 focus:bg-white transition-all text-slate-700"
                   />
-                  <p className="text-[10px] font-bold text-slate-500">Pasting a link is 10x faster than navigating folders.</p>
+                  <p className="text-[10px] font-bold text-slate-500">Links are 10x faster than navigating folders.</p>
                 </div>
 
                 {/* Dropbox Folders */}

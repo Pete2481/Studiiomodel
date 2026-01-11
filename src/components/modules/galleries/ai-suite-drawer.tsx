@@ -13,12 +13,13 @@ import {
   ChevronRight,
   Download,
   Share2,
-  Sparkles
+  Sparkles,
+  Cloud
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CameraLoader } from "@/components/ui/camera-loader";
 import { processImageWithAI, AITaskType } from "@/app/actions/ai-edit";
-import { saveAIResultToDropbox } from "@/app/actions/dropbox";
+import { saveAIResult } from "@/app/actions/storage";
 import { AI_STAGING_STYLES, AIStyleSuite, AI_FURNITURE_BUNDLES, AIFurnitureBundle } from "@/lib/ai-styles";
 
 interface AISuiteDrawerProps {
@@ -57,6 +58,14 @@ export function AISuiteDrawer({
   const [selectedBundle, setSelectedBundle] = useState<AIFurnitureBundle | null>(null);
   const [maskData, setMaskData] = useState<string | null>(null);
 
+  // NEW: Auto-trigger process when mask is received for Item Removal
+  React.useEffect(() => {
+    if (externalMaskData && activeTask === "object_removal" && !isProcessing && !resultUrl) {
+      const tool = tools.find(t => t.id === "object_removal");
+      if (tool) handleProcess(tool);
+    }
+  }, [externalMaskData, activeTask]);
+
   const roomTypes = [
     "Living Room", "Dining Room", "Bedroom", "Kitchen", "Home Office", "Media Room", "Outdoor / Patio"
   ];
@@ -80,13 +89,13 @@ export function AISuiteDrawer({
     },
     { 
       id: "object_removal" as AITaskType, 
-      name: "Object Removal", 
+      name: "Item Removal", 
       icon: Eraser, 
-      desc: "Erase clutter & power lines",
+      desc: "Remove furniture & clutter",
       color: "text-rose-500",
       bg: "bg-rose-500/10",
-      needsPrompt: true,
-      placeholder: "e.g. Remove the red trash can and power lines"
+      needsPrompt: false,
+      placeholder: "e.g. Remove the couch and coffee table"
     },
     { 
       id: "virtual_staging" as AITaskType, 
@@ -101,6 +110,12 @@ export function AISuiteDrawer({
   ];
 
   const handleProcess = async (tool: typeof tools[0]) => {
+    // If we're calling this from the Item Removal auto-flow, ensure we have the mask
+    if (tool.id === "object_removal" && !externalMaskData) {
+      setError("Please mark the items you want to remove using the brush tool first.");
+      return;
+    }
+
     if (tool.needsPrompt && !prompt) {
       setError("Please describe what you want the AI to do.");
       return;
@@ -137,18 +152,21 @@ export function AISuiteDrawer({
     }
   };
 
-  const handleSaveToDropbox = async () => {
+  const handleSaveToStorage = async () => {
     if (!resultUrl || !dbxPath || !tenantId || !activeTask) return;
 
     setIsSaving(true);
     setSaveStatus("idle");
 
     try {
-      const result = await saveAIResultToDropbox({
+      const result = await saveAIResult({
         tenantId,
         resultUrl,
-        originalPath: dbxPath,
-        taskType: activeTask
+        originalPathOrId: dbxPath,
+        taskType: activeTask,
+        // Since we don't have storageProvider here, we'll let saveAIResult handle the lookup
+        // but for better efficiency we should ideally pass it. 
+        // For now, let's keep it simple.
       });
 
       if (result.success) {
@@ -156,7 +174,7 @@ export function AISuiteDrawer({
         if (onComplete) onComplete(resultUrl);
       } else {
         setSaveStatus("error");
-        setError(result.error || "Failed to save to Dropbox.");
+        setError(result.error || "Failed to save to cloud storage.");
       }
     } catch (err) {
       setSaveStatus("error");
@@ -170,6 +188,17 @@ export function AISuiteDrawer({
     if (!resultUrl) return;
     
     try {
+      // If it's already a data URL, we don't need to fetch it
+      if (resultUrl.startsWith('data:')) {
+        const a = document.createElement('a');
+        a.href = resultUrl;
+        a.download = `AI_${activeTask}_${assetName}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        return;
+      }
+
       const response = await fetch(resultUrl);
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
@@ -178,8 +207,12 @@ export function AISuiteDrawer({
       a.download = `AI_${activeTask}_${assetName}`;
       document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      
+      // Wait a bit before revoking to ensure the browser has started the download
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }, 150);
     } catch (err) {
       console.error("Download failed:", err);
       // Fallback: open in new tab
@@ -262,8 +295,57 @@ export function AISuiteDrawer({
 
           {!resultUrl ? (
             <div className="p-8 space-y-8">
-              {/* Virtual Staging Multi-Step Flow */}
-              {activeTask === "virtual_staging" ? (
+              {/* Item Removal Flow */}
+              {activeTask === "object_removal" ? (
+                <div className="space-y-8 animate-in fade-in duration-500">
+                  <div className="flex items-center gap-4 mb-2">
+                    <button 
+                      onClick={() => setActiveTask(null)}
+                      className="h-8 w-8 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10"
+                    >
+                      <X className="h-4 w-4 rotate-45" />
+                    </button>
+                    <div>
+                      <p className="text-[10px] font-black text-primary uppercase tracking-widest">
+                        Item Removal
+                      </p>
+                      <h4 className="text-sm font-bold">
+                        Mark Items to Erase
+                      </h4>
+                    </div>
+                  </div>
+
+                  {!externalMaskData && !isProcessing && !resultUrl && (
+                    <div className="p-6 bg-white/5 rounded-3xl border border-white/10 text-center space-y-4">
+                      <div className="h-12 w-12 rounded-2xl bg-rose-500/10 text-rose-500 flex items-center justify-center mx-auto">
+                        <Eraser className="h-6 w-6" />
+                      </div>
+                      <p className="text-xs font-medium text-white/60">
+                        Use the brush tool to paint over the furniture or objects you want to remove from the room.
+                      </p>
+                      
+                      <button
+                        onClick={onStartPlacement}
+                        className="w-full h-10 rounded-xl bg-white/5 text-white text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-all border border-white/5"
+                      >
+                        Open Brush Tool
+                      </button>
+                    </div>
+                  )}
+
+                  {externalMaskData && !resultUrl && (
+                    <div className="p-12 text-center space-y-6">
+                      <CameraLoader size="lg" className="text-primary mx-auto" />
+                      <div className="space-y-2">
+                        <h4 className="text-xl font-bold tracking-tight uppercase">Processing Removal...</h4>
+                        <p className="text-xs text-white/40 leading-relaxed">
+                          We're erasing the marked items and rebuilding the background. This usually takes 15-20 seconds.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : activeTask === "virtual_staging" ? (
                 <div className="space-y-8 animate-in fade-in duration-500">
                   {/* Step Header */}
                   <div className="flex items-center gap-4 mb-2">
@@ -415,60 +497,63 @@ export function AISuiteDrawer({
                 </div>
               ) : (
                 /* Standard Tool Selection */
-                <div className="grid grid-cols-1 gap-4">
-                  {tools.map((tool) => (
-                    <div key={tool.id} className="space-y-4">
-                      <button 
-                        onClick={() => {
+              <div className="grid grid-cols-1 gap-4">
+                {tools.map((tool) => (
+                  <div key={tool.id} className="space-y-4">
+                    <button 
+                      onClick={() => {
                           if (tool.id === "virtual_staging") {
                             setActiveTask("virtual_staging");
                             setStagingStep("select_style");
+                          } else if (tool.id === "object_removal") {
+                            setActiveTask("object_removal");
+                            if (onStartPlacement) onStartPlacement();
                           } else if (tool.needsPrompt) {
-                            setActiveTask(tool.id);
-                          } else {
-                            handleProcess(tool);
-                          }
-                        }}
-                        disabled={isProcessing}
-                        className={cn(
-                          "w-full flex items-center gap-4 p-6 rounded-[32px] border transition-all text-left group relative overflow-hidden",
-                          activeTask === tool.id 
-                            ? "bg-white/10 border-white/20 ring-2 ring-primary/20" 
-                            : "bg-white/5 border-white/5 hover:border-white/20 hover:bg-white/10",
-                          isProcessing && activeTask !== tool.id && "opacity-40"
-                        )}
-                      >
-                        <div className={cn("h-12 w-12 rounded-2xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-110", tool.bg, tool.color)}>
-                          <tool.icon className="h-6 w-6" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-bold text-sm tracking-tight">{tool.name}</p>
-                          <p className="text-[10px] text-white/40 uppercase tracking-widest mt-0.5">{tool.desc}</p>
-                        </div>
-                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:translate-x-1 transition-all" />
-                      </button>
+                          setActiveTask(tool.id);
+                        } else {
+                          handleProcess(tool);
+                        }
+                      }}
+                      disabled={isProcessing}
+                      className={cn(
+                        "w-full flex items-center gap-4 p-6 rounded-[32px] border transition-all text-left group relative overflow-hidden",
+                        activeTask === tool.id 
+                          ? "bg-white/10 border-white/20 ring-2 ring-primary/20" 
+                          : "bg-white/5 border-white/5 hover:border-white/20 hover:bg-white/10",
+                        isProcessing && activeTask !== tool.id && "opacity-40"
+                      )}
+                    >
+                      <div className={cn("h-12 w-12 rounded-2xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-110", tool.bg, tool.color)}>
+                        <tool.icon className="h-6 w-6" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-sm tracking-tight">{tool.name}</p>
+                        <p className="text-[10px] text-white/40 uppercase tracking-widest mt-0.5">{tool.desc}</p>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-white/20 group-hover:translate-x-1 transition-all" />
+                    </button>
 
                       {activeTask === tool.id && tool.needsPrompt && !isProcessing && (tool.id as string) !== "virtual_staging" && (
-                        <div className="p-6 bg-white/5 rounded-[32px] border border-white/10 space-y-4 animate-in slide-in-from-top-4 duration-300">
-                          <textarea
-                            autoFocus
-                            value={prompt}
-                            onChange={(e) => setPrompt(e.target.value)}
-                            placeholder={tool.placeholder}
-                            className="w-full bg-transparent border-none p-0 text-sm text-white placeholder:text-white/20 focus:ring-0 resize-none h-24 font-medium"
-                          />
-                          <button
-                            onClick={() => handleProcess(tool)}
-                            className="w-full h-12 rounded-2xl bg-primary text-white font-bold text-xs uppercase tracking-widest hover:opacity-90 transition-all flex items-center justify-center gap-2"
-                          >
-                            <Sparkles className="h-4 w-4" />
-                            Launch AI Model
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                      <div className="p-6 bg-white/5 rounded-[32px] border border-white/10 space-y-4 animate-in slide-in-from-top-4 duration-300">
+                        <textarea
+                          autoFocus
+                          value={prompt}
+                          onChange={(e) => setPrompt(e.target.value)}
+                          placeholder={tool.placeholder}
+                          className="w-full bg-transparent border-none p-0 text-sm text-white placeholder:text-white/20 focus:ring-0 resize-none h-24 font-medium"
+                        />
+                        <button
+                          onClick={() => handleProcess(tool)}
+                          className="w-full h-12 rounded-2xl bg-primary text-white font-bold text-xs uppercase tracking-widest hover:opacity-90 transition-all flex items-center justify-center gap-2"
+                        >
+                          <Sparkles className="h-4 w-4" />
+                          Launch AI Model
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
               )}
             </div>
           ) : (
@@ -494,48 +579,11 @@ export function AISuiteDrawer({
                 </button>
                 
                 <button 
-                  onClick={handleSaveToDropbox}
-                  disabled={isSaving || saveStatus === "success"}
-                  className={cn(
-                    "w-full h-14 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all border border-white/10",
-                    saveStatus === "success" 
-                      ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" 
-                      : "bg-white/5 text-white hover:bg-white/10"
-                  )}
+                  onClick={handleReset}
+                  className="h-14 rounded-2xl bg-white/5 text-white/60 text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-white/10 transition-all border border-white/5"
                 >
-                  {isSaving ? (
-                    <CameraLoader size="sm" color="currentColor" />
-                  ) : saveStatus === "success" ? (
-                    <>
-                      <CheckCircle2 className="h-5 w-5" />
-                      Saved to Dropbox
-                    </>
-                  ) : (
-                    <>
-                      <Share2 className="h-5 w-5 opacity-40" />
-                      Save back to Dropbox
-                    </>
-                  )}
+                  Try Another
                 </button>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <button 
-                    onClick={() => {
-                      navigator.clipboard.writeText(resultUrl);
-                      alert("Result URL copied to clipboard!");
-                    }}
-                    className="h-14 rounded-2xl bg-white/5 text-white/60 text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-white/10 transition-all border border-white/5"
-                  >
-                    <Share2 className="h-3.5 w-3.5" />
-                    Copy Link
-                  </button>
-                  <button 
-                    onClick={handleReset}
-                    className="h-14 rounded-2xl bg-white/5 text-white/60 text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-white/10 transition-all border border-white/5"
-                  >
-                    Try Another
-                  </button>
-                </div>
               </div>
             </div>
           )}

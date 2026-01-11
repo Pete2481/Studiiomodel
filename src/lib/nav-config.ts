@@ -65,11 +65,7 @@ export const UNIFIED_NAV_CONFIG: NavSection[] = [
         label: "Clients", 
         href: "/tenant/clients", 
         icon: "Users", 
-        module: "clients",
-        items: [
-          { label: "Client Agencies", href: "/tenant/clients", module: "clients" },
-          { label: "Client Members", href: "/tenant/agents", module: "agents" },
-        ]
+        module: "clients"
       },
       { label: "Studio Crew", href: "/tenant/photographers", icon: "Camera", module: "team" },
     ],

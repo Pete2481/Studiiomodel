@@ -24,6 +24,7 @@ interface BookingsPageContentProps {
   customStatuses?: string[];
   businessHours?: any;
   calendarSecret?: string | null;
+  aiLogisticsEnabled?: boolean;
   slotSettings?: {
     sunriseSlotTime: string;
     duskSlotTime: string;
@@ -44,6 +45,7 @@ export function BookingsPageContent({
   customStatuses = [],
   businessHours,
   calendarSecret,
+  aiLogisticsEnabled = false,
   slotSettings = {
     sunriseSlotTime: "06:00",
     duskSlotTime: "18:30",
@@ -343,7 +345,7 @@ export function BookingsPageContent({
                   className="flex-1 md:flex-none flex items-center justify-center gap-2 px-3 md:px-4 py-2 bg-slate-50 text-slate-500 rounded-full border border-slate-200 text-[9px] md:text-[10px] font-black uppercase tracking-widest hover:bg-white transition-all shadow-sm"
                 >
                   <Settings className="h-3 w-3" />
-                  <span className="whitespace-nowrap">Hours</span>
+                  <span className="whitespace-nowrap">{aiLogisticsEnabled ? "Hours" : "Hours & Slots"}</span>
                 </button>
                 <button 
                   onClick={() => {
@@ -376,6 +378,7 @@ export function BookingsPageContent({
               onExternalDrop={handleExternalDrop}
               user={user}
               businessHours={businessHours}
+              aiLogisticsEnabled={aiLogisticsEnabled}
             />
           </div>
         </>
@@ -404,6 +407,7 @@ export function BookingsPageContent({
         isOpen={isHoursModalOpen}
         onClose={() => setIsHoursModalOpen(false)}
         initialHours={businessHours}
+        aiLogisticsEnabled={aiLogisticsEnabled}
       />
 
       <SlotManagementModal 
@@ -411,6 +415,7 @@ export function BookingsPageContent({
         onClose={() => setIsSlotModalOpen(false)}
         tenantSettings={slotSettings}
         currentDate={currentDate}
+        aiLogisticsEnabled={aiLogisticsEnabled}
       />
 
       <CalendarSubscriptionModal
@@ -433,6 +438,7 @@ export function BookingsPageContent({
         role={user?.role}
         currentClientId={user?.clientId}
         customStatuses={customStatuses}
+        aiLogisticsEnabled={aiLogisticsEnabled}
       />
     </div>
   );

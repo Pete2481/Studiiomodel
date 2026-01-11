@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatDropboxUrl } from "@/lib/utils";
+import { Folder } from "lucide-react";
 
 // Local type - no mock data dependency
 export type GallerySummary = {
@@ -99,31 +100,52 @@ export function GalleryGrid({ galleries, onEdit, editingGalleryId }: GalleryGrid
               className="relative w-full overflow-hidden rounded-t-[32px] bg-slate-100"
               style={{ aspectRatio: "4 / 3" }}
             >
-              {gallery.coverImageUrl && gallery.coverImageUrl.length > 0 ? (
-                gallery.coverImageUrl?.includes("/api/dropbox/assets") ? (
-                  <img
-                    src={gallery.coverImageUrl?.includes("dropbox.com") || gallery.coverImageUrl?.includes("dropboxusercontent.com")
-                      ? `/api/dropbox/assets/${gallery.id}?path=/cover.jpg&sharedLink=${encodeURIComponent(gallery.coverImageUrl.replace("dl.dropboxusercontent.com", "www.dropbox.com"))}&size=w640h480` 
-                      : formatDropboxUrl(gallery.coverImageUrl)}
-                    alt={gallery.title}
-                    className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
-                    loading={page === 1 ? "eager" : "lazy"}
-                  />
-                ) : (
+              {(() => {
+                const coverUrl = gallery.coverImageUrl;
+                if (!coverUrl || coverUrl.length === 0) {
+                  return (
+                    <div className="flex h-full w-full items-center justify-center text-slate-400">
+                      <span className="text-4xl">🖼</span>
+                    </div>
+                  );
+                }
+
+                const formattedUrl = formatDropboxUrl(coverUrl);
+                const isLikelyFolder = formattedUrl?.includes("/drive/folders/") || formattedUrl?.includes("/drive/u/");
+
+                if (isLikelyFolder) {
+                  return (
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-slate-50 border-b border-slate-100">
+                      <Folder className="h-8 w-8 text-slate-300" />
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Production Folder</span>
+                    </div>
+                  );
+                }
+
+                if (coverUrl?.includes("/api/dropbox/assets")) {
+                  return (
+                    <img
+                      src={coverUrl?.includes("dropbox.com") || coverUrl?.includes("dropboxusercontent.com")
+                        ? `/api/dropbox/assets/${gallery.id}?path=/cover.jpg&sharedLink=${encodeURIComponent(coverUrl.replace("dl.dropboxusercontent.com", "www.dropbox.com"))}&size=w640h480` 
+                        : formattedUrl}
+                      alt={gallery.title}
+                      className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+                      loading={page === 1 ? "eager" : "lazy"}
+                    />
+                  );
+                }
+
+                return (
                   <Image
                     fill
-                    src={formatDropboxUrl(gallery.coverImageUrl)}
+                    src={formattedUrl}
                     alt={gallery.title}
                     sizes="(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
                     className="object-cover transition duration-500 group-hover:scale-105"
                     priority={page === 1}
                   />
-                )
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-slate-400">
-                  <span className="text-4xl">🖼</span>
-                </div>
-              )}
+                );
+              })()}
               <div className="absolute inset-x-0 top-0 flex justify-end p-3">
                 <span className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-bold text-slate-700 backdrop-blur">
                   {formatDate(gallery.createdAt)}

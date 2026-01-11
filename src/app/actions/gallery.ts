@@ -175,3 +175,80 @@ export async function toggleFavorite(galleryId: string, imageId: string, imagePa
     return { success: false, error: "Failed to update favorite" };
   }
 }
+
+/**
+ * Fetches reference data needed for creating/editing galleries.
+ * Deferring this from the main dashboard load significantly improves FCP.
+ */
+export async function getGalleryReferenceData() {
+  try {
+    const session = await auth();
+    const tenantId = await getSessionTenantId();
+    if (!session || !tenantId) return { success: false, error: "Unauthorized" };
+
+    const canViewAll = session.user.role === "TENANT_ADMIN" || session.user.role === "ADMIN";
+
+    const [clients, bookings, agents, services] = await Promise.all([
+      prisma.client.findMany({ 
+        where: !canViewAll && (session.user as any).clientId ? { id: (session.user as any).clientId, deletedAt: null } : { tenantId, deletedAt: null }, 
+        select: { id: true, name: true, businessName: true, settings: true, avatarUrl: true } 
+      }),
+      prisma.booking.findMany({ 
+        where: { tenantId, deletedAt: null, clientId: !canViewAll && (session.user as any).clientId ? (session.user as any).clientId : undefined },
+        select: { 
+          id: true, 
+          title: true, 
+          clientId: true, 
+          property: { select: { name: true } }, 
+          services: { include: { service: { select: { id: true, name: true, price: true } } } } 
+        } 
+      }),
+      prisma.agent.findMany({ 
+        where: !canViewAll && (session.user as any).clientId ? { clientId: (session.user as any).clientId, deletedAt: null } : { tenantId, deletedAt: null }, 
+        select: { id: true, name: true, clientId: true, avatarUrl: true } 
+      }),
+      prisma.service.findMany({ 
+        where: { tenantId, deletedAt: null }, 
+        select: { id: true, name: true, price: true, icon: true } 
+      }),
+    ]);
+
+    return {
+      success: true,
+      data: {
+        clients: clients.map(c => ({ 
+          id: String(c.id), 
+          name: String(c.name),
+          businessName: c.businessName,
+          avatarUrl: c.avatarUrl,
+          disabledServices: (c.settings as any)?.disabledServices || []
+        })),
+        bookings: bookings.map(b => ({ 
+          id: String(b.id), 
+          title: String(b.title), 
+          clientId: String(b.clientId), 
+          property: { name: String(b.property?.name || "") }, 
+          services: b.services.map(s => ({ 
+            id: String(s.id),
+            service: { id: String(s.service.id), name: String(s.service.name), price: Number(s.service.price) } 
+          })) 
+        })),
+        agents: agents.map(a => ({ 
+          id: String(a.id), 
+          name: String(a.name), 
+          clientId: String(a.clientId),
+          avatarUrl: a.avatarUrl
+        })),
+        services: services.map(s => ({ 
+          id: String(s.id), 
+          name: String(s.name), 
+          price: Number(s.price), 
+          icon: s.icon 
+        }))
+      }
+    };
+  } catch (error: any) {
+    console.error("REFERENCE DATA ERROR:", error);
+    return { success: false, error: "Failed to load reference data" };
+  }
+}

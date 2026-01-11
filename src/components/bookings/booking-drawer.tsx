@@ -1,13 +1,14 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { X, ChevronDown, Search, Check, User, Camera, Zap, Video, FileText, Wrench, Sun, Box, Edit3, Plane, Trash2, Plus, Sunrise, Sunset, Loader2 } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { X, ChevronDown, Search, Check, User, Camera, Zap, Video, FileText, Wrench, Sun, Box, Edit3, Plane, Trash2, Plus, Sunrise, Sunset, Loader2, Sparkles } from "lucide-react";
 import { cn, getWeatherIcon } from "@/lib/utils";
 import { AddressAutocomplete } from "@/components/ui/address-autocomplete";
 import { LoadingOverlay } from "@/components/ui/loading-overlay";
 import { format, addHours, parse, startOfDay, addMinutes, subMinutes } from "date-fns";
 import { updateTenantBookingStatuses } from "@/app/actions/tenant-settings";
 import { getWeatherData } from "@/app/actions/weather";
+import { getIdealSunTime } from "@/app/actions/logistics";
 import { QuickClientModal } from "../modules/clients/quick-client-modal";
 import { QuickServiceModal } from "../modules/services/quick-service-modal";
 import { QuickAgentModal } from "../modules/agents/quick-agent-modal";
@@ -26,6 +27,7 @@ interface BookingDrawerProps {
   role?: string;
   currentClientId?: string;
   customStatuses?: string[];
+  aiLogisticsEnabled?: boolean;
 }
 
 export function BookingDrawer({ 
@@ -40,7 +42,8 @@ export function BookingDrawer({
   onDelete,
   role = "TENANT_ADMIN",
   currentClientId,
-  customStatuses = []
+  customStatuses = [],
+  aiLogisticsEnabled = false
 }: BookingDrawerProps) {
   const isClient = role === "CLIENT";
 
@@ -59,7 +62,7 @@ export function BookingDrawer({
     agentId: "",
     notes: "",
     propertyStatus: "",
-    repeat: "none" as "none" | "daily" | "weekly",
+    repeat: "none" as "none" | "daily" | "weekly" | "weekly_6m" | "weekly_1y" | "monthly_6m" | "monthly_1y",
   });
 
   const isBlockedType = formData.status === "blocked";
@@ -103,6 +106,50 @@ export function BookingDrawer({
   const [isAgentDropdownOpen, setIsAgentDropdownOpen] = useState(false);
   const [agentSearchQuery, setAgentSearchQuery] = useState("");
   const [weatherInfo, setWeatherInfo] = useState<any>(null);
+  const [isLogisticsLoading, setIsLogisticsLoading] = useState(false);
+
+  // Derive slotType from selected services
+  const derivedSlotType = React.useMemo(() => {
+    const selectedServices = services.filter(s => formData.serviceIds.includes(s.id));
+    const sunriseService = selectedServices.find(s => s.slotType === "SUNRISE");
+    if (sunriseService) return "SUNRISE";
+    const duskService = selectedServices.find(s => s.slotType === "DUSK");
+    if (duskService) return "DUSK";
+    return null;
+  }, [formData.serviceIds, services]);
+
+  // AI Logistics: Auto-calculate Sun Times
+  useEffect(() => {
+    async function handleAILogistics() {
+      // Only trigger if enabled, a slot type is selected, and we have an address + date
+      if (!aiLogisticsEnabled || !derivedSlotType || !formData.address || !formData.date || isBlockedType) return;
+      
+      setIsLogisticsLoading(true);
+      try {
+        const result = await getIdealSunTime(
+          formData.address, 
+          new Date(formData.date), 
+          derivedSlotType as "SUNRISE" | "DUSK"
+        );
+
+        if (result.success && result.time) {
+          const idealTime = new Date(result.time);
+          const timeStr = format(idealTime, "HH:mm");
+          
+          // Auto-update start time if it's different
+          if (formData.startTime !== timeStr) {
+            setFormData(prev => ({ ...prev, startTime: timeStr }));
+          }
+        }
+      } catch (err) {
+        console.error("Logistics error:", err);
+      } finally {
+        setIsLogisticsLoading(false);
+      }
+    }
+
+    handleAILogistics();
+  }, [aiLogisticsEnabled, derivedSlotType, formData.address, formData.date, isBlockedType]);
 
   const [isQuickClientOpen, setIsQuickClientOpen] = useState(false);
   const [isQuickServiceOpen, setIsQuickServiceOpen] = useState(false);
@@ -122,16 +169,6 @@ export function BookingDrawer({
   useEffect(() => {
     setLocalAgents(agents);
   }, [agents]);
-
-  // Derive slotType from selected services
-  const derivedSlotType = React.useMemo(() => {
-    const selectedServices = services.filter(s => formData.serviceIds.includes(s.id));
-    const sunriseService = selectedServices.find(s => s.slotType === "SUNRISE");
-    if (sunriseService) return "SUNRISE";
-    const duskService = selectedServices.find(s => s.slotType === "DUSK");
-    if (duskService) return "DUSK";
-    return null;
-  }, [formData.serviceIds, services]);
 
   // Fetch weather when date changes
   useEffect(() => {
@@ -165,6 +202,8 @@ export function BookingDrawer({
   };
 
   const [mounted, setMounted] = useState(false);
+  const lastInitializedBookingId = useRef<string | null>(null);
+  const wasOpen = useRef(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -173,80 +212,93 @@ export function BookingDrawer({
   }, [isOpen]);
 
   useEffect(() => {
-    if (booking && booking.id && !booking.isPlaceholder) {
-      let status = booking.status?.toLowerCase() || "confirmed";
-      if (status === "approved") status = "confirmed";
-      if (status === "penciled") status = "pencilled";
+    if (!isOpen) {
+      wasOpen.current = false;
+      return;
+    }
 
-      const start = new Date(booking.startAt);
-      const end = new Date(booking.endAt);
-      const diffHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+    // Only initialize if the drawer just opened OR if the booking selection actually changed
+    const currentId = booking?.id || (booking?.startAt ? `new-${booking.startAt}` : 'null');
+    
+    if (!wasOpen.current || currentId !== lastInitializedBookingId.current) {
+      if (booking && booking.id && !booking.isPlaceholder) {
+        let status = booking.status?.toLowerCase() || "confirmed";
+        if (status === "approved") status = "confirmed";
+        if (status === "penciled") status = "pencilled";
 
-      setFormData({
-        title: booking.title || "",
-        clientId: booking.clientId || "",
-        address: booking.property?.name || "",
-        date: format(start, "yyyy-MM-dd"),
-        endDate: format(end, "yyyy-MM-dd"),
-        startTime: format(start, "HH:mm"),
-        endTime: format(end, "HH:mm"),
-        duration: String(diffHours > 0 ? diffHours : "1"), 
-        status: status,
-        serviceIds: booking.services?.map((s: any) => s.serviceId) || [],
-        teamMemberIds: booking.assignments?.map((a: any) => a.teamMemberId) || [],
-        agentId: booking.agentId || "",
+        const start = new Date(booking.startAt);
+        const end = new Date(booking.endAt);
+        const diffHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+
+        setFormData({
+          title: booking.title || "",
+          clientId: booking.clientId || "",
+          address: booking.property?.name || "",
+          date: format(start, "yyyy-MM-dd"),
+          endDate: format(end, "yyyy-MM-dd"),
+          startTime: format(start, "HH:mm"),
+          endTime: format(end, "HH:mm"),
+          duration: String(diffHours > 0 ? diffHours : "1"), 
+          status: status,
+          serviceIds: booking.services?.map((s: any) => s.serviceId) || [],
+          teamMemberIds: booking.assignments?.map((a: any) => a.teamMemberId) || [],
+          agentId: booking.agentId || "",
         notes: booking.internalNotes || "",
         propertyStatus: booking.propertyStatus || "",
-        repeat: "none" as "none" | "daily" | "weekly",
+        repeat: "none" as "none" | "daily" | "weekly" | "weekly_6m" | "weekly_1y" | "monthly_6m" | "monthly_1y",
       });
-    } else if (booking && (booking.startAt || booking.isPlaceholder)) {
-      const autoSelectedServiceIds = booking.isPlaceholder 
-        ? services.filter(s => s.slotType === booking.slotType).map(s => s.id)
-        : [];
+      } else if (booking && (booking.startAt || booking.isPlaceholder)) {
+        const autoSelectedServiceIds = booking.isPlaceholder 
+          ? services.filter(s => s.slotType === booking.slotType).map(s => s.id)
+          : [];
 
-      const start = new Date(booking.startAt);
-      const end = booking.endAt ? new Date(booking.endAt) : null;
-      const diffHours = end ? (end.getTime() - start.getTime()) / (1000 * 60 * 60) : 1;
+        const start = new Date(booking.startAt);
+        const end = booking.endAt ? new Date(booking.endAt) : null;
+        const diffHours = end ? (end.getTime() - start.getTime()) / (1000 * 60 * 60) : 1;
 
-      setFormData(prev => ({
-        ...prev,
-        title: (booking.isPlaceholder && isClient) ? "" : (booking.isPlaceholder ? `${booking.slotType} SHOOT` : (booking.title || "")),
-        clientId: currentClientId || "",
-        address: "",
-        date: format(start, "yyyy-MM-dd"),
-        endDate: format(end || start, "yyyy-MM-dd"),
-        startTime: format(start, "HH:mm"),
-        endTime: end ? format(end, "HH:mm") : format(addHours(start, 1), "HH:mm"),
-        duration: String(diffHours > 0 ? diffHours : "1"),
-        status: booking.status || "confirmed",
-        serviceIds: autoSelectedServiceIds.length > 0 ? autoSelectedServiceIds : (booking.serviceIds || []),
-        teamMemberIds: [],
-        agentId: "",
-        notes: "",
-        propertyStatus: "",
-        repeat: "none" as "none" | "daily" | "weekly",
-      }));
-    } else {
-      // Reset form
-      setFormData({
-        title: "",
-        clientId: currentClientId || "",
-        address: "",
-        date: format(new Date(), "yyyy-MM-dd"),
-        endDate: format(new Date(), "yyyy-MM-dd"),
-        startTime: "09:00",
-        endTime: "10:00",
-        duration: isClient ? "1.5" : "1",
-        status: isClient ? "requested" : "confirmed",
-        serviceIds: [] as string[],
-        teamMemberIds: [] as string[],
-        agentId: "",
-        notes: "",
-        propertyStatus: "",
-        repeat: "none" as "none" | "daily" | "weekly",
-      });
+        setFormData(prev => ({
+          ...prev,
+          title: (booking.isPlaceholder && isClient) ? "" : (booking.isPlaceholder ? `${booking.slotType} SHOOT` : (booking.title || "")),
+          clientId: currentClientId || "",
+          address: "",
+          date: format(start, "yyyy-MM-dd"),
+          endDate: format(end || start, "yyyy-MM-dd"),
+          startTime: format(start, "HH:mm"),
+          endTime: end ? format(end, "HH:mm") : format(addHours(start, 1), "HH:mm"),
+          duration: String(diffHours > 0 ? diffHours : "1"),
+          status: booking.status || "confirmed",
+          serviceIds: autoSelectedServiceIds.length > 0 ? autoSelectedServiceIds : (booking.serviceIds || []),
+          teamMemberIds: [],
+          agentId: "",
+          notes: "",
+          propertyStatus: "",
+          repeat: "none" as "none" | "daily" | "weekly" | "weekly_6m" | "weekly_1y" | "monthly_6m" | "monthly_1y",
+        }));
+      } else {
+        // Reset form
+        setFormData({
+          title: "",
+          clientId: currentClientId || "",
+          address: "",
+          date: format(new Date(), "yyyy-MM-dd"),
+          endDate: format(new Date(), "yyyy-MM-dd"),
+          startTime: "09:00",
+          endTime: "10:00",
+          duration: isClient ? "1.5" : "1",
+          status: isClient ? "requested" : "confirmed",
+          serviceIds: [] as string[],
+          teamMemberIds: [] as string[],
+          agentId: "",
+          notes: "",
+          propertyStatus: "",
+          repeat: "none" as "none" | "daily" | "weekly" | "weekly_6m" | "weekly_1y" | "monthly_6m" | "monthly_1y",
+        });
+      }
+      
+      lastInitializedBookingId.current = currentId;
+      wasOpen.current = true;
     }
-  }, [booking, currentClientId, isClient]);
+  }, [booking, currentClientId, isClient, isOpen, services]);
 
   if (!mounted) return null;
 
@@ -428,6 +480,10 @@ export function BookingDrawer({
                       <option value="none">Does not repeat</option>
                       <option value="daily">Daily (for 7 days)</option>
                       <option value="weekly">Weekly (for 4 weeks)</option>
+                      <option value="weekly_6m">Weekly (for 6 months)</option>
+                      <option value="weekly_1y">Weekly (for 1 year)</option>
+                      <option value="monthly_6m">Monthly (for 6 months)</option>
+                      <option value="monthly_1y">Monthly (for 1 year)</option>
                     </select>
                     <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
                   </div>
@@ -1023,9 +1079,13 @@ export function BookingDrawer({
                     </label>
                     <div className="relative">
                       <select 
+                        disabled={isLogisticsLoading}
                         value={formData.startTime}
                         onChange={(e) => setFormData({...formData, startTime: e.target.value})}
-                        className="ui-input-tight appearance-none bg-white pr-10"
+                        className={cn(
+                          "ui-input-tight appearance-none bg-white pr-10",
+                          isLogisticsLoading && "opacity-50 grayscale"
+                        )}
                       >
                         {Array.from({ length: 24 }).map((_, i) => {
                           const h = i === 0 ? 12 : i > 12 ? i - 12 : i;
@@ -1039,8 +1099,20 @@ export function BookingDrawer({
                           );
                         })}
                       </select>
-                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none">
+                        {isLogisticsLoading ? (
+                          <Loader2 className="h-3.5 w-3.5 text-primary animate-spin" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 text-slate-400" />
+                        )}
+                      </div>
                     </div>
+                    {aiLogisticsEnabled && derivedSlotType && !isLogisticsLoading && (
+                      <div className="mt-2 flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 rounded-xl border border-primary/20 animate-in slide-in-from-top-1 duration-300">
+                        <Sparkles className="h-3 w-3 text-primary shrink-0" />
+                        <span className="text-[9px] font-black text-primary uppercase tracking-widest">AI Logistics: Optimised for light window</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

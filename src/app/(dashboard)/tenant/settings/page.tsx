@@ -73,6 +73,9 @@ async function SettingsDataWrapper({ session, tenantId }: { session: any, tenant
           subscriptionEndsAt: tenant.subscriptionEndsAt?.toISOString() || null,
           deletedAt: tenant.deletedAt?.toISOString() || null,
           dropboxConnectedAt: tenant.dropboxConnectedAt?.toISOString() || null,
+          googleDriveConnectedAt: (tenant as any).googleDriveConnectedAt?.toISOString() || null,
+          googleDriveEmail: (tenant as any).googleDriveEmail || null,
+          storageProvider: (tenant as any).storageProvider || "DROPBOX",
         } as any} 
         user={user}
         teamMember={member ? {

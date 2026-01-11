@@ -144,70 +144,65 @@ export async function GET(
       return new NextResponse("Failed to fetch asset", { status: dbResponse.status });
     }
 
-    // Optimization: Streaming
-    if (!gallery.watermarkEnabled || !gallery.tenant.logoUrl) {
-      return new NextResponse(dbResponse.body, {
-        headers: {
-          "Content-Type": "image/jpeg",
-          "Cache-Control": "public, max-age=86400, stale-while-revalidate=3600",
-        }
-      });
-    }
-
+    // 5. Optimization & Watermarking
     const blob = await dbResponse.blob();
     const arrayBuffer = await blob.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    let buffer = Buffer.from(arrayBuffer);
+    let contentType = "image/jpeg";
 
-    // Apply Watermark
     try {
-      let logoBuffer: Buffer | null = null;
-      const cached = logoCache.get(gallery.tenant.logoUrl);
-      
-      if (cached && Date.now() - cached.timestamp < LOGO_CACHE_TTL) {
-        logoBuffer = cached.buffer;
-      } else {
-        const logoResponse = await fetch(gallery.tenant.logoUrl);
-        if (logoResponse.ok) {
-          logoBuffer = Buffer.from(await logoResponse.arrayBuffer());
-          logoCache.set(gallery.tenant.logoUrl, { buffer: logoBuffer, timestamp: Date.now() });
+      let sharpInstance = sharp(buffer);
+
+      // Apply Watermark if enabled
+      if (gallery.watermarkEnabled && gallery.tenant.logoUrl) {
+        let logoBuffer: Buffer | null = null;
+        const cached = logoCache.get(gallery.tenant.logoUrl);
+        
+        if (cached && Date.now() - cached.timestamp < LOGO_CACHE_TTL) {
+          logoBuffer = cached.buffer;
+        } else {
+          const logoResponse = await fetch(gallery.tenant.logoUrl);
+          if (logoResponse.ok) {
+            logoBuffer = Buffer.from(await logoResponse.arrayBuffer());
+            logoCache.set(gallery.tenant.logoUrl, { buffer: logoBuffer, timestamp: Date.now() });
+          }
+        }
+
+        if (logoBuffer) {
+          const processedLogo = await sharp(logoBuffer)
+            .resize({ width: 300, height: 300, fit: 'inside' })
+            .composite([{
+              input: Buffer.from([255, 255, 255, 128]),
+              raw: { width: 1, height: 1, channels: 4 },
+              tile: true,
+              blend: 'dest-in'
+            }])
+            .toBuffer();
+
+          sharpInstance = sharpInstance.composite([{
+            input: processedLogo,
+            gravity: 'center'
+          }]);
         }
       }
 
-      if (logoBuffer) {
-        const processedLogo = await sharp(logoBuffer)
-          .resize({ width: 300, height: 300, fit: 'inside' })
-          .composite([{
-            input: Buffer.from([255, 255, 255, 128]),
-            raw: { width: 1, height: 1, channels: 4 },
-            tile: true,
-            blend: 'dest-in'
-          }])
-          .toBuffer();
+      // Always convert to WebP for better compression
+      buffer = await sharpInstance
+        .webp({ quality: 80 })
+        .toBuffer();
+      contentType = "image/webp";
 
-        const watermarkedBuffer = await sharp(buffer)
-          .composite([{
-            input: processedLogo,
-            gravity: 'center'
-          }])
-          .toBuffer();
-
-        return new NextResponse(Buffer.from(watermarkedBuffer), {
-          headers: {
-            "Content-Type": "image/jpeg",
-            "Cache-Control": "public, max-age=86400, stale-while-revalidate=3600"
-          }
-        });
-      }
-    } catch (watermarkError) {
-      console.error("[PROXY] Watermark application failed:", watermarkError);
+    } catch (optimizationError) {
+      console.error("[PROXY] Image optimization/watermark failed:", optimizationError);
+      // Fallback to original jpeg buffer if optimization fails
     }
 
-            return new NextResponse(Buffer.from(buffer), {
-              headers: {
-                "Content-Type": "image/jpeg",
-                "Cache-Control": "public, max-age=86400, stale-while-revalidate=3600"
-              }
-            });
+    return new NextResponse(buffer, {
+      headers: {
+        "Content-Type": contentType,
+        "Cache-Control": "public, max-age=31536000, immutable"
+      }
+    });
 
   } catch (error) {
     console.error("PROXY ERROR:", error);

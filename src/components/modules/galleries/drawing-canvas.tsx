@@ -92,7 +92,7 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode }: Drawin
       ctx.beginPath();
       ctx.strokeStyle = path.tool === "eraser" ? "rgba(0,0,0,1)" : (isMaskMode ? "rgba(255, 255, 255, 0.5)" : "rgba(255, 0, 0, 0.8)");
       ctx.globalCompositeOperation = path.tool === "eraser" ? "destination-out" : "source-over";
-      ctx.lineWidth = path.tool === "eraser" ? (isMaskMode ? 100 : 40) : (isMaskMode ? 80 : 4);
+      ctx.lineWidth = path.tool === "eraser" ? (isMaskMode ? 40 : 40) : (isMaskMode ? 32 : 4);
       
       ctx.moveTo(path.points[0].x, path.points[0].y);
       for (let i = 1; i < path.points.length; i++) {
@@ -106,7 +106,7 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode }: Drawin
       ctx.beginPath();
       ctx.strokeStyle = tool === "eraser" ? "rgba(0,0,0,1)" : (isMaskMode ? "rgba(255, 255, 255, 0.5)" : "rgba(255, 0, 0, 0.8)");
       ctx.globalCompositeOperation = tool === "eraser" ? "destination-out" : "source-over";
-      ctx.lineWidth = tool === "eraser" ? (isMaskMode ? 100 : 40) : (isMaskMode ? 80 : 4);
+      ctx.lineWidth = tool === "eraser" ? (isMaskMode ? 32 : 40) : (isMaskMode ? 24 : 4);
 
       ctx.moveTo(currentPath[0].x, currentPath[0].y);
       for (let i = 1; i < currentPath.length; i++) {
@@ -295,26 +295,42 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode }: Drawin
               Cancel
             </button>
             <div className="w-px h-6 bg-white/10 mx-2" />
-            <button 
-              onClick={() => setTool("pen")}
-              className={cn(
-                "h-10 w-10 rounded-xl flex items-center justify-center transition-all",
-                tool === "pen" ? "bg-primary text-white shadow-lg shadow-primary/20" : "text-white/60 hover:text-white hover:bg-white/10"
-              )}
-              title={isMaskMode ? "Placement Brush" : "Pen Tool"}
-            >
-              <PenTool className="h-4 w-4" />
-            </button>
-            <button 
-              onClick={() => setTool("text")}
-              className={cn(
-                "h-10 w-10 rounded-xl flex items-center justify-center transition-all",
-                tool === "text" ? "bg-primary text-white shadow-lg shadow-primary/20" : "text-white/60 hover:text-white hover:bg-white/10"
-              )}
-              title="Add Text"
-            >
-              <Type className="h-4 w-4" />
-            </button>
+            {!isMaskMode && (
+              <>
+                <button 
+                  onClick={() => setTool("pen")}
+                  className={cn(
+                    "h-10 w-10 rounded-xl flex items-center justify-center transition-all",
+                    tool === "pen" ? "bg-primary text-white shadow-lg shadow-primary/20" : "text-white/60 hover:text-white hover:bg-white/10"
+                  )}
+                  title="Pen Tool"
+                >
+                  <PenTool className="h-4 w-4" />
+                </button>
+                <button 
+                  onClick={() => setTool("text")}
+                  className={cn(
+                    "h-10 w-10 rounded-xl flex items-center justify-center transition-all",
+                    tool === "text" ? "bg-primary text-white shadow-lg shadow-primary/20" : "text-white/60 hover:text-white hover:bg-white/10"
+                  )}
+                  title="Add Text"
+                >
+                  <Type className="h-4 w-4" />
+                </button>
+              </>
+            )}
+            {isMaskMode && (
+              <button 
+                onClick={() => setTool("pen")}
+                className={cn(
+                  "h-10 w-10 rounded-xl flex items-center justify-center transition-all",
+                  tool === "pen" ? "bg-primary text-white shadow-lg shadow-primary/20" : "text-white/60 hover:text-white hover:bg-white/10"
+                )}
+                title="Brush Tool"
+              >
+                <PenTool className="h-4 w-4" />
+              </button>
+            )}
             <button 
               onClick={() => setTool("eraser")}
               className={cn(
@@ -344,7 +360,7 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode }: Drawin
               className="h-10 px-6 rounded-xl bg-white text-slate-950 text-xs font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all shadow-xl disabled:opacity-50 disabled:hover:scale-100"
             >
               <Check className="h-4 w-4" />
-              {isMaskMode ? "Confirm Placement" : "Done Drawing"}
+              {isMaskMode ? "Remove Marked Items" : "Done Drawing"}
             </button>
           </div>
         </div>

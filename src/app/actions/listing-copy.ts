@@ -4,7 +4,7 @@ import Replicate from "replicate";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getTenantPrisma } from "@/lib/tenant-guard";
-import { getDropboxTemporaryLink, getGalleryAssets } from "./dropbox";
+import { getGalleryAssets, getTemporaryLink } from "./storage";
 import { getNearbyLandmarks } from "@/lib/google-places";
 
 // Use the 90B vision model for deep spatial reasoning and high-end creative output.
@@ -121,11 +121,13 @@ export async function generateListingCopy(galleryId: string) {
       ? `Nearby landmarks and lifestyle spots: ${landmarks.join(", ")}.`
       : "";
 
+    const provider = (gallery.tenant as any).storageProvider || "DROPBOX";
+
     // 3. Get temporary links for selection
     const imageLinks = await Promise.all(
       selection.map(async (img: any) => {
         if (img.id) {
-          const res = await getDropboxTemporaryLink(img.id, session.user.tenantId!);
+          const res = await getTemporaryLink(img.id, session.user.tenantId!, provider);
           return res.success ? res.url : null;
         }
         return null;

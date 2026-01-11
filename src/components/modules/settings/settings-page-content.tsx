@@ -34,7 +34,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AddressAutocomplete } from "@/components/ui/address-autocomplete";
-import { updateTenantBranding, updateTenantContactInfo, updateTenantInvoicingSettings, updateTenantNotificationSettings, updateTenantSecuritySettings } from "@/app/actions/tenant-settings";
+import { updateTenantBranding, updateTenantContactInfo, updateTenantInvoicingSettings, updateTenantNotificationSettings, updateTenantSecuritySettings, updateTenantStorageSettings, updateTenantLogisticsSettings, updateTenantCalendarSyncSettings, triggerCalendarSync } from "@/app/actions/tenant-settings";
 import { createStripeCheckoutAction, createStripePortalAction } from "@/app/actions/stripe";
 import { format, differenceInDays } from "date-fns";
 
@@ -135,6 +135,8 @@ export function SettingsPageContent({ tenant, user, teamMember }: SettingsPageCo
     privacyPolicyUrl: tenant.privacyPolicyUrl || "",
     termsOfUseUrl: tenant.termsOfUseUrl || "",
     contactStudioUrl: tenant.contactStudioUrl || "",
+    storageProvider: tenant.storageProvider || "DROPBOX",
+    aiLogisticsEnabled: tenant.aiLogisticsEnabled || false,
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -247,6 +249,20 @@ export function SettingsPageContent({ tenant, user, teamMember }: SettingsPageCo
     }
   };
 
+  const handleSaveLogistics = async () => {
+    setIsSaving(true);
+    setMessage(null);
+    const result = await updateTenantLogisticsSettings({
+      aiLogisticsEnabled: formData.aiLogisticsEnabled,
+    });
+    setIsSaving(false);
+    if (result.success) {
+      setMessage({ type: 'success', text: 'Scheduling settings updated successfully' });
+    } else {
+      setMessage({ type: 'error', text: result.error || 'Failed to update' });
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-12">
       {/* Sidebar Nav */}
@@ -284,6 +300,12 @@ export function SettingsPageContent({ tenant, user, teamMember }: SettingsPageCo
               icon={<Database className="h-4 w-4" />} 
               active={activeTab === "data"} 
               onClick={() => setActiveTab("data")}
+            />
+            <SettingsTab 
+              label="Scheduling & AI" 
+              icon={<Clock className="h-4 w-4" />} 
+              active={activeTab === "scheduling"} 
+              onClick={() => setActiveTab("scheduling")}
             />
             <SettingsTab 
               label="Integrations" 
@@ -969,68 +991,218 @@ export function SettingsPageContent({ tenant, user, teamMember }: SettingsPageCo
         )}
 
         {activeTab === "data" && (
-          <div className="space-y-8">
-            <div className="ui-card border-slate-100">
-              <div className="flex items-center justify-between mb-8">
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="ui-card border-slate-100 p-10 space-y-10">
+              <div className="flex items-center justify-between border-b border-slate-50 pb-8">
                 <div>
-                  <h2 className="text-lg font-bold text-slate-900">Data & Storage</h2>
-                  <p className="text-sm font-medium text-slate-500">Configure where your studio assets are stored and synced.</p>
+                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">Data & Storage</h2>
+                  <p className="text-sm font-medium text-slate-500 max-w-md">Configure where your studio assets are stored and choose your primary provider.</p>
+                </div>
+                <div className="h-14 w-14 rounded-[20px] bg-slate-50 flex items-center justify-center text-slate-400">
+                  <Database className="h-7 w-7" />
                 </div>
               </div>
 
-              {/* Cloud Storage Cards */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-4 p-5 rounded-[28px] bg-slate-50 border border-slate-100">
-                  <div className="h-14 w-14 rounded-2xl bg-white shadow-sm flex items-center justify-center text-blue-600 shrink-0 border border-blue-50">
-                    <Cloud className="h-6 w-6" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-bold text-slate-900">Dropbox Business</h4>
-                      {tenant.dropboxAccessToken ? (
-                        <span className="px-2 py-0.5 rounded-full bg-primary/10 text-emerald-600 text-[9px] font-black border border-primary/20 uppercase tracking-widest">Connected</span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-400 text-[9px] font-black border border-slate-200 uppercase tracking-widest">Not Connected</span>
-                      )}
+              {/* Primary Storage Selection */}
+              <div className="space-y-6">
+                <div className="flex items-center gap-3">
+                  <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                  <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Primary Storage Provider</h3>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <StorageProviderCard 
+                    id="DROPBOX"
+                    label="Dropbox Business"
+                    icon={<Cloud className="h-5 w-5" />}
+                    active={formData.storageProvider === "DROPBOX"}
+                    connected={!!tenant.dropboxConnectedAt}
+                    onClick={async () => {
+                      if (!tenant.dropboxConnectedAt) return;
+                      setFormData({ ...formData, storageProvider: "DROPBOX" });
+                      await updateTenantStorageSettings({ storageProvider: "DROPBOX" });
+                      setMessage({ type: 'success', text: 'Dropbox set as primary storage' });
+                    }}
+                  />
+                  <StorageProviderCard 
+                    id="GOOGLE_DRIVE"
+                    label="Google Drive"
+                    icon={<Globe className="h-5 w-5" />}
+                    active={formData.storageProvider === "GOOGLE_DRIVE"}
+                    connected={!!tenant.googleDriveConnectedAt}
+                    onClick={async () => {
+                      if (!tenant.googleDriveConnectedAt) return;
+                      setFormData({ ...formData, storageProvider: "GOOGLE_DRIVE" });
+                      await updateTenantStorageSettings({ storageProvider: "GOOGLE_DRIVE" });
+                      setMessage({ type: 'success', text: 'Google Drive set as primary storage' });
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Connection Management */}
+              <div className="space-y-6 pt-10 border-t border-slate-50">
+                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Manage Connections</h3>
+                
+                <div className="space-y-4">
+                  {/* Dropbox Connection */}
+                  <div className="flex items-center gap-4 p-6 rounded-[32px] bg-slate-50/50 border border-slate-100 group hover:border-blue-200 transition-all">
+                    <div className="h-14 w-14 rounded-2xl bg-white shadow-sm flex items-center justify-center text-blue-600 shrink-0 border border-blue-50 group-hover:scale-110 transition-transform">
+                      <Cloud className="h-6 w-6" />
                     </div>
-                    <p className="text-[11px] font-medium text-slate-500 truncate mt-0.5">
-                      {tenant.dropboxAccessToken 
-                        ? `Connected to ${tenant.dropboxEmail || 'Dropbox account'} — Root: ${tenant.dropboxRootPath || '/Production/'}` 
-                        : 'Sync your production assets via Dropbox Business.'}
-                    </p>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-bold text-slate-900">Dropbox Business</h4>
+                        {tenant.dropboxConnectedAt ? (
+                          <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 text-[9px] font-black border border-blue-100 uppercase tracking-widest">Connected</span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-400 text-[9px] font-black border border-slate-200 uppercase tracking-widest">Disconnected</span>
+                        )}
+                      </div>
+                      <p className="text-[11px] font-medium text-slate-500 truncate mt-1">
+                        {tenant.dropboxConnectedAt 
+                          ? `Linked to ${tenant.dropboxEmail || 'Dropbox account'} — Root: ${tenant.dropboxRootPath || '/Production/'}` 
+                          : 'Professional cloud storage for large media assets.'}
+                      </p>
+                    </div>
+                    
+                    {tenant.dropboxConnectedAt ? (
+                      <button 
+                        onClick={async () => {
+                          if (confirm("Disconnect Dropbox? This will stop all active syncs and fallback to standard storage.")) {
+                            const res = await fetch('/api/auth/dropbox/disconnect', { method: 'POST' });
+                            if (res.ok) window.location.reload();
+                          }
+                        }}
+                        className="h-10 px-6 rounded-xl bg-white text-rose-500 text-[10px] font-black uppercase tracking-widest border border-slate-200 hover:border-rose-200 hover:bg-rose-50 transition-all shadow-sm active:scale-95"
+                      >
+                        Disconnect
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={() => window.location.href = '/api/auth/dropbox'}
+                        className="h-10 px-8 rounded-xl bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 active:scale-95"
+                      >
+                        Connect
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Google Drive Connection */}
+                  <div className="flex items-center gap-4 p-6 rounded-[32px] bg-slate-50/50 border border-slate-100 group hover:border-emerald-200 transition-all">
+                    <div className="h-14 w-14 rounded-2xl bg-white shadow-sm flex items-center justify-center text-emerald-600 shrink-0 border border-emerald-50 group-hover:scale-110 transition-transform">
+                      <Globe className="h-6 w-6" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-bold text-slate-900">Google Drive</h4>
+                        {tenant.googleDriveConnectedAt ? (
+                          <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 text-[9px] font-black border border-emerald-100 uppercase tracking-widest">Connected</span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-400 text-[9px] font-black border border-slate-200 uppercase tracking-widest">Disconnected</span>
+                        )}
+                      </div>
+                      <p className="text-[11px] font-medium text-slate-500 truncate mt-1">
+                        {tenant.googleDriveConnectedAt 
+                          ? `Linked to ${tenant.googleDriveEmail || 'Google account'}` 
+                          : 'Connect your Google Workspace or Personal Drive.'}
+                      </p>
+                    </div>
+                    
+                    {tenant.googleDriveConnectedAt ? (
+                      <button 
+                        onClick={async () => {
+                          if (confirm("Disconnect Google Drive? Primary storage will fallback to Dropbox.")) {
+                            const res = await fetch('/api/auth/google-drive/disconnect', { method: 'POST' });
+                            if (res.ok) window.location.reload();
+                          }
+                        }}
+                        className="h-10 px-6 rounded-xl bg-white text-rose-500 text-[10px] font-black uppercase tracking-widest border border-slate-200 hover:border-rose-200 hover:bg-rose-50 transition-all shadow-sm active:scale-95"
+                      >
+                        Disconnect
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={() => window.location.href = '/api/auth/google-drive'}
+                        className="h-10 px-8 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 active:scale-95"
+                      >
+                        Connect
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "scheduling" && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="ui-card border-slate-100 p-10 space-y-10">
+              <div className="flex items-center justify-between border-b border-slate-50 pb-8">
+                <div>
+                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">Scheduling & Logistics</h2>
+                  <p className="text-sm font-medium text-slate-500 max-w-md">Enable AI-powered travel time analysis and dynamic sun-locked booking.</p>
+                </div>
+                <button 
+                  onClick={handleSaveLogistics}
+                  disabled={isSaving}
+                  className="ui-button-primary flex items-center gap-2 px-6"
+                  style={{ boxShadow: `0 10px 15px -3px var(--primary-soft)` }}
+                >
+                  <Save className="h-4 w-4" /> 
+                  {isSaving ? "Saving..." : "Save Scheduling Settings"}
+                </button>
+              </div>
+
+              <div className="space-y-8">
+                <div className="flex items-center justify-between p-8 rounded-[32px] bg-slate-50 border border-slate-100 group transition-all hover:border-primary/20">
+                  <div className="flex gap-6">
+                    <div className="h-14 w-14 rounded-2xl bg-white shadow-sm flex items-center justify-center text-primary shrink-0 border border-primary/5 group-hover:scale-110 transition-transform">
+                      <Sparkles className="h-7 w-7" />
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="text-lg font-bold text-slate-900">Fluid AI Logistics Engine</h4>
+                      <p className="text-sm font-medium text-slate-500 max-w-lg leading-relaxed">
+                        When enabled, manual Sunrise/Dusk slots are replaced with dynamic windows based on real-time sun data. 
+                        The engine also calculates drive times between crew members to optimize your studio's efficiency.
+                      </p>
+                    </div>
                   </div>
                   
-                  {tenant.dropboxAccessToken ? (
-                    <button 
-                      onClick={async () => {
-                        if (confirm("Disconnect Dropbox? This will stop all active syncs.")) {
-                          const res = await fetch('/api/auth/dropbox/disconnect', { method: 'POST' });
-                          if (res.ok) window.location.reload();
-                        }
-                      }}
-                      className="text-[11px] font-bold text-rose-500 hover:text-rose-600 px-6 py-2.5 rounded-full hover:bg-rose-50 transition-all uppercase tracking-widest"
-                    >
-                      Disconnect
-                    </button>
-                  ) : (
-                    <button 
-                      onClick={() => window.location.href = '/api/auth/dropbox'}
-                      className="text-[11px] font-bold text-primary hover:text-primary px-6 py-2.5 rounded-full border border-primary/20 hover:bg-primary/5 transition-all uppercase tracking-widest"
-                    >
-                      Connect
-                    </button>
-                  )}
+                  <button 
+                    onClick={() => setFormData({ ...formData, aiLogisticsEnabled: !formData.aiLogisticsEnabled })}
+                    className={cn(
+                      "h-8 w-14 rounded-full transition-all relative shrink-0",
+                      formData.aiLogisticsEnabled ? "bg-primary shadow-lg shadow-primary/20" : "bg-slate-200"
+                    )}
+                  >
+                    <div className={cn(
+                      "absolute top-1 left-1 h-6 w-6 bg-white rounded-full transition-transform shadow-sm",
+                      formData.aiLogisticsEnabled ? "translate-x-6" : "translate-x-0"
+                    )} />
+                  </button>
                 </div>
 
-                <div className="flex items-center gap-4 p-5 rounded-[28px] bg-white border border-slate-100 opacity-60">
-                  <div className="h-14 w-14 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-300 shrink-0">
-                    <Globe className="h-6 w-6" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="p-6 rounded-[28px] border border-slate-100 space-y-4">
+                    <div className="flex items-center gap-3 text-slate-900">
+                      <Clock className="h-4 w-4" />
+                      <span className="text-xs font-black uppercase tracking-widest">Travel Buffers</span>
+                    </div>
+                    <p className="text-xs font-medium text-slate-500 leading-relaxed">
+                      AI will automatically prevent bookings that don't allow sufficient travel time between properties using the Google Maps Distance Matrix.
+                    </p>
                   </div>
-                  <div className="flex-1">
-                    <h4 className="text-sm font-bold text-slate-400">Google Drive</h4>
-                    <p className="text-[11px] font-medium text-slate-400 mt-0.5">Sync your production assets via Google Drive.</p>
+                  <div className="p-6 rounded-[28px] border border-slate-100 space-y-4">
+                    <div className="flex items-center gap-3 text-slate-900">
+                      <Palette className="h-4 w-4" />
+                      <span className="text-xs font-black uppercase tracking-widest">Sun-Locked Timing</span>
+                    </div>
+                    <p className="text-xs font-medium text-slate-500 leading-relaxed">
+                      Sunrise and Dusk shoots will be automatically fixed to the optimal light window (arrival ~25 mins before sunset/sunrise).
+                    </p>
                   </div>
-                  <button className="text-[11px] font-bold text-slate-400 px-6 py-2.5 rounded-full border border-slate-100 hover:bg-slate-50 transition-all uppercase tracking-widest">Connect</button>
                 </div>
               </div>
             </div>
@@ -1262,5 +1434,42 @@ function NotificationToggle({ label, active }: { label: string, active: boolean 
         {active ? "Active" : "Disabled"}
       </div>
     </div>
+  );
+}
+
+function StorageProviderCard({ id, label, icon, active, connected, onClick }: any) {
+  return (
+    <button 
+      onClick={onClick}
+      disabled={!connected}
+      className={cn(
+        "relative flex flex-col items-start gap-4 p-6 rounded-[32px] border transition-all text-left group",
+        active 
+          ? "bg-white border-primary shadow-xl ring-4 ring-primary/5 translate-y-[-2px]" 
+          : connected 
+            ? "bg-white border-slate-100 hover:border-slate-300 hover:bg-slate-50 opacity-80" 
+            : "bg-slate-50 border-slate-100 opacity-40 cursor-not-allowed"
+      )}
+    >
+      <div className={cn(
+        "h-12 w-12 rounded-2xl flex items-center justify-center transition-all",
+        active ? "bg-primary text-white scale-110" : "bg-slate-50 text-slate-400 group-hover:text-slate-600"
+      )}>
+        {icon}
+      </div>
+      
+      <div>
+        <h4 className={cn("text-xs font-black uppercase tracking-widest", active ? "text-slate-900" : "text-slate-500")}>{label}</h4>
+        <p className="text-[10px] font-medium text-slate-400 mt-1">
+          {active ? "Currently Active" : connected ? "Available" : "Not Connected"}
+        </p>
+      </div>
+
+      {active && (
+        <div className="absolute top-4 right-4 h-6 w-6 rounded-full bg-primary text-white flex items-center justify-center animate-in zoom-in duration-300">
+          <Check className="h-3.5 w-3.5" strokeWidth={4} />
+        </div>
+      )}
+    </button>
   );
 }
