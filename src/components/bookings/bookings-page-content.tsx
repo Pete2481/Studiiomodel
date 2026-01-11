@@ -2,8 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Plus, Calendar as CalendarIcon, Lock, GripHorizontal, Settings } from "lucide-react";
-import { Draggable } from "@fullcalendar/interaction";
-import { CalendarView } from "./calendar-view";
+import dynamic from "next/dynamic";
 import { BookingDrawer } from "./booking-drawer";
 import { BusinessHoursModal } from "./business-hours-modal";
 import { SlotManagementModal } from "./slot-management-modal";
@@ -13,6 +12,14 @@ import { BookingList } from "@/components/dashboard/booking-list";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { permissionService } from "@/lib/permission-service";
+
+const CalendarView = dynamic(
+  () => import("./calendar-view").then((m) => m.CalendarView),
+  {
+    ssr: false,
+    loading: () => <div className="h-[60vh] bg-slate-100 rounded-[32px] animate-pulse" />,
+  }
+);
 
 interface BookingsPageContentProps {
   initialBookings: any[];
@@ -108,22 +115,34 @@ export function BookingsPageContent({
   }, [searchParams, pathname, bookings, user?.role, canPlaceBookings]);
 
   useEffect(() => {
-    let draggableEl = document.getElementById("external-events");
-    if (draggableEl) {
-      new Draggable(draggableEl, {
+    let cleanup: (() => void) | undefined;
+
+    async function init() {
+      const draggableEl = document.getElementById("external-events");
+      if (!draggableEl) return;
+
+      const mod = await import("@fullcalendar/interaction");
+      const Draggable = (mod as any).Draggable;
+
+      const d = new Draggable(draggableEl, {
         itemSelector: ".fc-event",
-        eventData: (eventEl) => {
+        eventData: (eventEl: Element) => {
           const serviceId = eventEl.getAttribute("data-service-id");
           const serviceName = eventEl.getAttribute("data-service-name");
           const duration = eventEl.getAttribute("data-duration");
           return {
             title: serviceName,
-            duration: duration,
+            duration,
             extendedProps: { serviceId, isQuickAdd: true }
           };
         }
       });
+
+      cleanup = () => d.destroy?.();
     }
+
+    init();
+    return () => cleanup?.();
   }, []);
 
   const handleSelectEvent = (booking: any) => {

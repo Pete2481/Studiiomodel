@@ -39,7 +39,7 @@ import {
   LayoutDashboard as DashboardIcon, 
   Activity
 } from "lucide-react";
-import { signOut, useSession } from "next-auth/react";
+import { signOut } from "next-auth/react";
 import { permissionService } from "@/lib/permission-service";
 import { UNIFIED_NAV_CONFIG } from "@/lib/nav-config";
 import { DashboardProvider, useDashboard } from "./dashboard-context";
@@ -161,7 +161,6 @@ function DashboardShellContent({
 
   const pathname = usePathname();
   const router = useRouter();
-  const { data: session } = useSession();
   const [mounted, setMounted] = useState(false);
   const [copied, setCopied] = useState(false);
   const [counts, setCounts] = useState<{ bookings?: number, galleries?: number, edits?: number }>(navCounts || {});
@@ -211,19 +210,20 @@ function DashboardShellContent({
 
   // Use provided user info or fall back to session
   const user = useMemo(() => {
-    const sessionUser = session?.user as any;
-    return providedUser || {
-      name: sessionUser?.name || "User",
-      role: sessionUser?.role || "CLIENT",
-      clientId: sessionUser?.clientId || null,
-      agentId: sessionUser?.agentId || null,
-      initials: sessionUser?.name?.split(' ').map((n: string) => n[0]).join('') || "U",
-      avatarUrl: sessionUser?.image || null,
-      permissions: sessionUser?.permissions || {}
+    if (providedUser) return providedUser as any;
+    // Fallback: keep it minimal to avoid pulling session client-side
+    return {
+      name: "User",
+      role: "CLIENT",
+      clientId: null,
+      agentId: null,
+      initials: "U",
+      avatarUrl: null,
+      permissions: {}
     };
-  }, [providedUser, session?.user?.name, session?.user?.role, session?.user?.image]);
+  }, [providedUser]);
 
-  const finalSlug = workspaceSlug || (session?.user as any)?.tenantSlug;
+  const finalSlug = workspaceSlug;
 
   const showFinancials = useMemo(() => user.role === "TENANT_ADMIN" || user.role === "ADMIN" || user.role === "ACCOUNTS", [user.role]);
   const isRestrictedRole = useMemo(() => !showFinancials && user.role !== "CLIENT" && user.role !== "AGENT", [showFinancials, user.role]);

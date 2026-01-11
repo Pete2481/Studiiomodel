@@ -1,9 +1,37 @@
 "use client";
 
-import React, { useEffect } from "react";
-import { AlertTriangle, RefreshCw, LayoutDashboard } from "lucide-react";
+import React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+
+function IconAlertTriangle(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
+      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </svg>
+  );
+}
+
+function IconRefresh(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <path d="M21 3v6h-6" />
+    </svg>
+  );
+}
+
+function IconCalendar(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <path d="M16 2v4" />
+      <path d="M8 2v4" />
+      <path d="M3 10h18" />
+    </svg>
+  );
+}
 
 export default function TenantError({
   error,
@@ -16,7 +44,7 @@ export default function TenantError({
     <div className="p-8 h-[calc(100vh-100px)] flex items-center justify-center">
       <div className="max-w-md w-full text-center space-y-8 animate-in zoom-in duration-300">
         <div className="h-20 w-20 rounded-3xl bg-amber-50 text-amber-500 flex items-center justify-center mx-auto shadow-sm">
-          <AlertTriangle className="h-10 w-10" />
+          <IconAlertTriangle className="h-10 w-10" />
         </div>
 
         <div className="space-y-2">
@@ -41,7 +69,7 @@ export default function TenantError({
             onClick={() => reset()}
             className="h-14 rounded-2xl bg-primary text-white font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:opacity-90 transition-all active:scale-95"
           >
-            <RefreshCw className="h-4 w-4" />
+            <IconRefresh className="h-4 w-4" />
             Refresh this view
           </button>
           
@@ -49,7 +77,7 @@ export default function TenantError({
             href="/tenant/calendar"
             className="h-14 rounded-2xl bg-white border border-slate-200 text-slate-600 font-bold flex items-center justify-center gap-2 hover:bg-slate-50 transition-all"
           >
-            <LayoutDashboard className="h-4 w-4" />
+            <IconCalendar className="h-4 w-4" />
             Back to Calendar
           </Link>
         </div>

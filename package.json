@@ -7,6 +7,9 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
+    "perf:build": "npm run build",
+    "perf:start": "npm run start",
+    "perf:prod": "npm run build && npm run start",
     "db:generate": "prisma generate",
     "db:push": "prisma db push"
   },
