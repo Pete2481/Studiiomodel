@@ -1,13 +1,15 @@
-"use client";
-
-import React from "react";
-import { Search, Home, ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+
+function IconSearch(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="M21 21l-4.3-4.3" />
+    </svg>
+  );
+}
 
 export default function NotFound() {
-  const router = useRouter();
-  const pathname = usePathname();
   return (
     <div className="min-h-screen bg-white flex items-center justify-center p-6">
       <div className="max-w-xl w-full text-center space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -19,7 +21,7 @@ export default function NotFound() {
           </div>
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="h-24 w-24 rounded-[32px] bg-primary shadow-2xl shadow-primary/20 flex items-center justify-center text-white rotate-12">
-              <Search className="h-10 w-10" />
+              <IconSearch className="h-10 w-10" />
             </div>
           </div>
         </div>
@@ -32,20 +34,11 @@ export default function NotFound() {
         </div>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <button
-            onClick={() => router.back()}
-            className="h-16 px-10 rounded-full bg-white border-2 border-slate-100 text-slate-900 font-black uppercase tracking-widest text-[10px] flex items-center gap-3 hover:border-primary/20 hover:bg-primary/5 transition-all active:scale-95"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Go Back
-          </button>
-          
           <Link
-            href="/"
+            href="/tenant/calendar"
             className="h-16 px-10 rounded-full bg-primary text-white font-black uppercase tracking-widest text-[10px] flex items-center gap-3 shadow-xl shadow-primary/20 hover:opacity-90 transition-all active:scale-95"
           >
-            <Home className="h-4 w-4" />
-            Dashboard
+            Go to Calendar
           </Link>
         </div>
 

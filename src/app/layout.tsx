@@ -1,9 +1,5 @@
 import "./globals.css";
 import { Inter } from "next/font/google";
-import { SessionProvider } from "next-auth/react";
-import { ThemeProvider } from "@/components/layout/theme-provider";
-import { LoadingBar } from "@/components/layout/loading-bar";
-import { Suspense } from "react";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -17,20 +13,21 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // We removed dynamic auth checks from here to solve the "headers outside request scope" error
-  // Branding is now handled dynamically within the DashboardShell and other page-level components.
-  
+  // Keep the root layout server-only for performance:
+  // - Avoid global client providers/hooks in the app shell.
+  // - Provide a safe default brand color via CSS variables.
   return (
-    <html lang="en">
+    <html
+      lang="en"
+      style={
+        {
+          "--primary": "#10b981",
+          "--primary-soft": "#10b98133",
+        } as React.CSSProperties
+      }
+    >
       <body className={`${inter.className} min-h-screen bg-slate-50 antialiased`}>
-        <SessionProvider>
-          <ThemeProvider brandColor="#10b981">
-            <Suspense fallback={null}>
-              <LoadingBar />
-            </Suspense>
-            {children}
-          </ThemeProvider>
-        </SessionProvider>
+        {children}
       </body>
     </html>
   );

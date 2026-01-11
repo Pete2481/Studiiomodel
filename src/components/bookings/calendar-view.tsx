@@ -2,14 +2,29 @@
 
 import React, { useRef, useState, useEffect } from "react";
 import FullCalendar from "@fullcalendar/react";
-import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
-import listPlugin from "@fullcalendar/list";
 import { format, startOfDay, endOfDay, addDays, addHours, addMinutes, subMinutes } from "date-fns";
-import { Clock, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { permissionService } from "@/lib/permission-service";
+
+function IconClock(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 6v6l4 2" />
+    </svg>
+  );
+}
+
+function IconMapPin(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
+      <path d="M12 21s7-5.2 7-11a7 7 0 1 0-14 0c0 5.8 7 11 7 11Z" />
+      <circle cx="12" cy="10" r="2" />
+    </svg>
+  );
+}
 
 interface CalendarViewProps {
   bookings: any[];
@@ -37,6 +52,7 @@ export function CalendarView({
   const calendarRef = useRef<any>(null);
   const [hoveredEvent, setHoveredEvent] = useState<{ event: any, x: number, y: number } | null>(null);
   const [view, setView] = useState<string>("timeGridWeek");
+  const [extraPlugins, setExtraPlugins] = useState<any[]>([]);
 
   // Responsive View Handler
   useEffect(() => {
@@ -57,6 +73,16 @@ export function CalendarView({
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Lazy-load heavier calendar plugins only when needed (e.g. Month view).
+  const ensureDayGridPlugin = async () => {
+    const alreadyLoaded = extraPlugins.some((p) => p?.name === "dayGrid" || p?.id === "dayGrid");
+    if (alreadyLoaded) return;
+
+    const mod = await import("@fullcalendar/daygrid");
+    const plugin = (mod as any).default || mod;
+    setExtraPlugins((prev) => (prev.includes(plugin) ? prev : [...prev, plugin]));
+  };
 
   const isClientOrRestrictedAgent = user?.role === "CLIENT" || (user?.role === "AGENT" && !user?.permissions?.seeAll);
   const isRestrictedRole = user?.role === "CLIENT" || user?.role === "AGENT";
@@ -260,15 +286,25 @@ export function CalendarView({
       <div className="calendar-container h-[85vh] md:h-[900px] bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm p-2 md:p-2 md:px-6 overflow-hidden w-full">
         <FullCalendar
           ref={calendarRef}
-          plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
+          plugins={[timeGridPlugin, interactionPlugin, ...extraPlugins]}
           initialView={view}
           hiddenDays={hiddenDays}
           slotDuration="00:30:00"
           expandRows={false}
+          customButtons={{
+            month: {
+              text: "Month",
+              click: async () => {
+                await ensureDayGridPlugin();
+                const api = calendarRef.current?.getApi?.();
+                api?.changeView("dayGridMonth");
+              }
+            }
+          }}
           headerToolbar={{
             left: 'prev,today,next',
             center: 'title',
-            right: 'timeGridDay,timeGridWeek,dayGridMonth'
+            right: 'timeGridDay,timeGridWeek,month'
           }}
           handleWindowResize={true}
           windowResizeDelay={100}
@@ -442,13 +478,13 @@ export function CalendarView({
 
                     {!isMasked && !isBlocked && (
                       <div className="flex items-center gap-1 text-[9px] font-bold text-slate-400 truncate">
-                        <MapPin className="h-2 w-2" />
+                        <IconMapPin className="h-2 w-2" />
                         <span className="truncate">{isPlaceholder ? "Available to book" : (eventInfo.event.extendedProps.property?.name || "TBC")}</span>
                       </div>
                     )}
                     {isBlocked && (
                       <div className="flex items-center gap-1 text-[9px] font-bold text-rose-100/80 uppercase tracking-widest">
-                        <Clock className="h-2 w-2" />
+                        <IconClock className="h-2 w-2" />
                         <span>Unavailable for Clients</span>
                       </div>
                     )}
@@ -459,7 +495,7 @@ export function CalendarView({
                   {isPlaceholder ? (
                     <div className="bg-amber-50/50 text-amber-700 px-3 py-1 rounded-full flex items-center justify-center border border-amber-200 shadow-sm">
                       <span className="text-[8px] font-black tracking-widest uppercase flex items-center gap-1">
-                        <Clock className="h-2 w-2 opacity-60" />
+                        <IconClock className="h-2 w-2 opacity-60" />
                         {eventInfo.event.start && eventInfo.event.end ? (
                           `${format(eventInfo.event.start, "h:mma").toUpperCase()} — ${format(eventInfo.event.end, "h:mma").toUpperCase()}`
                         ) : "TBC"}
@@ -476,7 +512,7 @@ export function CalendarView({
                   ) : (
                     <div className="bg-white text-slate-900 px-3 py-1.5 rounded-full flex items-center justify-center shadow-sm border border-slate-100">
                       <span className="text-[9px] font-black tracking-widest uppercase flex items-center gap-1">
-                        <Clock className="h-2 w-2 text-primary opacity-60" />
+                        <IconClock className="h-2 w-2 text-primary opacity-60" />
                         {eventInfo.event.start && eventInfo.event.end ? (
                           `${format(eventInfo.event.start, "h:mma").toUpperCase()} — ${format(eventInfo.event.end, "h:mma").toUpperCase()}`
                         ) : "TBC"}

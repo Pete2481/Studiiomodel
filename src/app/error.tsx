@@ -1,9 +1,44 @@
 "use client";
 
-import React, { useEffect } from "react";
-import { AlertCircle, RotateCcw, Home, MessageSquare } from "lucide-react";
+import React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+
+function IconAlertCircle(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 8v4" />
+      <path d="M12 16h.01" />
+    </svg>
+  );
+}
+
+function IconRotate(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
+      <path d="M3 12a9 9 0 1 0 3-6.7" />
+      <path d="M3 3v6h6" />
+    </svg>
+  );
+}
+
+function IconHome(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
+      <path d="M3 10.5 12 3l9 7.5" />
+      <path d="M5 10v10h14V10" />
+    </svg>
+  );
+}
+
+function IconReload(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <path d="M21 3v6h-6" />
+    </svg>
+  );
+}
 
 export default function GlobalError({
   error,
@@ -22,7 +57,7 @@ export default function GlobalError({
             <div className="absolute bottom-0 right-0 w-32 h-32 bg-rose-500 rounded-full translate-x-10 translate-y-10" />
           </div>
           <div className="h-16 w-16 rounded-3xl bg-white shadow-xl shadow-rose-500/10 flex items-center justify-center text-rose-500 relative z-10">
-            <AlertCircle className="h-8 w-8" />
+            <IconAlertCircle className="h-8 w-8" />
           </div>
         </div>
 
@@ -47,7 +82,7 @@ export default function GlobalError({
               onClick={() => reset()}
               className="h-16 rounded-full bg-slate-900 text-white font-bold flex items-center justify-center gap-3 shadow-xl shadow-slate-900/10 hover:bg-slate-800 transition-all active:scale-95 group"
             >
-              <RotateCcw className="h-5 w-5 group-hover:rotate-[-45deg] transition-transform" />
+              <IconRotate className="h-5 w-5 group-hover:rotate-[-45deg] transition-transform" />
               Try again
             </button>
 
@@ -56,14 +91,14 @@ export default function GlobalError({
                 href="/"
                 className="h-14 rounded-full bg-white border border-slate-100 text-slate-600 font-bold flex items-center justify-center gap-2 hover:bg-slate-50 transition-all active:scale-95"
               >
-                <Home className="h-4 w-4" />
+                <IconHome className="h-4 w-4" />
                 Go Home
               </Link>
               <button
                 onClick={() => window.location.reload()}
                 className="h-14 rounded-full bg-white border border-slate-100 text-slate-600 font-bold flex items-center justify-center gap-2 hover:bg-slate-50 transition-all active:scale-95"
               >
-                <MessageSquare className="h-4 w-4" />
+                <IconReload className="h-4 w-4" />
                 Reload Page
               </button>
             </div>
