@@ -31,12 +31,12 @@ export function AIListingModal({
   initialCopy = "",
   isPublished = false
 }: AIListingModalProps) {
-  const [variants, setVariants] = useState<{ signature: string; concise: string; extended: string }>(() => ({
+  const [variants, setVariants] = useState<{ signature: string; standard: string; extended: string }>(() => ({
     signature: initialCopy || "",
-    concise: "",
+    standard: "",
     extended: "",
   }));
-  const [selectedVariant, setSelectedVariant] = useState<"signature" | "concise" | "extended">("signature");
+  const [selectedVariant, setSelectedVariant] = useState<"signature" | "standard" | "extended">("signature");
   const [editorText, setEditorText] = useState(initialCopy || "");
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState<number>(0);
@@ -120,7 +120,7 @@ export function AIListingModal({
     try {
       const result = await generateListingCopy(galleryId);
       if (result.success && (result as any).variants) {
-        const v = (result as any).variants as { signature: string; concise: string; extended: string };
+        const v = (result as any).variants as { signature: string; standard: string; extended: string };
         setVariants(v);
         setSelectedVariant("signature");
         setEditorText(v.signature || "");
@@ -256,7 +256,7 @@ export function AIListingModal({
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => downloadTxt(
-                        selectedVariant === "signature" ? "Signature" : selectedVariant === "concise" ? "Concise" : "Extended",
+                        selectedVariant === "signature" ? "Signature" : selectedVariant === "standard" ? "Standard" : "Extended",
                         editorText
                       )}
                       className="h-8 px-3 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all border border-slate-900"
@@ -271,7 +271,7 @@ export function AIListingModal({
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {([
                     { key: "signature", label: "Signature", desc: "Balanced, Byron relaxed-luxury" },
-                    { key: "concise", label: "Concise", desc: "Tight, executive, premium" },
+                    { key: "standard", label: "Standard", desc: "Executive premium (your standard format)" },
                     { key: "extended", label: "Extended", desc: "Long-form, emotive, persuasive" },
                   ] as const).map((v) => {
                     const text = variants[v.key] || "";

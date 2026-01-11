@@ -50,88 +50,6 @@ Capturing the essence of Byron Bay's relaxed luxury, this rare and remarkable pr
 - 240m to The Top Shop café, 650m to the beach, 6 mins to Wategos
 `;
 
-function extractJsonBlock(raw: string) {
-  const text = (raw || "").trim();
-  if (!text) return "";
-  // Remove ```json fences if present
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  if (fenced?.[1]) return fenced[1].trim();
-  // Otherwise, attempt to grab the first {...} block
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start !== -1 && end !== -1 && end > start) return text.slice(start, end + 1).trim();
-  return text;
-}
-
-type CopyVariantKey = "signature" | "concise" | "extended";
-type CopyVariantObj = { headline?: any; body?: any; features?: any };
-
-function coerceFeaturesToArray(features: any): string[] {
-  if (Array.isArray(features)) {
-    return features
-      .map((f) => String(f ?? "").trim())
-      .filter(Boolean);
-  }
-  if (typeof features === "string") {
-    return features
-      .split("\n")
-      .map((l) => l.replace(/^\s*[-•]\s*/, "").trim())
-      .filter(Boolean);
-  }
-  return [];
-}
-
-function normalizeVariantToObj(v: any): Required<Pick<CopyVariantObj, "headline" | "body" | "features">> {
-  // If the model returns the entire variant as a single string, split it.
-  if (typeof v === "string") {
-    const txt = v.trim();
-    const [firstLine, ...rest] = txt.split("\n");
-    const body = rest.join("\n").trim();
-    return { headline: (firstLine || "").trim(), body: body || txt, features: [] };
-  }
-  const headline = String(v?.headline ?? "").trim();
-  const body = String(v?.body ?? "").trim();
-  const features = coerceFeaturesToArray(v?.features);
-  return { headline, body, features };
-}
-
-function normalizeCopyVariants(parsed: any): { signature: CopyVariantObj; concise: CopyVariantObj; extended: CopyVariantObj } | null {
-  if (!parsed || typeof parsed !== "object") return null;
-
-  // Support common alternate keys (small/medium/large, short/medium/long)
-  const signatureRaw =
-    parsed.signature ??
-    parsed.style1 ??
-    parsed.current ??
-    parsed.default ??
-    parsed.medium ??
-    parsed.med ??
-    parsed["2"] ??
-    null;
-
-  const conciseRaw =
-    parsed.concise ??
-    parsed.short ??
-    parsed.small ??
-    parsed.brief ??
-    parsed["3"] ??
-    null;
-
-  const extendedRaw =
-    parsed.extended ??
-    parsed.long ??
-    parsed.large ??
-    parsed.full ??
-    parsed["1"] ??
-    null;
-
-  const signature = normalizeVariantToObj(signatureRaw);
-  const concise = normalizeVariantToObj(conciseRaw);
-  const extended = normalizeVariantToObj(extendedRaw);
-
-  return { signature, concise, extended };
-}
-
 export async function generateListingCopy(galleryId: string) {
   // Use REPLICATE_API_TOKEN from process.env explicitly to ensure it's picked up
   const token = process.env.REPLICATE_API_TOKEN;
@@ -279,135 +197,129 @@ Return strict JSON:
     const extractedFacts = analysisResults.filter(Boolean).join("\n\n---\n\n");
 
     // --- STAGE 2: COPYWRITING (The "Awesome" Copy) ---
-    console.log("[AI] Starting Stage 2: High-End Copywriting");
-    
-    const copywritingPrompt = `
-You are a master real estate copywriter specializing in ultra-high-end property listings for the Byron Bay, Northern Rivers, and Gold Coast regions. 
-Your tone is evocative, sophisticated, and lifestyle-oriented, mirroring the "relaxed luxury" vibe of the Northern Rivers.
+    console.log("[AI] Starting Stage 2: High-End Copywriting (Signature/Standard/Extended)");
+
+    const FORMAT_CONTRACT = `
+OUTPUT FORMAT (plain text ONLY; no markdown; no JSON):
+
+Line 1: HEADLINE (Title Case)
+Line 2: blank
+Line 3: ADDRESS (UPPERCASE)
+Line 4+: Body paragraphs (as per style rules)
+Then: Bullet block where every bullet line starts with "- " (hyphen + space)
+
+FORBIDDEN (do not include anywhere):
+- "Read less"
+- "Property features"
+- "Show more" / "Show 5 more"
+- Any extra headings like "Features:" or "Property features:"
+`;
+
+    const FACT_GUARDRAILS = `
+FACT RULES (very important):
+- Use ONLY details supported by the analysis JSON below (bed/bath counts, pool, studio, materials, etc).
+- If a detail is unknown, OMIT it (do not guess).
+- You MUST reference the address + nearby landmarks context for lifestyle/location if provided.
+`;
+
+    const COMMON = `
+You are a master real estate copywriter for Byron Bay / Northern Rivers / Gold Coast.
 
 PROJECT CONTEXT:
-- Address: ${address}
 - Title: ${gallery.title}
+- Address: ${address}
 - ${landmarksContext}
 
-DEEP DIVE FACTS FROM ASSET ANALYSIS (Factual JSON Data):
+DEEP DIVE FACTS (JSON snippets from floorplans/images):
 ${extractedFacts}
 
-YOUR MISSION:
-Write a "AWESOME" property listing that makes a buyer fall in love. 
-1. Use the address and landmarks to describe the "Lifestyle" (e.g. "Stroll to the white sands of...", "Moments from the curated delights of...").
-2. Use the factual data to accurately describe the layout, room counts, and high-end materials.
-3. DO NOT use generic AI filler. Be specific. If the analysis mentions "limestone floors" or "raked ceilings", use those details.
-4. PRESERVE the architectural character mentioned in the analysis.
+${FORMAT_CONTRACT}
+${FACT_GUARDRAILS}
+`;
 
-STRUCTURE:
-- You will produce THREE versions of the same listing in THREE styles:
-  1) SIGNATURE: your current Byron relaxed-luxury voice (balanced, premium).
-  2) EXTENDED: longer, more emotive, once-in-a-generation storytelling (like a prestige hinterland narrative). More detail, more feeling, more persuasion.
-  3) CONCISE: medium/shorter, tight and executive, still premium and specific, minimal fluff.
+    const SIGNATURE_PROMPT = COMMON + `
+SIGNATURE STYLE (reference: "Amazing versatility in serene rainforest surrounds"):
+- Body: exactly 1 paragraph (dense, premium, not overly poetic)
+- Bullets: 8–10 bullets
+- Include: 1–2 lifestyle/location mentions (walk/drive time; landmarks if available)
+- Tone: relaxed luxury, confident, clear
 
-STRICT REQUIREMENTS:
-- Use the address + landmarks context for lifestyle/location.
-- Use ONLY details supported by the analysis JSON. If a detail is unknown, omit it.
-- Output MUST be strict JSON only. No markdown, no commentary.
+Write the listing now in the required OUTPUT FORMAT.
+`;
 
-Return EXACTLY this JSON shape:
-{
-  "signature": {
-    "headline": "string",
-    "body": "string",
-    "features": ["string"]
-  },
-  "concise": {
-    "headline": "string",
-    "body": "string",
-    "features": ["string"]
-  },
-  "extended": {
-    "headline": "string",
-    "body": "string",
-    "features": ["string"]
-  }
-}
+    const STANDARD_PROMPT = COMMON + `
+STANDARD STYLE (reference: "Exclusive Ridgeline Retreat with Breathtaking Ocean Views"):
+- Body: exactly 2 paragraphs
+  - Para 1: big-picture positioning (views/privacy/architecture/lifestyle)
+  - Para 2: layout + key amenities + convenience (minutes to places if supported)
+- Bullets: 6–8 bullets
+- Tone: executive premium, architectural, specific, no fluff
 
---- MASTER TEMPLATE FOR STYLE ---
-${MASTER_TEMPLATE}
---- END MASTER TEMPLATE ---
+Write the listing now in the required OUTPUT FORMAT.
+`;
 
-Write the JSON now.
+    const EXTENDED_PROMPT = COMMON + `
+EXTENDED STYLE (reference: "Rare Opportunity – Secure a Luxury Byron Bay Hinterland Estate"):
+- Body: 6–10 short paragraphs (storytelling cadence, “blend” style)
+- Bullets: 10–14 bullets
+- Before bullets include a single line exactly: "Additional Features Include:"
+- End with ONE generic call-to-action line (no agent name/phone unless provided in data)
+- Tone: emotive prestige storytelling, still factual and grounded in the analysis
+
+Write the listing now in the required OUTPUT FORMAT.
 `;
 
     // Final pass context: Use the exterior if available
     const finalImage = exteriors.length > 0 ? validLinks[selection.findIndex(s => s.id === exteriors[0].id)] : validLinks[0];
 
-    const generateVariantsFromModel = async (attempt: number) => {
-      const strictnessAddon =
-        attempt === 1
-          ? "\n\nIMPORTANT: Your last response was invalid. Output MUST be strict JSON only (no markdown, no prose, no backticks). Use exactly the required keys. Ensure features is an array of strings.\n"
-          : "";
-
-      const output = await runReplicateWithRetry(replicate, REPLICATE_MODEL, {
-        prompt: `${copywritingPrompt}${strictnessAddon}`,
-        image: finalImage,
-        max_new_tokens: 1500,
-        temperature: attempt === 0 ? 0.75 : 0.55,
-      });
-
-      const resultText = Array.isArray(output)
-        ? output.join("")
-        : typeof output === "string"
-          ? output
-          : JSON.stringify(output);
-
-      const jsonText = extractJsonBlock(resultText);
-      let parsed: any = null;
-      try {
-        parsed = JSON.parse(jsonText);
-      } catch (e) {
-        console.error("[AI_COPY] Failed to parse JSON:", { preview: jsonText.slice(0, 500) });
-        return null;
+    const sanitizeOutput = (raw: string) => {
+      let out = (raw || "").trim();
+      // Strip fenced blocks if model ignores "no markdown"
+      const fenced = out.match(/```[\s\S]*?```/g);
+      if (fenced?.length) {
+        // keep the inside of the first fenced block
+        out = out.replace(/```(?:\w+)?\s*/g, "").replace(/```/g, "").trim();
       }
-
-      const normalized = normalizeCopyVariants(parsed);
-      if (!normalized) return null;
-
-      const signature = normalizeVariantToObj(normalized.signature);
-      const concise = normalizeVariantToObj(normalized.concise);
-      const extended = normalizeVariantToObj(normalized.extended);
-
-      const isValid =
-        signature.headline && signature.body && Array.isArray(signature.features) &&
-        concise.headline && concise.body && Array.isArray(concise.features) &&
-        extended.headline && extended.body && Array.isArray(extended.features);
-
-      if (!isValid) {
-        console.error("[AI_COPY] Missing required fields:", {
-          keys: Object.keys(parsed || {}),
-          signature: { headline: !!signature.headline, body: !!signature.body, features: Array.isArray(signature.features) },
-          concise: { headline: !!concise.headline, body: !!concise.body, features: Array.isArray(concise.features) },
-          extended: { headline: !!extended.headline, body: !!extended.body, features: Array.isArray(extended.features) },
-        });
-        return null;
-      }
-
-      return { signature, concise, extended };
+      // Remove forbidden marketing UI strings if they leak in
+      out = out
+        .replace(/^\s*Read less\s*$/gim, "")
+        .replace(/^\s*Property features\s*$/gim, "")
+        .replace(/^\s*Show\s+\d+\s+more\s*$/gim, "")
+        .trim();
+      // Remove any trailing "Property features" blocks that sometimes get appended
+      out = out.replace(/\n\s*Property features[\s\S]*$/i, "").trim();
+      return out;
     };
 
-    // Attempt 0: normal prompt. Attempt 1: stricter retry.
-    const variantsObj = (await generateVariantsFromModel(0)) ?? (await generateVariantsFromModel(1));
-    if (!variantsObj) {
-      return { success: false, error: "AI returned an invalid format twice. Please click Regenerate." };
-    }
+    const runStyle = async (label: "SIGNATURE" | "STANDARD" | "EXTENDED", prompt: string) => {
+      console.log(`[AI] Copywriting: ${label}`);
+      const out = await runReplicateWithRetry(replicate, REPLICATE_MODEL, {
+        prompt,
+        image: finalImage,
+        max_new_tokens: label === "EXTENDED" ? 2000 : 1200,
+        temperature: label === "EXTENDED" ? 0.7 : 0.65,
+      });
+      const resultText = Array.isArray(out)
+        ? out.join("")
+        : typeof out === "string"
+          ? out
+          : JSON.stringify(out);
+      return sanitizeOutput(resultText);
+    };
 
-    const toText = (v: any) =>
-      `${String(v.headline || "").trim()}\n\n${String(v.body || "").trim()}\n\n${(v.features || []).map((f: any) => `- ${String(f).trim()}`).join("\n")}`.trim();
+    const signatureText = await runStyle("SIGNATURE", SIGNATURE_PROMPT);
+    // brief delay between calls to reduce throttling
+    await new Promise((r) => setTimeout(r, 800));
+    const standardText = await runStyle("STANDARD", STANDARD_PROMPT);
+    await new Promise((r) => setTimeout(r, 800));
+    const extendedText = await runStyle("EXTENDED", EXTENDED_PROMPT);
 
     return {
       success: true,
       variants: {
-        signature: toText(variantsObj.signature),
-        concise: toText(variantsObj.concise),
-        extended: toText(variantsObj.extended),
+        signature: signatureText,
+        standard: standardText,
+        extended: extendedText,
       }
     };
   } catch (error: any) {
