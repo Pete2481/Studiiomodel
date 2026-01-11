@@ -63,6 +63,75 @@ function extractJsonBlock(raw: string) {
   return text;
 }
 
+type CopyVariantKey = "signature" | "concise" | "extended";
+type CopyVariantObj = { headline?: any; body?: any; features?: any };
+
+function coerceFeaturesToArray(features: any): string[] {
+  if (Array.isArray(features)) {
+    return features
+      .map((f) => String(f ?? "").trim())
+      .filter(Boolean);
+  }
+  if (typeof features === "string") {
+    return features
+      .split("\n")
+      .map((l) => l.replace(/^\s*[-•]\s*/, "").trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function normalizeVariantToObj(v: any): Required<Pick<CopyVariantObj, "headline" | "body" | "features">> {
+  // If the model returns the entire variant as a single string, split it.
+  if (typeof v === "string") {
+    const txt = v.trim();
+    const [firstLine, ...rest] = txt.split("\n");
+    const body = rest.join("\n").trim();
+    return { headline: (firstLine || "").trim(), body: body || txt, features: [] };
+  }
+  const headline = String(v?.headline ?? "").trim();
+  const body = String(v?.body ?? "").trim();
+  const features = coerceFeaturesToArray(v?.features);
+  return { headline, body, features };
+}
+
+function normalizeCopyVariants(parsed: any): { signature: CopyVariantObj; concise: CopyVariantObj; extended: CopyVariantObj } | null {
+  if (!parsed || typeof parsed !== "object") return null;
+
+  // Support common alternate keys (small/medium/large, short/medium/long)
+  const signatureRaw =
+    parsed.signature ??
+    parsed.style1 ??
+    parsed.current ??
+    parsed.default ??
+    parsed.medium ??
+    parsed.med ??
+    parsed["2"] ??
+    null;
+
+  const conciseRaw =
+    parsed.concise ??
+    parsed.short ??
+    parsed.small ??
+    parsed.brief ??
+    parsed["3"] ??
+    null;
+
+  const extendedRaw =
+    parsed.extended ??
+    parsed.long ??
+    parsed.large ??
+    parsed.full ??
+    parsed["1"] ??
+    null;
+
+  const signature = normalizeVariantToObj(signatureRaw);
+  const concise = normalizeVariantToObj(conciseRaw);
+  const extended = normalizeVariantToObj(extendedRaw);
+
+  return { signature, concise, extended };
+}
+
 export async function generateListingCopy(galleryId: string) {
   // Use REPLICATE_API_TOKEN from process.env explicitly to ensure it's picked up
   const token = process.env.REPLICATE_API_TOKEN;
@@ -271,39 +340,63 @@ Write the JSON now.
     // Final pass context: Use the exterior if available
     const finalImage = exteriors.length > 0 ? validLinks[selection.findIndex(s => s.id === exteriors[0].id)] : validLinks[0];
 
-    const finalOutput = await runReplicateWithRetry(replicate, REPLICATE_MODEL, {
-      prompt: copywritingPrompt,
-      image: finalImage,
-      max_new_tokens: 1500,
-      temperature: 0.75,
-    });
+    const generateVariantsFromModel = async (attempt: number) => {
+      const strictnessAddon =
+        attempt === 1
+          ? "\n\nIMPORTANT: Your last response was invalid. Output MUST be strict JSON only (no markdown, no prose, no backticks). Use exactly the required keys. Ensure features is an array of strings.\n"
+          : "";
 
-    const resultText = Array.isArray(finalOutput) 
-      ? finalOutput.join("") 
-      : typeof finalOutput === "string"
-        ? finalOutput
-        : JSON.stringify(finalOutput);
+      const output = await runReplicateWithRetry(replicate, REPLICATE_MODEL, {
+        prompt: `${copywritingPrompt}${strictnessAddon}`,
+        image: finalImage,
+        max_new_tokens: 1500,
+        temperature: attempt === 0 ? 0.75 : 0.55,
+      });
 
-    const jsonText = extractJsonBlock(resultText);
-    let parsed: any = null;
-    try {
-      parsed = JSON.parse(jsonText);
-    } catch (e) {
-      console.error("[AI_COPY] Failed to parse JSON:", { jsonText: jsonText.slice(0, 500) });
-      return { success: false, error: "AI returned an invalid response. Please try again." };
-    }
+      const resultText = Array.isArray(output)
+        ? output.join("")
+        : typeof output === "string"
+          ? output
+          : JSON.stringify(output);
 
-    const signature = parsed?.signature;
-    const concise = parsed?.concise;
-    const extended = parsed?.extended;
-    const isValid =
-      signature?.headline && signature?.body && Array.isArray(signature?.features) &&
-      concise?.headline && concise?.body && Array.isArray(concise?.features) &&
-      extended?.headline && extended?.body && Array.isArray(extended?.features);
+      const jsonText = extractJsonBlock(resultText);
+      let parsed: any = null;
+      try {
+        parsed = JSON.parse(jsonText);
+      } catch (e) {
+        console.error("[AI_COPY] Failed to parse JSON:", { preview: jsonText.slice(0, 500) });
+        return null;
+      }
 
-    if (!isValid) {
-      console.error("[AI_COPY] Missing required keys:", { keys: Object.keys(parsed || {}) });
-      return { success: false, error: "AI response was missing required fields. Please try again." };
+      const normalized = normalizeCopyVariants(parsed);
+      if (!normalized) return null;
+
+      const signature = normalizeVariantToObj(normalized.signature);
+      const concise = normalizeVariantToObj(normalized.concise);
+      const extended = normalizeVariantToObj(normalized.extended);
+
+      const isValid =
+        signature.headline && signature.body && Array.isArray(signature.features) &&
+        concise.headline && concise.body && Array.isArray(concise.features) &&
+        extended.headline && extended.body && Array.isArray(extended.features);
+
+      if (!isValid) {
+        console.error("[AI_COPY] Missing required fields:", {
+          keys: Object.keys(parsed || {}),
+          signature: { headline: !!signature.headline, body: !!signature.body, features: Array.isArray(signature.features) },
+          concise: { headline: !!concise.headline, body: !!concise.body, features: Array.isArray(concise.features) },
+          extended: { headline: !!extended.headline, body: !!extended.body, features: Array.isArray(extended.features) },
+        });
+        return null;
+      }
+
+      return { signature, concise, extended };
+    };
+
+    // Attempt 0: normal prompt. Attempt 1: stricter retry.
+    const variantsObj = (await generateVariantsFromModel(0)) ?? (await generateVariantsFromModel(1));
+    if (!variantsObj) {
+      return { success: false, error: "AI returned an invalid format twice. Please click Regenerate." };
     }
 
     const toText = (v: any) =>
@@ -312,9 +405,9 @@ Write the JSON now.
     return {
       success: true,
       variants: {
-        signature: toText(signature),
-        concise: toText(concise),
-        extended: toText(extended),
+        signature: toText(variantsObj.signature),
+        concise: toText(variantsObj.concise),
+        extended: toText(variantsObj.extended),
       }
     };
   } catch (error: any) {
