@@ -12,6 +12,7 @@ import { Hint } from "@/components/ui";
 import { headers } from "next/headers";
 import { Suspense } from "react";
 import { ShellSettings } from "@/components/layout/shell-settings";
+import { startOfTodayInTimeZone } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +63,20 @@ export default async function TenantDashboard() {
     editWhere.clientId = user.clientId;
   }
 
+  // 2. Upcoming-only filter for the booking list (do NOT apply to metrics)
+  const tenantTz =
+    (
+      await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { timezone: true },
+      })
+    )?.timezone || "Australia/Sydney";
+
+  const bookingWhereUpcoming: any = {
+    ...bookingWhere,
+    startAt: { gte: startOfTodayInTimeZone(tenantTz) },
+  };
+
   return (
     <div className="space-y-8 md:space-y-12 w-full max-w-full overflow-x-hidden">
       {/* Title & Subtitle update immediately */}
@@ -89,7 +104,7 @@ export default async function TenantDashboard() {
         <Suspense fallback={<BookingPipelineSkeleton />}>
           <BookingPipelineWrapper 
             tenantId={tenantId} 
-            bookingWhere={bookingWhere} 
+            bookingWhere={bookingWhereUpcoming} 
             user={user}
           />
         </Suspense>

@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { Suspense } from "react";
 import { ShellSettings } from "@/components/layout/shell-settings";
 import { Loader2 } from "lucide-react";
+import { startOfTodayInTimeZone } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,25 @@ async function BookingsDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
   const tenantId = sessionUser.tenantId;
   const tPrisma = (isGlobal && sessionUser.isMasterAdmin ? prisma : await getTenantPrisma()) as any;
 
+  // Tenant timezone (used to ensure "today" starts in local studio timezone)
+  const tenant = await tPrisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: {
+      id: true,
+      timezone: true,
+      businessHours: true,
+      settings: true,
+      sunriseSlotTime: true,
+      duskSlotTime: true,
+      sunriseSlotsPerDay: true,
+      duskSlotsPerDay: true,
+      aiLogisticsEnabled: true,
+    },
+  });
+
+  const tenantTz = tenant?.timezone || "Australia/Sydney";
+  const todayStart = startOfTodayInTimeZone(tenantTz);
+
   const user = {
     name: sessionUser.name || "User",
     role: sessionUser.role || "CLIENT",
@@ -71,7 +91,8 @@ async function BookingsDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
 
   // Visibility Scoping
   const bookingWhere: any = { 
-    deletedAt: null
+    deletedAt: null,
+    startAt: { gte: todayStart },
   };
 
   const canViewAll = sessionUser.role === "TENANT_ADMIN" || sessionUser.role === "ADMIN";
@@ -82,10 +103,10 @@ async function BookingsDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
   }
 
   // Real data fetching
-  const [dbBookings, dbClients, dbServices, dbTeamMembers, dbAgents, tenant] = await Promise.all([
+  const [dbBookings, dbClients, dbServices, dbTeamMembers, dbAgents] = await Promise.all([
     tPrisma.booking.findMany({
       where: bookingWhere,
-      orderBy: { startAt: 'desc' },
+      orderBy: { startAt: 'asc' },
       take: 50,
       select: {
         id: true,
@@ -122,10 +143,6 @@ async function BookingsDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
       where: { deletedAt: null },
       select: { id: true, name: true, clientId: true, avatarUrl: true }
     }),
-    tPrisma.tenant.findUnique({
-      where: { id: tenantId },
-      select: { id: true, businessHours: true, settings: true, sunriseSlotTime: true, duskSlotTime: true, sunriseSlotsPerDay: true, duskSlotsPerDay: true, aiLogisticsEnabled: true }
-    })
   ]);
 
   const customStatuses = (tenant?.settings as any)?.bookingStatuses || [
