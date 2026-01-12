@@ -239,3 +239,18 @@ body {
   letter-spacing: 0.05em;
   white-space: nowrap;
 }
+
+/* Safari border-radius clipping fix (masonry/columns + transformed children)
+   Note: previous gate used -webkit-touch-callout (often iOS-only), so it didn't apply to desktop Safari. */
+@supports (-webkit-mask-image: -webkit-radial-gradient(white, black)) {
+  .safari-rounded-fix {
+    -webkit-mask-image: -webkit-radial-gradient(white, black);
+    mask-image: radial-gradient(white, black);
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-size: 100% 100%;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    will-change: transform;
+  }
+}

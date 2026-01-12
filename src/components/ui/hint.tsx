@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { useGuide } from "../layout/guide-context";
 import { cn } from "@/lib/utils";
 import { HelpCircle } from "lucide-react";
@@ -16,6 +17,7 @@ interface HintProps {
 export function Hint({ title, content, children, position = "top", className }: HintProps) {
   const { showHints } = useGuide();
   const [isVisible, setIsVisible] = useState(false);
+  const [coords, setCoords] = useState<{ left: number; top: number } | null>(null);
 
   if (!showHints) return <>{children}</>;
 
@@ -29,7 +31,13 @@ export function Hint({ title, content, children, position = "top", className }: 
   return (
     <div 
       className={cn("relative inline-block group", className)}
-      onMouseEnter={() => setIsVisible(true)}
+      onMouseEnter={(e) => {
+        const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+        const left = rect.left + rect.width / 2;
+        const top = position === "top" ? rect.top : position === "bottom" ? rect.bottom : rect.top + rect.height / 2;
+        setCoords({ left, top });
+        setIsVisible(true);
+      }}
       onMouseLeave={() => setIsVisible(false)}
     >
       {/* Visual Indicator */}
@@ -42,24 +50,42 @@ export function Hint({ title, content, children, position = "top", className }: 
       {children}
 
       {/* Tooltip */}
-      {isVisible && (
-        <div className={cn(
-          "absolute z-[100] w-64 p-4 rounded-2xl bg-slate-900/95 backdrop-blur-md text-white shadow-2xl animate-in fade-in zoom-in duration-200 pointer-events-none",
-          positionClasses[position]
-        )}>
-          <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">{title}</p>
-          <p className="text-xs font-medium leading-relaxed opacity-90">{content}</p>
-          
-          {/* Arrow */}
-          <div className={cn(
-            "absolute w-2 h-2 bg-slate-900/95 rotate-45",
-            position === "top" && "bottom-[-4px] left-1/2 -translate-x-1/2",
-            position === "bottom" && "top-[-4px] left-1/2 -translate-x-1/2",
-            position === "left" && "right-[-4px] top-1/2 -translate-y-1/2",
-            position === "right" && "left-[-4px] top-1/2 -translate-y-1/2",
-          )} />
-        </div>
-      )}
+      {isVisible && coords
+        ? createPortal(
+            <div
+              className="fixed z-[9999] w-64 pointer-events-none"
+              style={{
+                left: coords.left,
+                top: coords.top,
+                transform:
+                  position === "top"
+                    ? "translate(-50%, calc(-100% - 12px))"
+                    : position === "bottom"
+                      ? "translate(-50%, 12px)"
+                      : position === "left"
+                        ? "translate(calc(-100% - 12px), -50%)"
+                        : "translate(12px, -50%)",
+              }}
+            >
+              <div className="w-64 p-4 rounded-2xl bg-[#b5d0c1]/95 backdrop-blur-md text-slate-900 shadow-2xl animate-in fade-in zoom-in duration-200 border border-white/60">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-700 mb-1">{title}</p>
+                <p className="text-xs font-medium leading-relaxed opacity-90">{content}</p>
+              </div>
+
+              {/* Arrow */}
+              <div
+                className={cn(
+                  "absolute w-2 h-2 bg-[#b5d0c1]/95 rotate-45 border border-white/60",
+                  position === "top" && "bottom-[-4px] left-1/2 -translate-x-1/2",
+                  position === "bottom" && "top-[-4px] left-1/2 -translate-x-1/2",
+                  position === "left" && "right-[-4px] top-1/2 -translate-y-1/2",
+                  position === "right" && "left-[-4px] top-1/2 -translate-y-1/2"
+                )}
+              />
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }

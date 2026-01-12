@@ -101,6 +101,91 @@ export function GalleryPublicViewer({
   const [visibleCount, setVisibleCount] = useState(24);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
+  // Mobile-only header auto-hide on scroll (desktop/tablet unchanged)
+  const [hideHeader, setHideHeader] = useState(false);
+  const lastScrollY = useRef(0);
+
+  // Image selection (images only)
+  const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(() => new Set());
+  const [allImages, setAllImages] = useState<any[] | null>(null);
+  const [isSelectingAll, setIsSelectingAll] = useState(false);
+  const [selectAllLoadedCount, setSelectAllLoadedCount] = useState(0);
+
+  const getAssetKey = (a: any) => String(a?.id || a?.url);
+  const isImageAsset = (a: any) => (a?.type ? a.type === "image" : true);
+
+  const toggleSelectImage = (item: any) => {
+    const key = getAssetKey(item);
+    setSelectedImageIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedImageIds(new Set());
+
+  const ensureAllImagesLoaded = async () => {
+    if (allImages) return allImages;
+
+    setIsSelectingAll(true);
+    setSelectAllLoadedCount(0);
+
+    const collected: any[] = [];
+    const seen = new Set<string>();
+
+    const pushAssets = (list: any[]) => {
+      for (const a of list) {
+        if (!isImageAsset(a)) continue;
+        const key = getAssetKey(a);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        collected.push(a);
+      }
+      setSelectAllLoadedCount(collected.length);
+    };
+
+    try {
+      // Include already-loaded assets first
+      pushAssets(assets);
+
+      // Then page through the rest
+      let nextCursor: string | null = cursor ?? null;
+
+      // If we have no cursor but we might not have all pages (initialCursor may be null),
+      // fetch from the start to ensure completeness.
+      if (!nextCursor) {
+        const first = await getGalleryAssets(gallery.id, 24);
+        if (first.success) {
+          pushAssets(first.assets || []);
+          nextCursor = first.nextCursor || null;
+        }
+      }
+
+      while (nextCursor) {
+        const res = await getGalleryAssets(gallery.id, 24, nextCursor);
+        if (!res.success) break;
+        pushAssets(res.assets || []);
+        nextCursor = res.nextCursor || null;
+      }
+
+      setAllImages(collected);
+      return collected;
+    } finally {
+      setIsSelectingAll(false);
+    }
+  };
+
+  const handleSelectAllImages = async () => {
+    const imgs = await ensureAllImagesLoaded();
+    const next = new Set<string>();
+    imgs.forEach((a) => next.add(getAssetKey(a)));
+    setSelectedImageIds(next);
+  };
+
+  const selectedCount = selectedImageIds.size;
+
   // 1. Fetch user session client-side after hydration to avoid blocking SSR
   useEffect(() => {
     if (!initialUser) {
@@ -118,6 +203,29 @@ export function GalleryPublicViewer({
         .catch(err => console.error("Session fetch error:", err));
     }
   }, [initialUser]);
+
+  // Mobile-only: hide header on scroll down, show on scroll up
+  useEffect(() => {
+    const onScroll = () => {
+      // Only apply on phone widths; keep web/tablet perfect.
+      if (window.innerWidth >= 640) return;
+
+      const y = window.scrollY || 0;
+      if (y < 80) {
+        setHideHeader(false);
+        lastScrollY.current = y;
+        return;
+      }
+
+      if (y > lastScrollY.current + 10) setHideHeader(true);
+      else if (y < lastScrollY.current - 10) setHideHeader(false);
+
+      lastScrollY.current = y;
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   // Load more assets via pagination
   const loadMoreAssets = async () => {
@@ -501,11 +609,21 @@ export function GalleryPublicViewer({
       )}
 
       {/* Public Header */}
-      <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-100 px-6 py-4">
+      <header
+        className={cn(
+          "sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-100 px-6 py-4 transition-transform duration-300",
+          hideHeader ? "-translate-y-full sm:translate-y-0" : "translate-y-0"
+        )}
+      >
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button 
-              onClick={() => router.back()}
+              onClick={() => {
+                const role = user?.role;
+                const isAdminLike = role === "TENANT_ADMIN" || role === "ADMIN" || role === "AGENT";
+                if (isAdminLike) router.push("/");
+                else router.back();
+              }}
               className="h-10 w-10 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center hover:bg-slate-100 hover:text-slate-900 transition-all mr-2"
               title="Back"
             >
@@ -543,16 +661,85 @@ export function GalleryPublicViewer({
             )}
 
             {canDownload && (
-              <button 
-                onClick={() => {
-                  setDownloadAssets(assets);
-                  setIsDownloadManagerOpen(true);
-                }}
-                className="h-10 px-6 rounded-full bg-slate-900 text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-slate-900/10 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Download All
-              </button>
+              <>
+                {/* Selection controls (images only, not on shared link view) */}
+                {!isShared && (
+                  <div className="hidden md:flex items-center gap-2 mr-2">
+                    <button
+                      onClick={handleSelectAllImages}
+                      disabled={isSelectingAll}
+                      className={cn(
+                        "h-10 px-4 rounded-full border text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                        isSelectingAll
+                          ? "bg-slate-50 text-slate-400 border-slate-200 cursor-wait"
+                          : "bg-white text-slate-700 border-slate-200 hover:border-[#b5d0c1] hover:text-slate-900"
+                      )}
+                      title="Select all images"
+                    >
+                      <BoxSelect className="h-3.5 w-3.5" />
+                      {isSelectingAll ? `Selecting… ${selectAllLoadedCount}` : "Select All"}
+                    </button>
+
+                    {selectedCount > 0 && (
+                      <button
+                        onClick={clearSelection}
+                        className="h-10 px-4 rounded-full bg-slate-50 text-slate-600 border border-slate-200 text-[11px] font-black uppercase tracking-widest hover:bg-slate-100 transition-all"
+                        title="Clear selection"
+                      >
+                        Selected: {selectedCount} · Clear
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Download Selected */}
+                {!isShared && (
+                  <button
+                    onClick={async () => {
+                      if (selectedCount === 0) return;
+                      // Prefer currently-loaded items; only fetch-all if we don't have the selected set locally.
+                      const localImages = allImages || assets.filter((a) => isImageAsset(a));
+                      const localMap = new Map<string, any>();
+                      localImages.forEach((a) => localMap.set(getAssetKey(a), a));
+
+                      const hasAllSelectedLocally = Array.from(selectedImageIds).every((id) => localMap.has(id));
+                      const sourceImages = hasAllSelectedLocally ? localImages : await ensureAllImagesLoaded();
+
+                      const byId = new Map<string, any>();
+                      sourceImages.forEach((a) => byId.set(getAssetKey(a), a));
+                      const selected = Array.from(selectedImageIds)
+                        .map((id) => byId.get(id))
+                        .filter(Boolean);
+
+                      setDownloadAssets(selected);
+                      setIsDownloadManagerOpen(true);
+                    }}
+                    disabled={selectedCount === 0 || isSelectingAll}
+                    className={cn(
+                      "hidden md:flex h-10 px-6 rounded-full text-[11px] font-black uppercase tracking-widest shadow-lg transition-all items-center gap-2",
+                      selectedCount === 0 || isSelectingAll
+                        ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
+                        : "bg-white text-slate-900 border border-slate-200 hover:scale-105 active:scale-95"
+                    )}
+                    title="Download selected images"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Download Selected
+                  </button>
+                )}
+
+                {/* Download All */}
+                <button 
+                  onClick={() => {
+                    setDownloadAssets(assets);
+                    setIsDownloadManagerOpen(true);
+                  }}
+                  className="h-10 px-6 rounded-full bg-slate-900 text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-slate-900/10 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Download All
+                </button>
+              </>
             )}
             {!isShared && (
               <button 
@@ -708,11 +895,18 @@ export function GalleryPublicViewer({
             </div>
           ) : (
             <>
-              <div className="columns-1 sm:columns-2 lg:columns-3 gap-8">
+              <div className="columns-2 sm:columns-2 lg:columns-3 gap-4 sm:gap-8">
                 {combinedMedia.slice(0, visibleCount).map((item: any, idx: number) => (
+                  (() => {
+                    const isSelectableImage = !isShared && item.type === "image";
+                    const isSelected = isSelectableImage && selectedImageIds.has(getAssetKey(item));
+                    return (
                   <div 
                     key={item.id || idx} 
-                    className="break-inside-avoid relative rounded-[32px] overflow-hidden bg-slate-50 cursor-zoom-in border border-slate-100 group transition-all duration-500 hover:shadow-2xl hover:shadow-slate-200 mb-8"
+                    className={cn(
+                      "break-inside-avoid relative rounded-[32px] overflow-hidden bg-slate-50 cursor-zoom-in border border-slate-100 group transition-all duration-500 hover:shadow-2xl hover:shadow-slate-200 mb-4 sm:mb-8",
+                      isSelected && "border-transparent"
+                    )}
                     onClick={() => {
                       if (item.type === "video") {
                         setSelectedVideo(item);
@@ -722,6 +916,38 @@ export function GalleryPublicViewer({
                       }
                     }}
                   >
+                    {/* Select toggle (images only) - top-left, replaces the old tag pill */}
+                    {isSelectableImage && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleSelectImage(item);
+                        }}
+                        className={cn(
+                          "absolute top-5 left-5 z-40 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[9px] font-black uppercase tracking-widest transition-all border opacity-0 group-hover:opacity-100",
+                          isSelected
+                            ? "bg-[#b5d0c1]/95 border-white/60 text-slate-900 shadow-lg"
+                            : "bg-white/30 backdrop-blur-md border-white/30 text-white hover:bg-white/40"
+                        )}
+                        title="Select image"
+                        aria-label="Select image"
+                      >
+                        {isSelected ? (
+                          <Check className="h-3.5 w-3.5" />
+                        ) : (
+                          <BoxSelect className="h-3.5 w-3.5" />
+                        )}
+                        Select image
+                      </button>
+                    )}
+
+                    {/* Selected outline (thicker + Safari-safe rounded corners) */}
+                    {isSelected && (
+                      <div
+                        className="pointer-events-none absolute inset-0 z-20 rounded-[32px] border-[6px] border-[#b5d0c1]"
+                      />
+                    )}
+
                     {item.type === "video" ? (
                       <div 
                         className="h-full w-full bg-slate-950 flex items-center justify-center relative group/vid aspect-video rounded-[32px] overflow-hidden"
@@ -765,18 +991,9 @@ export function GalleryPublicViewer({
                       />
                     )}
                     
-                    <div className="absolute inset-0 bg-slate-900/0 group-hover:bg-slate-900/40 transition-all duration-300 pointer-events-none" />
+                    <div className="absolute inset-0 rounded-[32px] bg-slate-900/0 group-hover:bg-slate-900/40 transition-all duration-300 pointer-events-none" />
                     
-                    {/* Tag (Top Left - Hover Only) */}
-                    {!isShared && (
-                      <div className="absolute top-6 left-6 z-30 pointer-events-none">
-                        <div className="px-3 py-1 bg-white/10 backdrop-blur-md rounded-full border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <p className="text-[9px] font-black text-white uppercase tracking-widest">
-                            {item.type === "video" ? "FILM" : item.folderName}
-                          </p>
-                        </div>
-                      </div>
-                    )}
+                    {/* Removed: old top-left tag pill (e.g. “PRODUCTION LINK”) per new selection UI */}
 
                     {/* Status Badges (Bottom Left - Hover Only) */}
                     {!isShared && requestedFileUrls.includes(item.url) && (
@@ -852,6 +1069,8 @@ export function GalleryPublicViewer({
                       </div>
                     </div>
                   </div>
+                    );
+                  })()
                 ))}
               </div>
               
@@ -1844,7 +2063,7 @@ function ProgressiveImage({ src, alt, className, getImageUrl, priority, directUr
 
   return (
     <div 
-      className="relative w-full overflow-hidden rounded-[32px] bg-slate-50"
+      className="relative w-full overflow-hidden rounded-[32px] bg-slate-50 safari-rounded-fix"
       style={{ aspectRatio: '3/2' }}
     >
       <Image 

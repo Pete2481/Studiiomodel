@@ -18,6 +18,7 @@ import {
   Upload
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatDropboxUrl } from "@/lib/utils";
 import { ClientDrawer } from "./client-drawer";
 import { AgentDrawer } from "./agent-drawer";
 import { ImpersonateClientButton } from "./impersonate-client-button";
@@ -31,6 +32,8 @@ interface ClientPageContentProps {
   isActionLocked?: boolean;
 }
 
+type SortMode = "name" | "mostUsed" | "mostBookings" | "mostGalleries" | "newest";
+
 export function ClientPageContent({ 
   initialClients, 
   services,
@@ -42,6 +45,7 @@ export function ClientPageContent({
   const [selectedClient, setSelectedClient] = useState<any>(null);
   const [clients, setClients] = useState(initialClients);
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortMode, setSortMode] = useState<SortMode>("name");
   const [isActionsOpen, setIsActionsOpen] = useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -181,11 +185,41 @@ export function ClientPageContent({
     }
   };
 
-  const filteredClients = clients.filter(c => 
-    c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.businessName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredClients = clients.filter(c => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      String(c.name || "").toLowerCase().includes(q) ||
+      String(c.businessName || "").toLowerCase().includes(q) ||
+      String(c.email || "").toLowerCase().includes(q)
+    );
+  });
+
+  const sortedClients = [...filteredClients].sort((a, b) => {
+    const aBookings = Number(a.bookingCount ?? a.bookings ?? 0);
+    const bBookings = Number(b.bookingCount ?? b.bookings ?? 0);
+    const aGalleries = Number(a.galleryCount ?? a.galleries ?? 0);
+    const bGalleries = Number(b.galleryCount ?? b.galleries ?? 0);
+
+    if (sortMode === "mostBookings") return bBookings - aBookings;
+    if (sortMode === "mostGalleries") return bGalleries - aGalleries;
+    if (sortMode === "mostUsed") {
+      const aScore = aBookings + aGalleries;
+      const bScore = bBookings + bGalleries;
+      if (bScore !== aScore) return bScore - aScore;
+      if (bBookings !== aBookings) return bBookings - aBookings;
+      if (bGalleries !== aGalleries) return bGalleries - aGalleries;
+    }
+    if (sortMode === "newest") {
+      const aCreated = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bCreated = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bCreated - aCreated;
+    }
+
+    const aName = String(a.businessName || a.name || "").toLowerCase();
+    const bName = String(b.businessName || b.name || "").toLowerCase();
+    return aName.localeCompare(bName);
+  });
 
   return (
     <div className="space-y-6">
@@ -201,6 +235,20 @@ export function ClientPageContent({
               onChange={(e) => setSearchQuery(e.target.value)}
               className="ui-input w-80 pl-11" 
             />
+          </div>
+          <div className="relative">
+            <select
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value as SortMode)}
+              className="ui-input w-56 pr-10 text-[12px] font-bold"
+              aria-label="Sort clients"
+            >
+              <option value="name">Sort: Name</option>
+              <option value="mostUsed">Sort: Most used</option>
+              <option value="mostBookings">Sort: Most bookings</option>
+              <option value="mostGalleries">Sort: Most galleries</option>
+              <option value="newest">Sort: Newest</option>
+            </select>
           </div>
           <div className="px-4 py-2 bg-white border border-slate-200 rounded-full text-[10px] font-bold text-slate-400 uppercase tracking-widest shadow-sm">
             Total {clients.length}
@@ -270,7 +318,7 @@ export function ClientPageContent({
 
       {/* Client List */}
       <div className="space-y-3">
-        {filteredClients.map((client) => (
+        {sortedClients.map((client) => (
           <div 
             key={client.id} 
             className="group grid grid-cols-1 lg:grid-cols-[2fr_1.5fr_1fr_1fr_1fr_1.5fr_0.5fr] gap-4 items-center px-8 py-5 bg-white rounded-[32px] border border-slate-100 hover:border-emerald-200 hover:shadow-xl hover:shadow-slate-100 transition-all cursor-pointer relative"
@@ -279,8 +327,8 @@ export function ClientPageContent({
             {/* Profile */}
             <div className="flex items-center gap-4">
               <div className="h-12 w-12 rounded-2xl overflow-hidden bg-slate-100 shrink-0 shadow-inner flex items-center justify-center">
-                {client.avatar ? (
-                  <img src={client.avatar} alt={client.name} className="h-full w-full object-cover" />
+                {client.avatarUrl ? (
+                  <img src={formatDropboxUrl(client.avatarUrl)} alt={client.name} className="h-full w-full object-cover" />
                 ) : (
                   <span className="text-lg font-bold text-slate-300">{client.name[0]}</span>
                 )}
@@ -303,8 +351,8 @@ export function ClientPageContent({
 
             {/* Stats */}
             <div className="space-y-0.5">
-              <p className="text-xs font-bold text-slate-700">{client.bookings} Bookings</p>
-              <p className="text-[10px] text-slate-400 font-medium">{client.galleries} Galleries</p>
+              <p className="text-xs font-bold text-slate-700 tabular-nums">{Number(client.bookingCount ?? client.bookings ?? 0)} Bookings</p>
+              <p className="text-[10px] text-slate-400 font-medium tabular-nums">{Number(client.galleryCount ?? client.galleries ?? 0)} Galleries</p>
             </div>
 
             {/* Portal Access */}
@@ -387,7 +435,7 @@ export function ClientPageContent({
             </div>
           </div>
         ))}
-        {filteredClients.length === 0 && (
+        {sortedClients.length === 0 && (
           <div className="py-20 text-center text-slate-400 text-sm font-medium">
             No clients found matching your search.
           </div>

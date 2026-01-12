@@ -55,7 +55,7 @@ export default async function MasterReportsPage() {
             value={totalTenants.toString()} 
             label="Total Ecosystem" 
             icon={<TrendingUp className="h-5 w-5" />} 
-            color="indigo" 
+            color="emerald" 
           />
           <ReportStatCard 
             title="User Network" 
@@ -101,7 +101,7 @@ export default async function MasterReportsPage() {
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Popular Tools & Workflows</p>
             </div>
             <div className="flex-1 flex flex-col justify-center space-y-6">
-              <EngagementBar label="Gallery Views" value={85} color="bg-indigo-500" />
+              <EngagementBar label="Gallery Views" value={85} color="bg-emerald-500" />
               <EngagementBar label="Edit Requests" value={45} color="bg-rose-500" />
               <EngagementBar label="Social Cropper" value={30} color="bg-emerald-500" />
               <EngagementBar label="Video Notes" value={15} color="bg-amber-500" />
@@ -127,7 +127,6 @@ export default async function MasterReportsPage() {
 
 function ReportStatCard({ title, value, label, icon, color }: any) {
   const colors: any = {
-    indigo: "from-indigo-500/10 text-indigo-600 border-indigo-100",
     emerald: "from-emerald-500/10 text-emerald-600 border-emerald-100",
     amber: "from-amber-500/10 text-amber-600 border-amber-100",
     rose: "from-rose-500/10 text-rose-600 border-rose-100",
