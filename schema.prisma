@@ -36,6 +36,8 @@ model User {
   clientsCreated   Client[]          @relation("ClientCreatedBy")
   clientsUpdated   Client[]          @relation("ClientUpdatedBy")
   editRequests     EditRequest[]     @relation("EditRequestRequestedBy")
+
+  newslettersCreated Newsletter[]    @relation("NewsletterCreatedBy")
 }
 
 model Tenant {
@@ -150,6 +152,7 @@ model Tenant {
   editRequests      EditRequest[]
   editTags          EditTag[]
   agents            Agent[]             // All agents under this tenant
+  newsletterRecipients NewsletterRecipient[]
 
   @@index([slug])
   @@index([deletedAt])
@@ -832,4 +835,56 @@ model Agent {
   @@index([tenantId])
   @@index([clientId])
   @@unique([tenantId, email])
+}
+
+enum NewsletterStatus {
+  DRAFT
+  SENT
+}
+
+enum NewsletterRecipientStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+// Singleton-style config row used for global templates (Master Admin).
+model SystemConfig {
+  id                 String @id @default("system")
+  welcomeEmailSubject String @default("Welcome to Studiio")
+  welcomeEmailBlocks  Json   @default("[]")
+  updatedAt          DateTime @updatedAt
+}
+
+model Newsletter {
+  id        String           @id @default(cuid())
+  subject   String
+  blocks    Json             @default("[]")
+  status    NewsletterStatus @default(DRAFT)
+  sentAt    DateTime?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  createdByUserId String?
+  createdBy       User?      @relation("NewsletterCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  recipients NewsletterRecipient[]
+}
+
+model NewsletterRecipient {
+  id           String                   @id @default(cuid())
+  newsletterId String
+  tenantId     String?
+  email        String
+  status       NewsletterRecipientStatus @default(PENDING)
+  error        String?                  @db.Text
+  sentAt       DateTime?
+  createdAt    DateTime                 @default(now())
+
+  newsletter Newsletter @relation(fields: [newsletterId], references: [id], onDelete: Cascade)
+  tenant     Tenant?    @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([newsletterId])
+  @@index([status])
+  @@index([tenantId])
 }

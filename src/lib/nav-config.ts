@@ -14,6 +14,7 @@ export type Module =
   | "reminders"
   | "newsletter"
   | "agents"
+  | "communications"
   | "settings";
 
 export interface NavItem {
@@ -98,6 +99,16 @@ export const UNIFIED_NAV_CONFIG: NavSection[] = [
       { label: "All Studios", href: "/master/tenants", icon: "Building2", module: "tenants" },
       { label: "Network Analytics", href: "/master/reports", icon: "TrendingUp", module: "dashboard" },
       { label: "New Studio", href: "/master/tenants/new", icon: "Plus", module: "tenants" },
+      {
+        label: "Communications",
+        href: "/master/communications/welcome",
+        icon: "Newspaper",
+        module: "communications",
+        items: [
+          { label: "Welcome Email", href: "/master/communications/welcome", module: "communications" },
+          { label: "Newsletters", href: "/master/communications/newsletters", module: "communications" },
+        ],
+      },
     ],
   },
 

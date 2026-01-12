@@ -134,6 +134,93 @@ export class NotificationService {
     }).join("");
   }
 
+  private applyTags(input: string, data: Record<string, string> = {}) {
+    let out = input || "";
+    Object.entries(data).forEach(([tag, val]) => {
+      out = out.replaceAll(tag, val);
+    });
+    return out;
+  }
+
+  /**
+   * Sends an email using the standard Studiio base template + block content.
+   * This is used for Master Admin communications (welcome template + newsletters).
+   */
+  async sendCustomTemplateEmail(params: {
+    tenant: any;
+    toEmail: string;
+    subject: string;
+    title: string;
+    blocks: any[];
+    data?: Record<string, string>;
+    headers?: Record<string, string>;
+    sendAsMaster?: boolean;
+  }) {
+    const {
+      tenant,
+      toEmail,
+      subject,
+      title,
+      blocks,
+      data = {},
+      headers,
+      sendAsMaster = false,
+    } = params;
+
+    if (!toEmail) return;
+
+    const contentHtml = this.blocksToHtml(blocks || [], data);
+    const html = this.getBaseTemplate(contentHtml, tenant, title);
+
+    await emailService.sendEmail({
+      // Master sending ensures it comes from team@studiio.au (and not tenant SMTP settings)
+      tenantId: sendAsMaster ? "MASTER" : (tenant?.id || "MASTER"),
+      to: toEmail,
+      subject: this.applyTags(subject, data),
+      html,
+      fromName: "Studiio",
+      replyTo: "team@studiio.au",
+      headers,
+    });
+  }
+
+  /**
+   * Global welcome email sent when a new tenant is created in Master Admin.
+   * Uses `SystemConfig.welcomeEmailSubject` and `SystemConfig.welcomeEmailBlocks`.
+   */
+  async sendTenantWelcomeEmail(params: { tenantId: string; toEmail: string; toName?: string | null }) {
+    const { tenantId, toEmail, toName } = params;
+    if (!tenantId || !toEmail) return;
+
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) return;
+
+    const cfg = await prisma.systemConfig.findUnique({
+      where: { id: "system" },
+      select: { welcomeEmailSubject: true, welcomeEmailBlocks: true },
+    });
+
+    const subject = cfg?.welcomeEmailSubject || "Welcome to Studiio";
+    const blocks = (cfg?.welcomeEmailBlocks as any) || [];
+
+    await this.sendCustomTemplateEmail({
+      tenant,
+      toEmail,
+      subject,
+      title: "Welcome",
+      blocks,
+      data: {
+        "@user_name": (toName || "there").toString(),
+        "@studio_name": tenant.name,
+      },
+      sendAsMaster: true,
+      headers: {
+        "Precedence": "transactional",
+        "X-Entity-Ref-ID": `tenant-welcome-${tenantId}`,
+      },
+    });
+  }
+
   // 1. New Booking Notification (to Admin)
   async sendNewBookingNotification(bookingId: string) {
     const booking = await prisma.booking.findUnique({

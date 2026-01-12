@@ -112,7 +112,11 @@ export async function POST(request: Request) {
     // 6. SEND WELCOME EMAIL
     if (contactEmail) {
       try {
-        await notificationService.sendTeamMemberWelcome(contactUserId as string);
+        await notificationService.sendTenantWelcomeEmail({
+          tenantId: tenant.id,
+          toEmail: contactEmail.toLowerCase().trim(),
+          toName: contactName || name,
+        });
       } catch (e) {
         console.error("[CreateTenant] Failed to send welcome email:", e);
       }
