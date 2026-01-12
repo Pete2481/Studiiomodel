@@ -20,6 +20,7 @@ export type Module =
   | "reminders"
   | "newsletter"
   | "agents"
+  | "communications"
   | "settings";
 
 export interface UserContext {
@@ -96,7 +97,10 @@ export class PermissionService {
 
     // ... existing Master Mode logic ...
     if (isMasterMode) {
-      return role === "MASTER_ADMIN" && (module === "tenants" || module === "dashboard");
+      return (
+        role === "MASTER_ADMIN" &&
+        (module === "tenants" || module === "dashboard" || module === "communications")
+      );
     }
 
     if (role === "MASTER_ADMIN") return true;
