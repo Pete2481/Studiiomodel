@@ -177,9 +177,14 @@ export async function GET(
     const billToY = y;
     drawText("INVOICE TO", margin, y, 10, bold, rgb(0.5, 0.5, 0.5));
     y -= 18;
-    drawText(invoice.client.businessName || invoice.client.name, margin, y, 14, bold);
+    const recipientName =
+      (invoice as any).invoiceRecipientName ||
+      invoice.client?.businessName ||
+      invoice.client?.name ||
+      "One-Time Client";
+    drawText(recipientName, margin, y, 14, bold);
     y -= 16;
-    if (invoice.client.businessName && invoice.client.name) {
+    if (invoice.client?.businessName && invoice.client?.name) {
       drawText(invoice.client.name, margin, y, 11);
       y -= 14;
     }

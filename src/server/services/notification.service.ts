@@ -330,7 +330,8 @@ export class NotificationService {
       }
     });
 
-    if (!invoice || !invoice.client.email) return;
+    const toEmail = invoice?.invoiceEmailOverride || invoice?.client?.email;
+    if (!invoice || !toEmail) return;
 
     const total = invoice.lineItems.reduce((acc, item) => acc + (Number(item.unitPrice) * item.quantity), 0);
     const taxRate = Number(invoice.taxRate);
@@ -361,7 +362,7 @@ export class NotificationService {
 
     await emailService.sendEmail({
       tenantId: invoice.tenantId,
-      to: invoice.client.email,
+      to: toEmail,
       subject: `Invoice #${invoice.number} from ${invoice.tenant.name}`,
       html
     });
@@ -378,7 +379,8 @@ export class NotificationService {
       }
     });
 
-    if (!invoice || !invoice.client.email) return;
+    const toEmail = invoice?.invoiceEmailOverride || invoice?.client?.email;
+    if (!invoice || !toEmail) return;
 
     const subtotal = invoice.lineItems.reduce((acc, item) => acc + (Number(item.unitPrice) * item.quantity), 0);
     const discount = Number(invoice.discount);
@@ -418,7 +420,7 @@ export class NotificationService {
 
     await emailService.sendEmail({
       tenantId: invoice.tenantId,
-      to: invoice.client.email,
+      to: toEmail,
       subject: `REMINDER: Invoice #${invoice.number} is outstanding`,
       html
     });
@@ -570,12 +572,14 @@ export class NotificationService {
       return;
     }
 
-    if (!gallery.client.email) {
-      console.log(`[DEBUG] Client ${gallery.client.id} has no email`);
+    const toEmail = gallery.deliveryEmail || (gallery as any).otcEmail || gallery.client?.email;
+    const recipientName = (gallery as any).otcName || gallery.client?.name || "there";
+    if (!toEmail) {
+      console.log(`[DEBUG] Gallery ${gallery.id} has no recipient email (client/otc/deliveryEmail missing)`);
       return;
     }
 
-    console.log(`[DEBUG] Sending gallery notification to ${gallery.client.email}`);
+    console.log(`[DEBUG] Sending gallery notification to ${toEmail}`);
     if (gallery.agent?.email) {
       console.log(`[DEBUG] CC'ing Lead Agent: ${gallery.agent.email}`);
     }
@@ -586,7 +590,7 @@ export class NotificationService {
 
     const html = this.getBaseTemplate(`
       <h1>Gallery Ready</h1>
-      <p style="color: #64748b; font-size: 16px; margin-top: 8px;">Hi ${gallery.client.name}, your gallery for <strong>${gallery.property.name}</strong> is now ready for viewing and download.</p>
+      <p style="color: #64748b; font-size: 16px; margin-top: 8px;">Hi ${recipientName}, your gallery for <strong>${gallery.property.name}</strong> is now ready for viewing and download.</p>
       
       <div class="divider"></div>
 
@@ -623,13 +627,13 @@ export class NotificationService {
 
     await emailService.sendEmail({
       tenantId: gallery.tenantId,
-      to: gallery.client.email,
+      to: toEmail,
       subject: `Ready: ${gallery.property.name}`,
       html
     });
 
     // Also notify the Lead Agent if they have a separate email
-    if (gallery.agent?.email && gallery.agent.email !== gallery.client.email) {
+    if (gallery.agent?.email && gallery.agent.email !== toEmail) {
       await emailService.sendEmail({
         tenantId: gallery.tenantId,
         to: gallery.agent.email,

@@ -106,8 +106,12 @@ async function GalleriesDataWrapper({ sessionUser, isGlobal, page }: { sessionUs
   ]);
 
   const galleries = dbGalleries.map((g: any) => ({
-    id: String(g.id), title: String(g.title), clientId: String(g.clientId), bookingId: g.bookingId ? String(g.bookingId) : undefined, agentId: g.agentId ? String(g.agentId) : undefined,
-    property: String(g.property?.name || g.title), client: String(g.client?.businessName || g.client?.name || "Unknown"), status: String(g.status), isLocked: (g as any).isLocked, watermarkEnabled: (g as any).watermarkEnabled, bannerImageUrl: g.bannerImageUrl, metadata: g.metadata, serviceIds: g.services.map((s: any) => s.service.id), mediaCount: Number((g.metadata as any)?.imageCount || 0), videoCount: (g.metadata as any)?.videoLinks?.length || 0, favoriteCount: g.favorites.length, photographers: g.booking?.assignments?.map((a: any) => a.teamMember.displayName).join(", ") || "No team assigned", invoice: g.invoices[0] || null, createdAt: g.createdAt,
+    id: String(g.id), title: String(g.title), clientId: g.clientId ? String(g.clientId) : "", bookingId: g.bookingId ? String(g.bookingId) : undefined, agentId: g.agentId ? String(g.agentId) : undefined,
+    otcName: (g as any).otcName || null,
+    otcEmail: (g as any).otcEmail || null,
+    otcPhone: (g as any).otcPhone || null,
+    otcNotes: (g as any).otcNotes || null,
+    property: String(g.property?.name || g.title), client: String(g.client?.businessName || g.client?.name || (g as any).otcName || "One-Time Client"), status: String(g.status), isLocked: (g as any).isLocked, watermarkEnabled: (g as any).watermarkEnabled, bannerImageUrl: g.bannerImageUrl, metadata: g.metadata, serviceIds: g.services.map((s: any) => s.service.id), mediaCount: Number((g.metadata as any)?.imageCount || 0), videoCount: (g.metadata as any)?.videoLinks?.length || 0, favoriteCount: g.favorites.length, photographers: g.booking?.assignments?.map((a: any) => a.teamMember.displayName).join(", ") || "No team assigned", invoice: g.invoices[0] || null, createdAt: g.createdAt,
     cover: formatDropboxUrl(g.bannerImageUrl || String(g.media[0]?.thumbnailUrl || g.media[0]?.url || "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80"))
   }));
 

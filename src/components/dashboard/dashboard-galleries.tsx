@@ -8,11 +8,12 @@ import { Sparkles, FileText } from "lucide-react";
 import { AIListingModal } from "../modules/galleries/ai-listing-modal";
 import { GalleryDrawer } from "../modules/galleries/gallery-drawer";
 import { GalleryStatusDropdown } from "../modules/galleries/gallery-status-dropdown";
-import { deleteGallery, notifyGalleryClient, updateGalleryStatus } from "@/app/actions/gallery";
+import { deleteGallery, notifyGalleryClient, refreshGalleryCounts, updateGalleryStatus } from "@/app/actions/gallery";
 import Link from "next/link";
 import { Hint } from "@/components/ui";
 import { Bell } from "lucide-react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 
 interface DashboardGalleriesProps {
   initialGalleries: any[];
@@ -25,6 +26,7 @@ export function DashboardGalleries({
   user,
   isActionLocked = false
 }: DashboardGalleriesProps) {
+  const router = useRouter();
   const [galleries, setGalleries] = useState(initialGalleries);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedGallery, setSelectedGallery] = useState<any>(null);
@@ -70,6 +72,26 @@ export function DashboardGalleries({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [openMenuId]);
+
+  // Best-effort background refresh: update counts for visible galleries that still show 0.
+  useEffect(() => {
+    const candidates = (galleries || [])
+      .filter((g: any) => Number(g?.mediaCount || 0) === 0 && (g?.metadata?.dropboxLink || (g?.metadata?.imageFolders?.length || 0) > 0))
+      .map((g: any) => String(g.id))
+      .slice(0, 12);
+    if (candidates.length === 0) return;
+
+    const t = window.setTimeout(async () => {
+      try {
+        const res = await refreshGalleryCounts(candidates);
+        if (res?.success) router.refresh();
+      } catch (e) {
+        // non-blocking
+      }
+    }, 700);
+
+    return () => window.clearTimeout(t);
+  }, [galleries, router]);
 
   const handleCreate = () => {
     setSelectedGallery(null);

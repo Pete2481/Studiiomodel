@@ -118,6 +118,10 @@ model Tenant {
   // Calendar Subscription Security
   calendarSecret      String?          @unique @default(cuid())
 
+  // Legacy External Calendar Fields (kept to avoid data-loss on deploy)
+  externalCalendarSyncEnabled Boolean?
+  externalCalendarUrl         String?
+
   // Stripe Subscription Engine
   stripeCustomerId      String?          @unique
   stripeSubscriptionId  String?          @unique
@@ -243,7 +247,7 @@ model TeamMember {
 model Property {
   id             String                    @id @default(cuid())
   tenantId       String
-  clientId       String
+  clientId       String?
   name           String
   slug           String
   addressLine1   String?
@@ -262,7 +266,7 @@ model Property {
   updatedBy      String?
   bookings       Booking[]
   galleries      Gallery[]
-  client         Client                    @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  client         Client?                   @relation(fields: [clientId], references: [id], onDelete: Restrict)
   tenant         Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   propertyAgents PropertyAgentAssignment[]
   createdByUser  User?                     @relation("PropertyCreatedBy", fields: [createdBy], references: [id])
@@ -295,7 +299,7 @@ model PropertyAgentAssignment {
 model Gallery {
   id            String            @id @default(cuid())
   tenantId      String
-  clientId      String
+  clientId      String?
   propertyId    String
   title         String
   status        GalleryStatus     @default(DRAFT)
@@ -310,12 +314,17 @@ model Gallery {
   notifyClient  Boolean           @default(true)
   isLocked      Boolean           @default(false)
   watermarkEnabled Boolean         @default(false)
+  // OTC (One-Time Client) fields (no full Client record)
+  otcName       String?
+  otcEmail      String?
+  otcPhone      String?
+  otcNotes      String?
   deletedAt     DateTime?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
   createdBy     String?
   updatedBy     String?
-  client        Client            @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  client        Client?           @relation(fields: [clientId], references: [id], onDelete: Restrict)
   property      Property          @relation(fields: [propertyId], references: [id], onDelete: Restrict)
   tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   bookingId     String?
@@ -408,6 +417,11 @@ model Booking {
   internalNotes     String?
   propertyStatus    String?             // New field for property access status (e.g. "Keys at office")
   metadata          Json                @default("{}")
+  // OTC (One-Time Client) fields (no full Client record)
+  otcName           String?
+  otcEmail          String?
+  otcPhone          String?
+  otcNotes          String?
 
   // Special Slot Handling
   isPlaceholder     Boolean             @default(false)
@@ -660,7 +674,7 @@ model GalleryService {
 model Invoice {
   id               String        @id @default(cuid())
   tenantId         String
-  clientId         String
+  clientId         String?
   bookingId        String?
   galleryId        String?
   number           String
@@ -680,12 +694,15 @@ model Invoice {
   viewedAt         DateTime?
   lastReminderSentAt DateTime?
   invoiceTerms     String?       @db.Text
+  // OTC invoice recipient override (for One-Time Clients without a Client record)
+  invoiceEmailOverride String?
+  invoiceRecipientName String?
   deletedAt        DateTime?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
   tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  client    Client            @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  client    Client?           @relation(fields: [clientId], references: [id], onDelete: Restrict)
   booking   Booking?          @relation(fields: [bookingId], references: [id])
   gallery   Gallery?          @relation(fields: [galleryId], references: [id])
   lineItems InvoiceLineItem[]

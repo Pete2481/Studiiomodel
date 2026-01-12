@@ -26,6 +26,10 @@ export class BookingService {
       id, 
       title, 
       clientId, 
+      otcName,
+      otcEmail,
+      otcPhone,
+      otcNotes,
       address, 
       startAt,
       endAt,
@@ -192,6 +196,11 @@ export class BookingService {
       }
     }
 
+    // OTC validation: allow bookings without a Client record, but require an OTC name.
+    if (!isBlocked && !clientId && !(otcName && String(otcName).trim())) {
+      throw new Error("OTC name is required when no client is selected.");
+    }
+
     // 1. Resolve Property
     let property = null;
     if (address && !isBlocked) {
@@ -199,10 +208,10 @@ export class BookingService {
         where: { name: address }
       });
 
-      if (!property && address && clientId) {
+      if (!property && address) {
         property = await tPrisma.property.create({
           data: {
-            client: { connect: { id: clientId } },
+            client: clientId ? { connect: { id: clientId } } : undefined,
             tenant: { connect: { id: tenantId } },
             name: address,
             slug: address.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
@@ -222,6 +231,10 @@ export class BookingService {
       slotType: slotType || null,
       metadata: {},
       timezone: "Australia/Sydney",
+      otcName: !isBlocked && !clientId && otcName ? String(otcName) : null,
+      otcEmail: !isBlocked && !clientId && otcEmail ? String(otcEmail) : null,
+      otcPhone: !isBlocked && !clientId && otcPhone ? String(otcPhone) : null,
+      otcNotes: !isBlocked && !clientId && otcNotes ? String(otcNotes) : null,
     };
 
     if (clientId && !isBlocked) bookingData.client = { connect: { id: clientId } };

@@ -7,6 +7,26 @@ import { auth } from "@/auth";
 import { permissionService } from "@/lib/permission-service";
 import { prisma } from "@/lib/prisma";
 import { randomInt } from "crypto";
+import { cleanDropboxLink } from "@/lib/utils";
+
+function normalizePublicImageUrl(url: string | null | undefined) {
+  if (!url) return null;
+  const trimmed = String(url).trim();
+  if (!trimmed) return null;
+
+  // Dropbox: normalize to a stable public direct URL for consistent rendering + server-side watermarking.
+  if (trimmed.includes("dropbox.com") || trimmed.includes("dropboxusercontent.com")) {
+    const cleaned = cleanDropboxLink(trimmed);
+    const directBase = cleaned.replace("www.dropbox.com", "dl.dropboxusercontent.com");
+    // Ensure raw=1 is present
+    if (directBase.includes("?")) {
+      return directBase.includes("raw=1") ? directBase : `${directBase}&raw=1`;
+    }
+    return `${directBase}?raw=1`;
+  }
+
+  return trimmed;
+}
 
 export async function upsertClient(data: any, skipNotification = false) {
   try {
@@ -39,7 +59,10 @@ export async function upsertClient(data: any, skipNotification = false) {
     } = data;
 
     // SAFETY: Never store massive base64 images in the DB.
-    const avatarUrl = (rawAvatarUrl && rawAvatarUrl.length > 5000) ? null : rawAvatarUrl;
+    const avatarUrl = (rawAvatarUrl && rawAvatarUrl.length > 5000)
+      ? null
+      : normalizePublicImageUrl(rawAvatarUrl);
+    const normalizedWatermarkUrl = normalizePublicImageUrl(watermarkUrl);
     
     console.log(`[ACTION_CLIENT] Upserting client. ID provided: "${id}"`);
 
@@ -50,7 +73,7 @@ export async function upsertClient(data: any, skipNotification = false) {
       phone,
       avatarUrl,
       status: status || "PENDING",
-      watermarkUrl,
+      watermarkUrl: normalizedWatermarkUrl,
       watermarkSettings: watermarkSettings || {},
       settings: {
         permissions: permissions || {},
@@ -80,7 +103,7 @@ export async function upsertClient(data: any, skipNotification = false) {
           phone: phone,
           avatarUrl: avatarUrl,
           status: status || "PENDING",
-          watermarkUrl,
+          watermarkUrl: normalizedWatermarkUrl,
           watermarkSettings: watermarkSettings || {},
           settings: {
             permissions: permissions || {},
@@ -99,7 +122,7 @@ export async function upsertClient(data: any, skipNotification = false) {
           phone: phone,
           avatarUrl: avatarUrl,
           status: status || "PENDING",
-          watermarkUrl,
+          watermarkUrl: normalizedWatermarkUrl,
           watermarkSettings: watermarkSettings || {},
           settings: {
             permissions: permissions || {},

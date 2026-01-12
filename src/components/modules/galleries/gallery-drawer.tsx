@@ -111,7 +111,12 @@ export function GalleryDrawer({
   // Form State
   const [formData, setFormData] = useState<any>({
     id: null,
+    clientMode: "existing" as "existing" | "otc",
     clientId: "",
+    otcName: "",
+    otcEmail: "",
+    otcPhone: "",
+    otcNotes: "",
     bookingId: "",
     agentId: "",
     title: "",
@@ -143,7 +148,12 @@ export function GalleryDrawer({
     if (initialGallery) {
       setFormData({
         id: initialGallery.id,
-        clientId: initialGallery.clientId,
+        clientMode: initialGallery.clientId ? "existing" : (initialGallery.otcName ? "otc" : "existing"),
+        clientId: initialGallery.clientId || "",
+        otcName: initialGallery.otcName || "",
+        otcEmail: initialGallery.otcEmail || "",
+        otcPhone: initialGallery.otcPhone || "",
+        otcNotes: initialGallery.otcNotes || "",
         bookingId: initialGallery.bookingId || "",
         agentId: initialGallery.agentId || "",
         title: initialGallery.title,
@@ -165,7 +175,12 @@ export function GalleryDrawer({
     } else {
       setFormData({
         id: null,
+        clientMode: "existing",
         clientId: "",
+        otcName: "",
+        otcEmail: "",
+        otcPhone: "",
+        otcNotes: "",
         bookingId: "",
         agentId: "",
         title: "",
@@ -219,13 +234,15 @@ export function GalleryDrawer({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.clientId) return alert("Please select a client");
+    if (formData.clientMode === "existing" && !formData.clientId) return alert("Please select a client");
+    if (formData.clientMode === "otc" && !String(formData.otcName || "").trim()) return alert("Please enter an OTC name");
     if (!formData.title) return alert("Please enter a gallery title");
 
     setIsSubmitting(true);
     try {
       const result = await upsertGallery({
         ...formData,
+        clientId: formData.clientMode === "otc" ? "" : formData.clientId,
         isLocked: formData.isLocked,
         watermarkEnabled: formData.watermarkEnabled,
         agentId: formData.agentId,
@@ -260,7 +277,13 @@ export function GalleryDrawer({
         setFormData((prev: any) => ({ 
           ...prev, 
           title: booking.property?.name || booking.title,
-          serviceIds: booking.services?.map((s: any) => s.service.id) || []
+          serviceIds: booking.services?.map((s: any) => s.service.id) || [],
+          clientMode: booking.clientId ? "existing" : ((booking as any).otcName ? "otc" : prev.clientMode),
+          clientId: booking.clientId ? String(booking.clientId) : "",
+          otcName: (booking as any).otcName || prev.otcName || "",
+          otcEmail: (booking as any).otcEmail || prev.otcEmail || "",
+          otcPhone: (booking as any).otcPhone || prev.otcPhone || "",
+          otcNotes: (booking as any).otcNotes || prev.otcNotes || "",
         }));
       }
     }
@@ -268,6 +291,7 @@ export function GalleryDrawer({
 
   // Filter services based on client visibility
   const visibleServices = React.useMemo(() => {
+    if (formData.clientMode === "otc") return localServices;
     const currentClient = localClients.find(c => c.id === formData.clientId);
     if (!currentClient?.disabledServices) return localServices;
     
@@ -320,134 +344,217 @@ export function GalleryDrawer({
                 <div className="space-y-6">
                   <div className="space-y-2 relative">
                     <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Client / Agency</label>
-                      <button 
-                        type="button"
-                        onClick={() => setIsQuickClientOpen(true)}
-                        className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline"
-                      >
-                        + Express Add
-                      </button>
-                    </div>
-                    
-                    {/* Universal Searchable Dropdown */}
-                    <Hint 
-                      title="Agency Selection" 
-                      content="Choose which company this gallery belongs to. If you don't see them, use '+ Express Add' to create them instantly."
-                    >
-                      <div 
-                        onClick={() => setIsClientDropdownOpen(!isClientDropdownOpen)}
-                        className={cn(
-                          "h-12 px-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between bg-white",
-                          isClientDropdownOpen ? "border-emerald-500 ring-2 ring-emerald-500/10" : "border-slate-100 hover:border-slate-200"
-                        )}
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          {formData.clientId ? (
-                            (() => {
-                              const client = localClients.find(c => c.id === formData.clientId);
-                              return (
-                                <>
-                                  <div className="h-7 w-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20 overflow-hidden">
-                                    {client?.avatarUrl ? (
-                                      <img src={client.avatarUrl} className="h-full w-full object-cover" alt={client.businessName || client.name} />
-                                    ) : (
-                                      <User className="h-3.5 w-3.5" />
-                                    )}
-                                  </div>
-                                  <div className="flex flex-col min-w-0">
-                                    <span className="text-sm font-bold text-slate-900 truncate">
-                                      {client?.businessName || client?.name || "Select agency..."}
-                                    </span>
-                                    {client?.businessName && (
-                                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-tighter">
-                                        {client.name}
-                                      </span>
-                                    )}
-                                  </div>
-                                </>
-                              );
-                            })()
-                          ) : (
-                            <span className="text-sm text-slate-500 font-medium">Select agency...</span>
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Client Type</label>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setFormData((prev: any) => ({ ...prev, clientMode: "existing" }))}
+                          className={cn(
+                            "h-8 px-3 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all",
+                            formData.clientMode === "existing"
+                              ? "bg-primary/10 text-primary border-primary/20"
+                              : "bg-white text-slate-400 border-slate-200 hover:text-slate-700"
                           )}
-                        </div>
-                        <ChevronDown className={cn("h-4 w-4 text-slate-500 transition-transform duration-300", isClientDropdownOpen && "rotate-180")} />
+                        >
+                          Agency
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setFormData((prev: any) => ({
+                              ...prev,
+                              clientMode: "otc",
+                              clientId: "",
+                              agentId: "",
+                              bookingId: "",
+                            }))
+                          }
+                          className={cn(
+                            "h-8 px-3 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all",
+                            formData.clientMode === "otc"
+                              ? "bg-primary/10 text-primary border-primary/20"
+                              : "bg-white text-slate-400 border-slate-200 hover:text-slate-700"
+                          )}
+                        >
+                          OTC
+                        </button>
                       </div>
-                    </Hint>
-
-                    {isClientDropdownOpen && (
-                      <>
-                        <div className="fixed inset-0 z-10" onClick={() => setIsClientDropdownOpen(false)} />
-                        <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-100 rounded-2xl shadow-2xl z-20 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                          <div className="p-2 border-b border-slate-50">
-                            <div className="relative">
-                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                              <input 
-                                type="text"
-                                autoFocus
-                                placeholder="Search agencies..."
-                                value={clientSearchQuery}
-                                onChange={(e) => setClientSearchQuery(e.target.value)}
-                                className="w-full pl-9 pr-4 py-2 bg-slate-50 border-none rounded-xl text-xs focus:ring-0 placeholder:text-slate-400"
-                              />
-                            </div>
+                    </div>
+                    {formData.clientMode === "otc" ? (
+                      <div className="mt-3 space-y-3">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">OTC Name</label>
+                          <input
+                            value={formData.otcName || ""}
+                            onChange={(e) => setFormData((prev: any) => ({ ...prev, otcName: e.target.value }))}
+                            className="ui-input-tight"
+                            placeholder="One-time client name…"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Email</label>
+                            <input
+                              value={formData.otcEmail || ""}
+                              onChange={(e) => setFormData((prev: any) => ({ ...prev, otcEmail: e.target.value }))}
+                              className="ui-input-tight"
+                              placeholder="email@…"
+                            />
                           </div>
-                          <div className="max-h-[240px] overflow-y-auto custom-scrollbar py-1">
-                            {isLoadingRefData ? (
-                              <div className="py-8 text-center">
-                                <Loader2 className="h-5 w-5 animate-spin text-primary mx-auto mb-2" />
-                                <p className="text-[10px] font-medium text-slate-400">Loading agencies...</p>
-                              </div>
-                            ) : (
-                              localClients
-                                .filter(c => 
-                                  c.name.toLowerCase().includes(clientSearchQuery.toLowerCase()) || 
-                                  (c.businessName && c.businessName.toLowerCase().includes(clientSearchQuery.toLowerCase()))
-                                )
-                                .map(c => {
-                                  const isSelected = formData.clientId === c.id;
-                                  return (
-                                    <button
-                                      key={c.id}
-                                      type="button"
-                                      onClick={() => {
-                                        setFormData({ ...formData, clientId: c.id, bookingId: "" });
-                                        setIsClientDropdownOpen(false);
-                                      }}
-                                      className={cn(
-                                        "w-full flex items-center justify-between px-4 py-2.5 text-left transition-colors group",
-                                        isSelected ? "bg-primary/10" : "hover:bg-slate-50"
-                                      )}
-                                    >
-                                      <div className="flex items-center gap-3">
-                                        <div className="h-8 w-8 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
-                                          {c.avatarUrl ? (
-                                            <img src={c.avatarUrl} className="h-full w-full object-cover" alt={c.businessName || c.name} />
-                                          ) : (
-                                            <User className="h-4 w-4" />
-                                          )}
-                                        </div>
-                                        <div className="min-w-0">
-                                          <p className={cn("text-sm font-bold truncate transition-colors", isSelected ? "text-primary" : "text-slate-700")}>
-                                            {c.businessName || c.name}
-                                          </p>
-                                          {c.businessName && <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{c.name}</p>}
-                                        </div>
-                                      </div>
-                                      {isSelected && <Check className="h-4 w-4 text-primary" />}
-                                    </button>
-                                  );
-                                })
-                            )}
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Phone</label>
+                            <input
+                              value={formData.otcPhone || ""}
+                              onChange={(e) => setFormData((prev: any) => ({ ...prev, otcPhone: e.target.value }))}
+                              className="ui-input-tight"
+                              placeholder="04…"
+                            />
                           </div>
                         </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Notes</label>
+                          <textarea
+                            value={formData.otcNotes || ""}
+                            onChange={(e) => setFormData((prev: any) => ({ ...prev, otcNotes: e.target.value }))}
+                            rows={3}
+                            className="w-full p-4 bg-slate-50 border-none rounded-2xl text-xs font-medium focus:ring-2 focus:ring-emerald-500/20 transition-all outline-none resize-none"
+                            placeholder="Optional notes…"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between mt-3">
+                          <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Client / Agency</label>
+                          <button 
+                            type="button"
+                            onClick={() => setIsQuickClientOpen(true)}
+                            className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline"
+                          >
+                            + Express Add
+                          </button>
+                        </div>
+
+                        {/* Universal Searchable Dropdown */}
+                        <Hint 
+                          title="Agency Selection" 
+                          content="Choose which company this gallery belongs to. If you don't see them, use '+ Express Add' to create them instantly."
+                        >
+                          <div 
+                            onClick={() => setIsClientDropdownOpen(!isClientDropdownOpen)}
+                            className={cn(
+                              "h-12 px-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between bg-white",
+                              isClientDropdownOpen ? "border-emerald-500 ring-2 ring-emerald-500/10" : "border-slate-100 hover:border-slate-200"
+                            )}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              {formData.clientId ? (
+                                (() => {
+                                  const client = localClients.find(c => c.id === formData.clientId);
+                                  return (
+                                    <>
+                                      <div className="h-7 w-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20 overflow-hidden">
+                                        {client?.avatarUrl ? (
+                                          <img src={client.avatarUrl} className="h-full w-full object-cover" alt={client.businessName || client.name} />
+                                        ) : (
+                                          <User className="h-3.5 w-3.5" />
+                                        )}
+                                      </div>
+                                      <div className="flex flex-col min-w-0">
+                                        <span className="text-sm font-bold text-slate-900 truncate">
+                                          {client?.businessName || client?.name || "Select agency..."}
+                                        </span>
+                                        {client?.businessName && (
+                                          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-tighter">
+                                            {client.name}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </>
+                                  );
+                                })()
+                              ) : (
+                                <span className="text-sm text-slate-500 font-medium">Select agency...</span>
+                              )}
+                            </div>
+                            <ChevronDown className={cn("h-4 w-4 text-slate-500 transition-transform duration-300", isClientDropdownOpen && "rotate-180")} />
+                          </div>
+                        </Hint>
+
+                        {isClientDropdownOpen && (
+                          <>
+                            <div className="fixed inset-0 z-10" onClick={() => setIsClientDropdownOpen(false)} />
+                            <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-100 rounded-2xl shadow-2xl z-20 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                              <div className="p-2 border-b border-slate-50">
+                                <div className="relative">
+                                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                                  <input 
+                                    type="text"
+                                    autoFocus
+                                    placeholder="Search agencies..."
+                                    value={clientSearchQuery}
+                                    onChange={(e) => setClientSearchQuery(e.target.value)}
+                                    className="w-full pl-9 pr-4 py-2 bg-slate-50 border-none rounded-xl text-xs focus:ring-0 placeholder:text-slate-400"
+                                  />
+                                </div>
+                              </div>
+                              <div className="max-h-[240px] overflow-y-auto custom-scrollbar py-1">
+                                {isLoadingRefData ? (
+                                  <div className="py-8 text-center">
+                                    <Loader2 className="h-5 w-5 animate-spin text-primary mx-auto mb-2" />
+                                    <p className="text-[10px] font-medium text-slate-400">Loading agencies...</p>
+                                  </div>
+                                ) : (
+                                  localClients
+                                    .filter(c => 
+                                      c.name.toLowerCase().includes(clientSearchQuery.toLowerCase()) || 
+                                      (c.businessName && c.businessName.toLowerCase().includes(clientSearchQuery.toLowerCase()))
+                                    )
+                                    .map(c => {
+                                      const isSelected = formData.clientId === c.id;
+                                      return (
+                                        <button
+                                          key={c.id}
+                                          type="button"
+                                          onClick={() => {
+                                            setFormData({ ...formData, clientId: c.id, bookingId: "" });
+                                            setIsClientDropdownOpen(false);
+                                          }}
+                                          className={cn(
+                                            "w-full flex items-center justify-between px-4 py-2.5 text-left transition-colors group",
+                                            isSelected ? "bg-primary/10" : "hover:bg-slate-50"
+                                          )}
+                                        >
+                                          <div className="flex items-center gap-3">
+                                            <div className="h-8 w-8 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
+                                              {c.avatarUrl ? (
+                                                <img src={c.avatarUrl} className="h-full w-full object-cover" alt={c.businessName || c.name} />
+                                              ) : (
+                                                <User className="h-4 w-4" />
+                                              )}
+                                            </div>
+                                            <div className="min-w-0">
+                                              <p className={cn("text-sm font-bold truncate transition-colors", isSelected ? "text-primary" : "text-slate-700")}>
+                                                {c.businessName || c.name}
+                                              </p>
+                                              {c.businessName && <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{c.name}</p>}
+                                            </div>
+                                          </div>
+                                          {isSelected && <Check className="h-4 w-4 text-primary" />}
+                                        </button>
+                                      );
+                                    })
+                                )}
+                              </div>
+                            </div>
+                          </>
+                        )}
                       </>
                     )}
                   </div>
 
                   {/* Lead Agent (Conditional on Agency selection) */}
-                  {formData.clientId && (
+                  {formData.clientMode === "existing" && formData.clientId && (
                     <div className="space-y-2 relative animate-in fade-in slide-in-from-top-2 duration-300">
                       <div className="flex items-center justify-between">
                         <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Lead Agent</label>
@@ -577,15 +684,16 @@ export function GalleryDrawer({
                       <select 
                         value={formData.bookingId}
                         onChange={(e) => setFormData({ ...formData, bookingId: e.target.value })}
-                        disabled={!formData.clientId}
+                        disabled={formData.clientMode === "otc" || !formData.clientId}
                         className="ui-input-tight bg-white appearance-none disabled:opacity-50 pr-10 text-slate-700 font-bold"
                       >
                         <option value="">No Booking (Standalone)</option>
-                        {bookings
-                          .filter(b => b.clientId === formData.clientId)
-                          .map(b => (
-                            <option key={b.id} value={b.id}>{b.property?.name || b.title}</option>
-                          ))}
+                        {formData.clientMode === "existing" &&
+                          bookings
+                            .filter(b => b.clientId === formData.clientId)
+                            .map(b => (
+                              <option key={b.id} value={b.id}>{b.property?.name || b.title}</option>
+                            ))}
                       </select>
                       <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 pointer-events-none" />
                     </div>

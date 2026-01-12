@@ -57,6 +57,7 @@ async function EditInvoiceDataWrapper({ session, invoiceId }: { session: any, in
         autoInvoiceReminders: true, invoiceDueDays: true, abn: true, 
         taxLabel: true, taxRate: true, accountName: true, bsb: true, 
         accountNumber: true, invoiceTerms: true, invoiceLogoUrl: true, 
+        taxInclusive: true,
         settings: true 
       }
     }),
@@ -92,7 +93,8 @@ async function EditInvoiceDataWrapper({ session, invoiceId }: { session: any, in
   const serializedTenant = {
     ...tenant,
     settings: (tenant as any)?.settings || {},
-    taxRate: (tenant as any)?.taxRate ? Number((tenant as any).taxRate) : null
+    taxRate: (tenant as any)?.taxRate ? Number((tenant as any).taxRate) : null,
+    taxInclusive: (tenant as any)?.taxInclusive ?? true,
   };
 
   return (

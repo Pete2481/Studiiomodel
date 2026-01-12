@@ -62,8 +62,9 @@ export function ClientDrawer({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [mounted, setMounted] = useState(false);
+  const previewContainerRef = useRef<HTMLDivElement | null>(null);
+  const watermarkRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (isOpen) setMounted(true);
@@ -119,16 +120,11 @@ export function ClientDrawer({
 
   if (!mounted) return null;
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreviewUrl(reader.result as string);
-        setFormData(prev => ({ ...prev, avatarUrl: reader.result as string }));
-      };
-      reader.readAsDataURL(file);
-    }
+  const promptForImageLink = (title: string, current?: string) => {
+    if (typeof window === "undefined") return null;
+    const next = window.prompt(title, current || "");
+    if (next === null) return null;
+    return next.trim();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -224,20 +220,32 @@ export function ClientDrawer({
                     </div>
                     <button
                       type="button"
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={() => {
+                        const url = promptForImageLink("Paste a public Dropbox image link for the client icon (logo/avatar):", formData.avatarUrl);
+                        if (!url) return;
+                        setPreviewUrl(url);
+                        setFormData(prev => ({ ...prev, avatarUrl: url }));
+                      }}
                       className="absolute -bottom-2 -right-2 h-10 w-10 bg-emerald-500 rounded-2xl text-white flex items-center justify-center shadow-lg hover:bg-emerald-600 transition-all active:scale-95 border-2 border-white"
                     >
                       <Plus className="h-5 w-5" />
                     </button>
-                    <input 
-                      type="file" 
-                      ref={fileInputRef} 
-                      className="hidden" 
-                      accept="image/*"
-                      onChange={handleImageChange}
-                    />
                   </div>
                   <p className="mt-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client Profile Photo</p>
+                  <div className="mt-4 w-full max-w-sm">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Client icon link (Dropbox)</label>
+                    <input
+                      value={formData.avatarUrl || ""}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setPreviewUrl(v || null);
+                        setFormData(prev => ({ ...prev, avatarUrl: v }));
+                      }}
+                      type="url"
+                      placeholder="Paste Dropbox link…"
+                      className="ui-input-tight mt-2"
+                    />
+                  </div>
                 </div>
 
                 {/* Agency Info */}
@@ -408,26 +416,25 @@ export function ClientDrawer({
                         <button
                           type="button"
                           onClick={() => {
-                            const input = document.createElement('input');
-                            input.type = 'file';
-                            input.accept = 'image/*';
-                            input.onchange = (e: any) => {
-                              const file = e.target.files?.[0];
-                              if (file) {
-                                const reader = new FileReader();
-                                reader.onloadend = () => {
-                                  setFormData(prev => ({ ...prev, watermarkUrl: reader.result as string }));
-                                };
-                                reader.readAsDataURL(file);
-                              }
-                            };
-                            input.click();
+                            const url = promptForImageLink("Paste a public Dropbox image link for the branding watermark/logo:", formData.watermarkUrl);
+                            if (!url) return;
+                            setFormData(prev => ({ ...prev, watermarkUrl: url }));
                           }}
                           className="absolute -bottom-2 -right-2 h-8 w-8 bg-emerald-500 rounded-xl text-white flex items-center justify-center shadow-lg hover:bg-emerald-600 transition-all active:scale-95 border-2 border-white"
                         >
                           <Plus className="h-4 w-4" />
                         </button>
                       </div>
+                    </div>
+                    <div className="mt-4">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Branding logo link (Dropbox)</label>
+                      <input
+                        value={formData.watermarkUrl || ""}
+                        onChange={(e) => setFormData(prev => ({ ...prev, watermarkUrl: e.target.value }))}
+                        type="url"
+                        placeholder="Paste Dropbox link…"
+                        className="ui-input-tight mt-2"
+                      />
                     </div>
                   </div>
 
@@ -446,14 +453,18 @@ export function ClientDrawer({
                           </button>
                         </div>
                         
-                        <div className="relative aspect-video bg-slate-900 rounded-[32px] overflow-hidden shadow-inner group/preview">
+                        <div
+                          ref={previewContainerRef}
+                          className="relative aspect-video bg-slate-100 rounded-none overflow-hidden shadow-inner border border-slate-200 group/preview"
+                        >
                           <img 
                             src="https://dl.dropboxusercontent.com/scl/fi/mzjrz6m62l612jum9igq8/DJI_20251105125442_0935_D_1.jpg?rlkey=rsqothjdn13uket5g51nf56dg&raw=1" 
-                            className="w-full h-full object-cover opacity-60" 
+                            className="w-full h-full object-cover" 
                             alt="Placement demo"
                           />
                           
                           <div 
+                            ref={watermarkRef}
                             className="absolute cursor-move group/logo"
                             style={{
                               left: `${formData.watermarkSettings.x}%`,
@@ -468,15 +479,24 @@ export function ClientDrawer({
                               
                               const onMouseMove = (moveEvent: MouseEvent) => {
                                 const rect = container.getBoundingClientRect();
-                                const x = ((moveEvent.clientX - rect.left) / rect.width) * 100;
-                                const y = ((moveEvent.clientY - rect.top) / rect.height) * 100;
+                                const rawX = ((moveEvent.clientX - rect.left) / rect.width) * 100;
+                                const rawY = ((moveEvent.clientY - rect.top) / rect.height) * 100;
+
+                                const wmRect = watermarkRef.current?.getBoundingClientRect();
+                                const wmW = wmRect?.width || 0;
+                                const wmH = wmRect?.height || 0;
+                                const halfW = rect.width ? (wmW / 2 / rect.width) * 100 : 0;
+                                const halfH = rect.height ? (wmH / 2 / rect.height) * 100 : 0;
+
+                                const x = Math.max(halfW, Math.min(100 - halfW, rawX));
+                                const y = Math.max(halfH, Math.min(100 - halfH, rawY));
                                 
                                 setFormData(prev => ({
                                   ...prev,
                                   watermarkSettings: {
                                     ...prev.watermarkSettings,
-                                    x: Math.max(0, Math.min(100, x)),
-                                    y: Math.max(0, Math.min(100, y))
+                                    x,
+                                    y
                                   }
                                 }));
                               };

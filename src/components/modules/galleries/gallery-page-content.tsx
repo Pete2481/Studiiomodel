@@ -7,7 +7,7 @@ import { cn, formatDropboxUrl } from "@/lib/utils";
 import { GalleryDrawer } from "./gallery-drawer";
 import { AIListingModal } from "./ai-listing-modal";
 import { GalleryStatusDropdown } from "./gallery-status-dropdown";
-import { deleteGallery, notifyGalleryClient, updateGalleryStatus } from "@/app/actions/gallery";
+import { deleteGallery, notifyGalleryClient, refreshGalleryCounts, updateGalleryStatus } from "@/app/actions/gallery";
 import { createInvoiceFromGallery } from "@/app/actions/invoice";
 import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
@@ -59,6 +59,26 @@ export function GalleryPageContent({
   useEffect(() => {
     setGalleries(initialGalleries);
   }, [initialGalleries]);
+
+  // Best-effort background refresh: update counts for visible galleries that still show 0.
+  useEffect(() => {
+    const candidates = (galleries || [])
+      .filter((g: any) => Number(g?.mediaCount || 0) === 0 && (g?.metadata?.dropboxLink || (g?.metadata?.imageFolders?.length || 0) > 0))
+      .map((g: any) => String(g.id))
+      .slice(0, 12);
+    if (candidates.length === 0) return;
+
+    const t = window.setTimeout(async () => {
+      try {
+        const res = await refreshGalleryCounts(candidates);
+        if (res?.success) router.refresh();
+      } catch (e) {
+        // non-blocking
+      }
+    }, 700);
+
+    return () => window.clearTimeout(t);
+  }, [galleries, router]);
 
   useEffect(() => {
     const action = searchParams.get("action");
@@ -149,8 +169,14 @@ export function GalleryPageContent({
     try {
       const res = await createInvoiceFromGallery(galleryId);
       if (res.success && res.invoiceId) {
-        // OPEN the editor as requested
-        router.push(`/tenant/invoices/${res.invoiceId}/edit`);
+        // OTC invoices are email-only (no portal client record). We auto-send and return to invoices list.
+        if ((res as any).sent) {
+          alert("Invoice sent to OTC email.");
+          router.push(`/tenant/invoices`);
+        } else {
+          // OPEN the editor as requested
+          router.push(`/tenant/invoices/${res.invoiceId}/edit`);
+        }
       } else {
         alert(res.error || "Failed to create invoice");
       }

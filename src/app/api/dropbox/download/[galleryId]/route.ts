@@ -174,11 +174,15 @@ export async function GET(
             }])
             .toBuffer();
 
+          const logoMeta = await sharp(processedLogo).metadata();
+          const logoW = logoMeta.width || Math.round(imgWidth * 0.15 * logoScale);
+          const logoH = logoMeta.height || logoW;
+
           const brandedBuffer = await sharp(buffer)
             .composite([{
               input: processedLogo,
-              left: Math.round((settings.x / 100) * imgWidth - (Math.round(imgWidth * 0.15 * logoScale) / 2)),
-              top: Math.round((settings.y / 100) * imgHeight - (Math.round(imgWidth * 0.15 * logoScale) / 2))
+              left: Math.round((settings.x / 100) * imgWidth - (logoW / 2)),
+              top: Math.round((settings.y / 100) * imgHeight - (logoH / 2))
             }])
             .toBuffer();
 

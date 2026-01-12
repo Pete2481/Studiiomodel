@@ -49,7 +49,12 @@ export function BookingDrawer({
 
   const [formData, setFormData] = useState({
     title: "",
+    clientMode: "existing" as "existing" | "otc",
     clientId: currentClientId || "",
+    otcName: "",
+    otcEmail: "",
+    otcPhone: "",
+    otcNotes: "",
     address: "",
     date: format(new Date(), "yyyy-MM-dd"),
     endDate: format(new Date(), "yyyy-MM-dd"),
@@ -66,13 +71,16 @@ export function BookingDrawer({
   });
 
   const isBlockedType = formData.status === "blocked";
-  const requiresClient = !isBlockedType && !isClient;
-  const canSubmit = isBlockedType || isClient || Boolean(formData.clientId);
+  const requiresClient = !isBlockedType && !isClient && formData.clientMode === "existing";
+  const canSubmit =
+    isBlockedType ||
+    isClient ||
+    (formData.clientMode === "existing" ? Boolean(formData.clientId) : Boolean(formData.otcName?.trim()));
 
   // Filter services based on client visibility
   const visibleServices = React.useMemo(() => {
     // If no client is selected, show all services
-    if (!formData.clientId) return services;
+    if (!formData.clientId || formData.clientMode === "otc") return services;
     
     const currentClient = clients.find(c => c.id === formData.clientId);
     let filtered = services;
@@ -237,7 +245,12 @@ export function BookingDrawer({
 
         setFormData({
           title: booking.title || "",
+          clientMode: booking.clientId ? "existing" : ((booking as any).otcName ? "otc" : "existing"),
           clientId: booking.clientId || "",
+          otcName: (booking as any).otcName || "",
+          otcEmail: (booking as any).otcEmail || "",
+          otcPhone: (booking as any).otcPhone || "",
+          otcNotes: (booking as any).otcNotes || "",
           address: booking.property?.name || "",
           date: format(start, "yyyy-MM-dd"),
           endDate: format(end, "yyyy-MM-dd"),
@@ -264,7 +277,12 @@ export function BookingDrawer({
         setFormData(prev => ({
           ...prev,
           title: (booking.isPlaceholder && isClient) ? "" : (booking.isPlaceholder ? `${booking.slotType} SHOOT` : (booking.title || "")),
+          clientMode: "existing",
           clientId: currentClientId || "",
+          otcName: "",
+          otcEmail: "",
+          otcPhone: "",
+          otcNotes: "",
           address: "",
           date: format(start, "yyyy-MM-dd"),
           endDate: format(end || start, "yyyy-MM-dd"),
@@ -283,7 +301,12 @@ export function BookingDrawer({
         // Reset form
         setFormData({
           title: "",
+          clientMode: "existing",
           clientId: currentClientId || "",
+          otcName: "",
+          otcEmail: "",
+          otcPhone: "",
+          otcNotes: "",
           address: "",
           date: format(new Date(), "yyyy-MM-dd"),
           endDate: format(new Date(), "yyyy-MM-dd"),
@@ -332,6 +355,7 @@ export function BookingDrawer({
 
       await onSave({
         ...formData,
+        clientId: formData.clientMode === "otc" ? "" : formData.clientId,
         startAt: startDateTime.toISOString(),
         endAt: endDateTime.toISOString(),
         status: finalStatus,
@@ -498,6 +522,77 @@ export function BookingDrawer({
               {!isClient && !isBlockedType && (
                 <div className="space-y-2 relative">
                   <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client Type</label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, clientMode: "existing" }))}
+                        className={cn(
+                          "h-8 px-3 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all",
+                          formData.clientMode === "existing"
+                            ? "bg-primary/10 text-primary border-primary/20"
+                            : "bg-white text-slate-400 border-slate-200 hover:text-slate-700"
+                        )}
+                      >
+                        Agency
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setFormData(prev => ({
+                            ...prev,
+                            clientMode: "otc",
+                            clientId: "",
+                            agentId: "",
+                          }))
+                        }
+                        className={cn(
+                          "h-8 px-3 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all",
+                          formData.clientMode === "otc"
+                            ? "bg-primary/10 text-primary border-primary/20"
+                            : "bg-white text-slate-400 border-slate-200 hover:text-slate-700"
+                        )}
+                      >
+                        OTC
+                      </button>
+                    </div>
+                  </div>
+
+                  {formData.clientMode === "otc" ? (
+                    <div className="mt-3 space-y-3">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">OTC Name</label>
+                        <input
+                          value={formData.otcName}
+                          onChange={(e) => setFormData({ ...formData, otcName: e.target.value })}
+                          className="ui-input-tight"
+                          placeholder="One-time client name…"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Email</label>
+                          <input
+                            value={formData.otcEmail}
+                            onChange={(e) => setFormData({ ...formData, otcEmail: e.target.value })}
+                            className="ui-input-tight"
+                            placeholder="email@…"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Phone</label>
+                          <input
+                            value={formData.otcPhone}
+                            onChange={(e) => setFormData({ ...formData, otcPhone: e.target.value })}
+                            className="ui-input-tight"
+                            placeholder="04…"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                  <div className="flex items-center justify-between">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Agency</label>
                     <button 
                       type="button"
@@ -626,6 +721,8 @@ export function BookingDrawer({
                             })}
                         </div>
                       </div>
+                    </>
+                  )}
                     </>
                   )}
                 </div>

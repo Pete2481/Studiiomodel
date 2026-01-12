@@ -26,6 +26,10 @@ export class GalleryService {
       notifyClient = true, 
       isLocked = false,
       watermarkEnabled = false,
+      otcName,
+      otcEmail,
+      otcPhone,
+      otcNotes,
       deliveryNotes, 
       bannerImageUrl: rawBannerImageUrl, 
       serviceIds = [], 
@@ -54,7 +58,7 @@ export class GalleryService {
       if (!property) {
         property = await tPrisma.property.create({
           data: {
-            client: { connect: { id: clientId } },
+            client: clientId ? { connect: { id: clientId } } : undefined,
             tenant: { connect: { id: tenantId } },
             name: title,
             slug
@@ -74,8 +78,13 @@ export class GalleryService {
       }
     };
 
+    // OTC validation: allow galleries without a Client record, but require an OTC name.
+    if (!clientId && !(otcName && String(otcName).trim())) {
+      throw new Error("OTC name is required when no client is selected.");
+    }
+
     const galleryData: any = {
-      client: { connect: { id: clientId } },
+      client: clientId ? { connect: { id: clientId } } : undefined,
       property: { connect: { id: propertyId } },
       tenant: { connect: { id: tenantId } },
       booking: bookingId ? { connect: { id: bookingId } } : undefined,
@@ -88,6 +97,10 @@ export class GalleryService {
       deliveryNotes,
       bannerImageUrl,
       metadata: finalMetadata,
+      otcName: otcName ? String(otcName) : null,
+      otcEmail: otcEmail ? String(otcEmail) : null,
+      otcPhone: otcPhone ? String(otcPhone) : null,
+      otcNotes: otcNotes ? String(otcNotes) : null,
       updatedAt: new Date(),
     };
 
@@ -97,6 +110,7 @@ export class GalleryService {
         where: { id },
         data: {
           ...galleryData,
+          client: clientId ? { connect: { id: clientId } } : { disconnect: true },
           services: {
             deleteMany: {},
             create: serviceIds.map((sid: string) => ({

@@ -225,6 +225,25 @@ export async function getGalleryAssets(galleryId: string, limit: number = 100, c
         });
     };
 
+    const countImageEntries = (entries: any[]) => {
+      return (entries || []).filter((entry: any) => entry?.[".tag"] === "file" && entry?.name?.match(/\.(jpg|jpeg|png|webp)$/i)).length;
+    };
+
+    const countAllImagesForCursor = async (initialEntries: any[], initialCursor?: string) => {
+      let count = countImageEntries(initialEntries);
+      let next = initialCursor;
+      let guard = 0;
+      while (next && guard < 200) {
+        guard++;
+        const res = await dropboxFetch("https://api.dropboxapi.com/2/files/list_folder/continue", { cursor: next });
+        if (!res.ok) break;
+        const page = await res.json();
+        count += countImageEntries(page.entries);
+        next = page.has_more ? page.cursor : undefined;
+      }
+      return count;
+    };
+
     // PAGINATION LOGIC
     // If a cursor is provided, we just continue from that cursor.
     // NOTE: This assumes the cursor is for the "current" source being paginated.
@@ -236,6 +255,7 @@ export async function getGalleryAssets(galleryId: string, limit: number = 100, c
         // For now, we assume "Production" or use metadata if we wanted to be fancy.
         allAssets = processEntries(data.entries, "Production", shareLink);
         if (data.has_more) nextCursor = data.cursor;
+        // Pagination continuation isn't a full scan, so we avoid writing counts here.
         return { success: true, assets: allAssets, nextCursor };
       }
       return { success: false, error: "Failed to continue pagination" };
@@ -261,6 +281,28 @@ export async function getGalleryAssets(galleryId: string, limit: number = 100, c
             const listData = await listResponse.json();
             allAssets = processEntries(listData.entries, "Production Link", shareLink);
             if (listData.has_more) nextCursor = listData.cursor;
+
+            // Auto-update gallery counts (best effort). For share links we treat the folder listing as the source of truth.
+            try {
+              const imageCount = await countAllImagesForCursor(listData.entries, listData.has_more ? listData.cursor : undefined);
+              const videoCount = Array.isArray(metadata?.videoLinks) ? metadata.videoLinks.length : 0;
+              const existingImageCount = Number(metadata?.imageCount || 0);
+              const existingVideoCount = Number(metadata?.videoCount || 0);
+              if (imageCount !== existingImageCount || videoCount !== existingVideoCount) {
+                await (tPrisma as any).gallery.update({
+                  where: { id: galleryId },
+                  data: {
+                    metadata: {
+                      ...(metadata || {}),
+                      imageCount,
+                      videoCount,
+                    }
+                  }
+                });
+              }
+            } catch (e) {
+              // non-blocking
+            }
             
             // If we have enough assets or a cursor, return now
             if (allAssets.length >= limit || nextCursor) {
@@ -277,6 +319,22 @@ export async function getGalleryAssets(galleryId: string, limit: number = 100, c
               type: "image",
               folderName: "Direct Link"
             });
+
+            // Direct link is a single image. Update counts quickly.
+            try {
+              const imageCount = 1;
+              const videoCount = Array.isArray(metadata?.videoLinks) ? metadata.videoLinks.length : 0;
+              const existingImageCount = Number(metadata?.imageCount || 0);
+              const existingVideoCount = Number(metadata?.videoCount || 0);
+              if (imageCount !== existingImageCount || videoCount !== existingVideoCount) {
+                await (tPrisma as any).gallery.update({
+                  where: { id: galleryId },
+                  data: { metadata: { ...(metadata || {}), imageCount, videoCount } }
+                });
+              }
+            } catch (e) {
+              // non-blocking
+            }
           }
         }
       }
@@ -303,6 +361,50 @@ export async function getGalleryAssets(galleryId: string, limit: number = 100, c
           if (data.has_more) nextCursor = data.cursor;
         }
       }
+    }
+
+    // Auto-update gallery counts (best effort). For multi-folder galleries, we at least track the currently known count.
+    // For accuracy, we perform a full count pass (cursor pagination) but only return the first `limit` assets.
+    try {
+      let imageCount = 0;
+      const videoCount = Array.isArray(metadata?.videoLinks) ? metadata.videoLinks.length : 0;
+
+      if (shareLink && shareLink.trim() !== "") {
+        // Share link path handled earlier; if we got here, we may not have had enough assets to early return.
+        // We treat allAssets as the first page and count the rest via nextCursor when present.
+        imageCount = await countAllImagesForCursor(allAssets.map((a: any) => ({ ".tag": "file", name: a.name })), nextCursor);
+      } else if (folders.length > 0) {
+        for (const folder of folders) {
+          const res = await dropboxFetch("https://api.dropboxapi.com/2/files/list_folder", {
+            path: folder.path,
+            recursive: false,
+            include_media_info: false,
+            limit: 1000
+          });
+          if (!res.ok) continue;
+          const page = await res.json();
+          imageCount += await countAllImagesForCursor(page.entries, page.has_more ? page.cursor : undefined);
+        }
+      } else {
+        imageCount = allAssets.length;
+      }
+
+      const existingImageCount = Number(metadata?.imageCount || 0);
+      const existingVideoCount = Number(metadata?.videoCount || 0);
+      if (imageCount !== existingImageCount || videoCount !== existingVideoCount) {
+        await (tPrisma as any).gallery.update({
+          where: { id: galleryId },
+          data: {
+            metadata: {
+              ...(metadata || {}),
+              imageCount,
+              videoCount,
+            }
+          }
+        });
+      }
+    } catch (e) {
+      // non-blocking
     }
 
     return { 

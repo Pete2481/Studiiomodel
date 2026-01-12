@@ -7,6 +7,7 @@ import { notificationService } from "@/server/services/notification.service";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { permissionService } from "@/lib/permission-service";
+import { getGalleryAssets } from "@/app/actions/dropbox";
 
 /**
  * Creates or updates a gallery with full production metadata.
@@ -34,6 +35,57 @@ export async function upsertGallery(data: any) {
   } catch (error: any) {
     console.error("UPSERT GALLERY ERROR:", error);
     return { success: false, error: error.message || "Failed to save gallery" };
+  }
+}
+
+/**
+ * Best-effort refresh of image/video counts for galleries visible to the current user.
+ * This updates `gallery.metadata.imageCount` and `gallery.metadata.videoCount`.
+ */
+export async function refreshGalleryCounts(galleryIds: string[]) {
+  try {
+    const session = await auth();
+    const tenantId = await getSessionTenantId();
+    if (!session || !tenantId) return { success: false, error: "Unauthorized" };
+
+    const ids = Array.isArray(galleryIds) ? galleryIds.filter(Boolean).slice(0, 12) : [];
+    if (ids.length === 0) return { success: true };
+
+    const role = (session.user as any).role;
+    const clientId = (session.user as any).clientId;
+    const agentId = (session.user as any).agentId;
+    const canViewAllAgencyGalleries = !!(session.user as any)?.permissions?.canViewAllAgencyGalleries;
+
+    const allowedWhere: any = { id: { in: ids }, deletedAt: null };
+    if (role === "CLIENT" && clientId) {
+      allowedWhere.clientId = clientId;
+    } else if (role === "AGENT") {
+      if (canViewAllAgencyGalleries && clientId) allowedWhere.clientId = clientId;
+      else if (agentId) allowedWhere.agentId = agentId;
+    }
+
+    const galleries = await prisma.gallery.findMany({
+      where: allowedWhere,
+      select: { id: true, metadata: true }
+    });
+
+    for (const g of galleries) {
+      const meta: any = g.metadata || {};
+      const hasSource = !!(meta?.dropboxLink || (Array.isArray(meta?.imageFolders) && meta.imageFolders.length > 0));
+      const missingCount = !meta?.imageCount || Number(meta.imageCount) === 0;
+      if (!hasSource || !missingCount) continue;
+
+      // Trigger Dropbox listing/count update without pulling a lot of assets.
+      // getGalleryAssets will write back accurate counts via pagination.
+      await getGalleryAssets(String(g.id), 1);
+    }
+
+    revalidatePath("/tenant/galleries");
+    revalidatePath("/");
+    return { success: true };
+  } catch (error: any) {
+    console.error("REFRESH GALLERY COUNTS ERROR:", error);
+    return { success: false, error: error.message || "Failed to refresh counts" };
   }
 }
 

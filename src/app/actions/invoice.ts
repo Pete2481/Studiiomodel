@@ -56,15 +56,17 @@ export async function createInvoiceFromGallery(galleryId: string) {
     // 4. Create the Invoice
     const dueDays = (gallery.tenant as any).invoiceDueDays ?? 7;
     const dueAt = addDays(new Date(), dueDays);
+    const otcEmail = (gallery as any).otcEmail || gallery.deliveryEmail || null;
+    const otcName = (gallery as any).otcName || null;
 
     const invoice = await (tPrisma as any).invoice.create({
       data: {
-        client: { connect: { id: gallery.clientId } },
+        client: gallery.clientId ? { connect: { id: gallery.clientId } } : undefined,
         gallery: { connect: { id: gallery.id } },
         booking: gallery.bookingId ? { connect: { id: gallery.bookingId } } : undefined,
         number,
         address: gallery.property.name,
-        status: "DRAFT",
+        status: gallery.clientId ? "DRAFT" : "SENT",
         taxRate: gallery.tenant.taxRate || 0.1,
         issuedAt: new Date(),
         dueAt,
@@ -72,6 +74,8 @@ export async function createInvoiceFromGallery(galleryId: string) {
         paymentTerms: gallery.tenant.accountName ? `Account Name: ${gallery.tenant.accountName}\nBSB: ${gallery.tenant.bsb || ""}  Account: ${gallery.tenant.accountNumber || ""}` : null,
         invoiceTerms: gallery.tenant.invoiceTerms,
         tenant: { connect: { id: gallery.tenantId } },
+        invoiceEmailOverride: !gallery.clientId ? otcEmail : undefined,
+        invoiceRecipientName: !gallery.clientId ? otcName : undefined,
         lineItems: {
           create: gallery.services.map((gs: any) => {
             const overridePrice = priceOverrides[gs.serviceId];
@@ -86,9 +90,18 @@ export async function createInvoiceFromGallery(galleryId: string) {
       }
     });
 
+    // For OTC invoices, auto-send immediately (email-only, no portal).
+    if (!gallery.clientId && otcEmail) {
+      try {
+        await notificationService.sendInvoiceNotification(invoice.id);
+      } catch (e) {
+        console.error("OTC INVOICE EMAIL ERROR:", e);
+      }
+    }
+
     revalidatePath("/tenant/galleries");
     revalidatePath("/tenant/invoices");
-    return { success: true, invoiceId: invoice.id };
+    return { success: true, invoiceId: invoice.id, sent: !gallery.clientId };
   } catch (error: any) {
     console.error("AUTO-INVOICE ERROR:", error);
     return { success: false, error: error.message || "Failed to create invoice." };
@@ -152,10 +165,12 @@ export async function createInvoiceFromEditRequests(galleryId: string) {
     // 4. Create the Invoice
     const dueDays = (gallery.tenant as any).invoiceDueDays ?? 7;
     const dueAt = addDays(new Date(), dueDays);
+    const otcEmail = (gallery as any).otcEmail || (gallery as any).deliveryEmail || null;
+    const otcName = (gallery as any).otcName || null;
 
     const invoice = await (tPrisma as any).invoice.create({
       data: {
-        client: { connect: { id: gallery.clientId } },
+        client: gallery.clientId ? { connect: { id: gallery.clientId } } : undefined,
         gallery: { connect: { id: gallery.id } },
         booking: gallery.bookingId ? { connect: { id: gallery.bookingId } } : undefined,
         number,
@@ -168,6 +183,8 @@ export async function createInvoiceFromEditRequests(galleryId: string) {
         paymentTerms: gallery.tenant.accountName ? `Account Name: ${gallery.tenant.accountName}\nBSB: ${gallery.tenant.bsb || ""}  Account: ${gallery.tenant.accountNumber || ""}` : null,
         invoiceTerms: gallery.tenant.invoiceTerms,
         tenant: { connect: { id: gallery.tenantId } },
+        invoiceEmailOverride: !gallery.clientId ? otcEmail : undefined,
+        invoiceRecipientName: !gallery.clientId ? otcName : undefined,
         lineItems: {
           create: lineItemsData
         }
@@ -224,6 +241,8 @@ export async function upsertInvoice(data: any) {
       discount, 
       taxRate, 
       paidAmount, 
+      // UI-only fields (not persisted on Invoice in Prisma schema)
+      taxInclusive,
       ...rest 
     } = data;
 
@@ -233,6 +252,9 @@ export async function upsertInvoice(data: any) {
 
     const issuedAtDate = issuedAt ? new Date(issuedAt) : new Date();
     const dueAtDate = dueAt ? new Date(dueAt) : new Date();
+    const discountNum = Number(discount ?? 0) || 0;
+    const taxRateNum = Number(taxRate ?? 0) || 0;
+    const paidAmountNum = Number(paidAmount ?? 0) || 0;
 
     if (id) {
       const { bookingId, galleryId, clientId, tenantId, ...updateRest } = rest;
@@ -245,9 +267,9 @@ export async function upsertInvoice(data: any) {
           gallery: galleryId ? { connect: { id: galleryId } } : { disconnect: true },
           issuedAt: issuedAtDate,
           dueAt: dueAtDate,
-          discount: Number(discount),
-          taxRate: Number(taxRate),
-          paidAmount: Number(paidAmount),
+          discount: discountNum,
+          taxRate: taxRateNum,
+          paidAmount: paidAmountNum,
           sentAt: rest.status === 'SENT' ? new Date() : undefined,
           lineItems: {
             deleteMany: {}, 
@@ -287,14 +309,14 @@ export async function upsertInvoice(data: any) {
       const newInvoice = await (tPrisma as any).invoice.create({
         data: {
           ...createRest,
-          client: { connect: { id: clientId } },
+          client: clientId ? { connect: { id: clientId } } : undefined,
           booking: bookingId ? { connect: { id: bookingId } } : undefined,
           gallery: galleryId ? { connect: { id: galleryId } } : undefined,
           issuedAt: issuedAtDate,
           dueAt: dueAtDate,
-          discount: Number(discount),
-          taxRate: Number(taxRate),
-          paidAmount: Number(paidAmount),
+          discount: discountNum,
+          taxRate: taxRateNum,
+          paidAmount: paidAmountNum,
           sentAt: rest.status === 'SENT' ? new Date() : undefined,
           lineItems: {
             create: lineItems.map((li: any) => ({
