@@ -293,7 +293,7 @@ export function MasterNewsletterComposer(props: {
           <div className="flex items-center gap-2">
             <button
               onClick={() => addBlock("text")}
-              className="h-10 px-4 rounded-full bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest flex items-center gap-2 active:scale-95 transition-all"
+              className="h-10 px-4 rounded-full bg-[#b5d0c1] text-slate-900 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 active:scale-95 transition-all border border-white/60"
             >
               <Plus className="h-4 w-4" /> Text
             </button>

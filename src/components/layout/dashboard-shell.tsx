@@ -194,17 +194,22 @@ function DashboardShellContent({
 
   // Dynamically apply brand color
   useEffect(() => {
+    // Master mode uses a fixed, uniform green accent.
+    const masterAccent = "#10b981";
+
     // If brandColor is white, empty, or missing, default to a safe Slate Gray (#94a3b8)
-    const safeColor = (!brandColor || brandColor.toLowerCase() === "#ffffff" || brandColor.toLowerCase() === "white") 
-      ? "#94a3b8" 
-      : brandColor;
+    const safeColor = isMasterMode
+      ? masterAccent
+      : (!brandColor || brandColor.toLowerCase() === "#ffffff" || brandColor.toLowerCase() === "white")
+        ? "#94a3b8"
+        : brandColor;
 
     if (typeof document !== "undefined") {
       const root = document.documentElement;
       root.style.setProperty("--primary", safeColor);
       root.style.setProperty("--primary-soft", `${safeColor}33`);
     }
-  }, [brandColor]);
+  }, [brandColor, isMasterMode]);
 
   const [isSeeAllEnabled, setIsSeeAllEnabled] = useState(false);
 
@@ -425,8 +430,8 @@ function DashboardShellContent({
         )}>
           <div className="flex h-11 w-11 flex-none items-center justify-center rounded-2xl bg-primary text-white shadow-lg overflow-hidden group-hover:scale-105 transition-transform relative"
                style={{ 
-                 boxShadow: isMasterMode ? `0 10px 15px -3px rgba(99, 102, 241, 0.3)` : `0 10px 15px -3px var(--primary-soft)`,
-                 background: isMasterMode ? 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)' : undefined
+                 boxShadow: isMasterMode ? `0 10px 15px -3px rgba(16, 185, 129, 0.35)` : `0 10px 15px -3px var(--primary-soft)`,
+                 background: isMasterMode ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : undefined
                }}>
             {logoUrl && logoUrl !== "" ? (
               <Image 

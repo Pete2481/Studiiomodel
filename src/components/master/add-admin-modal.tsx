@@ -47,7 +47,7 @@ export function AddAdminModal({ tenantId, tenantName, defaultEmail }: AddAdminMo
       </button>
 
       {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#b5d0c1]/60 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white rounded-[32px] w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
             <div className="p-8 border-b border-slate-50 flex items-center justify-between bg-slate-50/30">
               <div className="flex items-center gap-3">
@@ -101,7 +101,7 @@ export function AddAdminModal({ tenantId, tenantName, defaultEmail }: AddAdminMo
               <button 
                 type="submit"
                 disabled={isLoading}
-                className="w-full h-12 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-xl shadow-slate-900/10 active:scale-95 disabled:opacity-50"
+                className="w-full h-12 bg-[#b5d0c1] hover:bg-[#b5d0c1]/90 text-slate-900 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-xl shadow-slate-900/10 active:scale-95 disabled:opacity-50 border border-white/60"
               >
                 {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Authorize User"}
               </button>

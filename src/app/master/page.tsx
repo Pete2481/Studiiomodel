@@ -55,9 +55,16 @@ export default async function MasterDashboardPage() {
       t.*,
       (SELECT COUNT(*) FROM "Booking" b WHERE b."tenantId" = t.id) as "bookingCount",
       (SELECT COUNT(*) FROM "TenantMembership" m WHERE m."tenantId" = t.id) as "membershipCount",
-      (SELECT COUNT(*) FROM "Gallery" g WHERE g."tenantId" = t.id) as "galleryCount"
+      (SELECT COUNT(*) FROM "Gallery" g WHERE g."tenantId" = t.id) as "galleryCount",
+      /* Best-effort activity signal (no dedicated lastActive field in schema) */
+      GREATEST(
+        COALESCE((SELECT MAX(b."updatedAt") FROM "Booking" b WHERE b."tenantId" = t.id), to_timestamp(0)),
+        COALESCE((SELECT MAX(g."updatedAt") FROM "Gallery" g WHERE g."tenantId" = t.id), to_timestamp(0)),
+        COALESCE((SELECT MAX(m."updatedAt") FROM "TenantMembership" m WHERE m."tenantId" = t.id), to_timestamp(0)),
+        COALESCE(t."updatedAt", to_timestamp(0))
+      ) AS "lastActiveAt"
     FROM "Tenant" t
-    ORDER BY t."createdAt" DESC
+    ORDER BY "lastActiveAt" DESC
   `;
 
   const tenants = dbTenants.map(t => {
@@ -73,6 +80,7 @@ export default async function MasterDashboardPage() {
       bookingCount: Number(t.bookingCount || 0),
       membershipCount: Number(t.membershipCount || 0),
       galleryCount: Number(t.galleryCount || 0),
+      lastActiveAt: t.lastActiveAt ? (t.lastActiveAt instanceof Date ? t.lastActiveAt.toISOString() : String(t.lastActiveAt)) : null,
       taxRate: t.taxRate ? Number(t.taxRate) : 0.1,
       revenueTarget: t.revenueTarget ? Number(t.revenueTarget) : 100000,
       settings: t.settings || {},
@@ -102,7 +110,7 @@ export default async function MasterDashboardPage() {
       <div className="animate-in fade-in duration-700 space-y-12 pb-20 pt-8">
         {/* Real-time Metrics Grid (Mobile Style) */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <MasterStatCard title="Traffic Volume" value="--" label="Network Hits (24h)" icon={<Activity className="h-5 w-5" />} color="indigo" />
+          <MasterStatCard title="Traffic Volume" value="--" label="Network Hits (24h)" icon={<Activity className="h-5 w-5" />} color="emerald" />
           <MasterStatCard title="Network Load" value={totalBookings.toLocaleString()} label="Total Bookings" icon={<CalendarIcon className="h-5 w-5" />} color="emerald" />
           <MasterStatCard title="Active Studios" value={activeTenants.toString()} label="Total Platforms" icon={<Building2 className="h-5 w-5" />} color="amber" />
           <MasterStatCard title="Asset Velocity" value={totalGalleries.toLocaleString()} label="Live Galleries" icon={<ImageIcon className="h-5 w-5" />} color="rose" />
@@ -157,7 +165,7 @@ export default async function MasterDashboardPage() {
                           <div className="flex items-center gap-2">
                             <span className={cn(
                               "inline-flex items-center rounded-full px-3 py-1 text-[9px] font-black tracking-[0.1em] border shadow-sm",
-                              tenant.subscriptionOverwrite ? "bg-indigo-50 text-indigo-600 border-indigo-100" :
+                              tenant.subscriptionOverwrite ? "bg-emerald-50 text-emerald-700 border-emerald-100" :
                               isSubActive ? "bg-emerald-50 text-emerald-600 border-emerald-100" : 
                               isTrialActive ? "bg-amber-50 text-amber-600 border-amber-100" :
                               "bg-rose-50 text-rose-600 border-rose-100"
@@ -223,20 +231,20 @@ export default async function MasterDashboardPage() {
             </div>
           </div>
 
-          <div className="bg-slate-900 rounded-[40px] shadow-2xl p-10 flex flex-col justify-between group relative overflow-hidden">
+          <div className="bg-[#b5d0c1] rounded-[40px] shadow-2xl p-10 flex flex-col justify-between group relative overflow-hidden border border-white/60">
             <div className="absolute top-0 right-0 p-10 opacity-10 group-hover:scale-110 transition-transform duration-1000">
-              <RefreshCw className="h-32 w-32 text-white animate-spin-slow" />
+              <RefreshCw className="h-32 w-32 text-slate-900 animate-spin-slow" />
             </div>
             
             <div className="relative z-10 space-y-2">
-              <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em]">Maintenance Mode</p>
-              <h3 className="text-2xl font-black text-white italic tracking-tight uppercase">Platform Updates</h3>
-              <p className="text-slate-400 text-sm font-medium leading-relaxed max-w-[240px]">
+              <p className="text-[10px] font-black text-slate-700 uppercase tracking-[0.2em]">Maintenance Mode</p>
+              <h3 className="text-2xl font-black text-slate-900 italic tracking-tight uppercase">Platform Updates</h3>
+              <p className="text-slate-700/80 text-sm font-medium leading-relaxed max-w-[240px]">
                 Schedule system-wide maintenance or push global updates to all tenants.
               </p>
             </div>
 
-            <button className="relative z-10 mt-8 h-14 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl shadow-indigo-900/20 active:scale-95">
+            <button className="relative z-10 mt-8 h-14 bg-white/70 hover:bg-white/90 text-slate-900 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl shadow-slate-900/10 active:scale-95 border border-white/60">
               Launch Global Maintenance
             </button>
           </div>
@@ -248,7 +256,6 @@ export default async function MasterDashboardPage() {
 
 function MasterStatCard({ title, value, label, icon, color }: any) {
   const colors: any = {
-    indigo: "from-indigo-500/10 text-indigo-600 border-indigo-100",
     emerald: "from-emerald-500/10 text-emerald-600 border-emerald-100",
     amber: "from-amber-500/10 text-amber-600 border-amber-100",
     rose: "from-rose-500/10 text-rose-600 border-rose-100",

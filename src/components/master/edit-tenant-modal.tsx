@@ -48,7 +48,7 @@ export function EditTenantModal({ isOpen, onClose, tenant }: EditTenantModalProp
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-[#b5d0c1]/60 backdrop-blur-sm" onClick={onClose} />
       
       <div className="relative w-full max-w-lg bg-white rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
         <div className="flex items-center justify-between p-8 border-b border-slate-50">
@@ -135,7 +135,7 @@ export function EditTenantModal({ isOpen, onClose, tenant }: EditTenantModalProp
             <button 
               type="submit" 
               disabled={loading}
-              className="flex-1 h-12 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl font-bold text-[13px] shadow-xl shadow-slate-900/10 transition-all flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95"
+              className="flex-1 h-12 bg-[#b5d0c1] hover:bg-[#b5d0c1]/90 text-slate-900 rounded-2xl font-bold text-[13px] shadow-xl shadow-slate-900/10 transition-all flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 border border-white/60"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : (
                 <>

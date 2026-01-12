@@ -2,12 +2,11 @@ import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { permissionService } from "@/lib/permission-service";
 import { UNIFIED_NAV_CONFIG } from "@/lib/nav-config";
 import Link from "next/link";
-import { Building2, Plus, MoreVertical, ExternalLink, Search, RefreshCw } from "lucide-react";
+import { Plus } from "lucide-react";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { TenantActions } from "@/components/master/tenant-actions";
-import { cn } from "@/lib/utils";
+import { MasterTenantsList, type MasterTenantRow } from "@/components/master/master-tenants-list";
 
 export default async function MasterTenantsPage() {
   const session = await auth();
@@ -27,44 +26,76 @@ export default async function MasterTenantsPage() {
     UNIFIED_NAV_CONFIG
   );
 
-  // FETCH REAL DATA
-  const dbTenants = await prisma.tenant.findMany({
-    include: {
-      _count: {
-        select: {
-          bookings: true,
-          memberships: true,
-          galleries: true,
-          editRequests: {
-            where: { status: { in: ["NEW", "IN_PROGRESS"] } }
-          }
-        }
-      },
-      galleries: {
-        where: { status: "DELIVERED" },
-        select: { id: true }
-      }
-    },
-    orderBy: { createdAt: 'desc' }
-  });
+  // Re-implement the tenant cards with accurate, dashboard-aligned metrics in ONE query.
+  const rows = await prisma.$queryRaw<any[]>`
+    SELECT
+      t.id,
+      t.name,
+      t.slug,
+      t."contactEmail",
+      t."contactPhone",
+      t."deletedAt",
+      /* Totals */
+      (SELECT COUNT(*) FROM "Booking" b 
+        WHERE b."tenantId" = t.id 
+          AND b."deletedAt" IS NULL 
+          AND b."isPlaceholder" = false
+          AND b."clientId" IS NOT NULL
+      ) AS "bookingsTotal",
+      (SELECT COUNT(*) FROM "Gallery" g 
+        WHERE g."tenantId" = t.id 
+          AND g."deletedAt" IS NULL
+      ) AS "galleriesTotal",
+      (SELECT COUNT(*) FROM "Client" c 
+        WHERE c."tenantId" = t.id 
+          AND c."deletedAt" IS NULL
+      ) AS "clientsTotal",
+      (SELECT COUNT(*) FROM "TenantMembership" m 
+        WHERE m."tenantId" = t.id
+      ) AS "usersTotal",
+      /* Dashboard-aligned counts */
+      (SELECT COUNT(*) FROM "EditRequest" e 
+        WHERE e."tenantId" = t.id 
+          AND e."status" = 'NEW'
+      ) AS "newEdits",
+      (SELECT COUNT(*) FROM "EditRequest" e 
+        WHERE e."tenantId" = t.id 
+          AND e."status" IN ('NEW', 'IN_PROGRESS')
+      ) AS "openEdits",
+      (SELECT COUNT(*) FROM "Booking" b 
+        WHERE b."tenantId" = t.id 
+          AND b."deletedAt" IS NULL
+          AND b."isPlaceholder" = false
+          AND b."clientId" IS NOT NULL
+          AND b."status" IN ('REQUESTED', 'PENCILLED')
+      ) AS "pendingBookings",
+      /* Best-effort activity signal (no dedicated lastActive field in schema) */
+      GREATEST(
+        COALESCE((SELECT MAX(b."updatedAt") FROM "Booking" b WHERE b."tenantId" = t.id AND b."deletedAt" IS NULL), to_timestamp(0)),
+        COALESCE((SELECT MAX(g."updatedAt") FROM "Gallery" g WHERE g."tenantId" = t.id AND g."deletedAt" IS NULL), to_timestamp(0)),
+        COALESCE((SELECT MAX(e."updatedAt") FROM "EditRequest" e WHERE e."tenantId" = t.id), to_timestamp(0)),
+        COALESCE((SELECT MAX(c."updatedAt") FROM "Client" c WHERE c."tenantId" = t.id AND c."deletedAt" IS NULL), to_timestamp(0))
+      ) AS "lastActiveAt"
+    FROM "Tenant" t
+    ORDER BY "lastActiveAt" DESC
+  `;
 
-  const tenants = dbTenants.map(t => {
-    return {
-      id: String(t.id),
-      name: String(t.name),
-      slug: String(t.slug),
-      contactEmail: t.contactEmail || null,
-      contactPhone: t.contactPhone || null,
-      deletedAt: t.deletedAt ? t.deletedAt.toISOString() : null,
-      _count: {
-        bookings: Number(t._count.bookings),
-        memberships: Number(t._count.memberships),
-        totalGalleries: Number(t._count.galleries),
-        activeEdits: Number(t._count.editRequests),
-      },
-      deliveredGalleries: t.galleries.length
-    };
-  });
+  const tenants: MasterTenantRow[] = rows.map((r: any) => ({
+    id: String(r.id),
+    name: String(r.name),
+    slug: String(r.slug),
+    contactEmail: r.contactEmail ? String(r.contactEmail) : null,
+    contactPhone: r.contactPhone ? String(r.contactPhone) : null,
+    deletedAt: r.deletedAt ? new Date(r.deletedAt).toISOString() : null,
+    bookingsTotal: Number(r.bookingsTotal || 0),
+    galleriesTotal: Number(r.galleriesTotal || 0),
+    clientsTotal: Number(r.clientsTotal || 0),
+    usersTotal: Number(r.usersTotal || 0),
+    newEdits: Number(r.newEdits || 0),
+    openEdits: Number(r.openEdits || 0),
+    pendingBookings: Number(r.pendingBookings || 0),
+    lastActiveAt: r.lastActiveAt ? new Date(r.lastActiveAt).toISOString() : null,
+  }));
 
   return (
     <DashboardShell 
@@ -74,96 +105,18 @@ export default async function MasterTenantsPage() {
       subtitle="Complete list of all studios and their operational status."
       isMasterMode={true}
     >
-      <div className="flex flex-col gap-8">
-        {/* Action Bar */}
-        <div className="flex items-center justify-between">
-          <div className="relative group">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-slate-900 transition-colors" />
-            <input 
-              type="text" 
-              placeholder="Search workspaces..." 
-              className="h-12 w-80 rounded-2xl border border-slate-100 bg-white pl-11 pr-4 text-sm font-medium outline-none transition-all focus:border-slate-200 focus:ring-4 focus:ring-slate-900/5 shadow-sm"
-            />
-          </div>
-          
-          <Link href="/master/tenants/new" className="h-12 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl px-6 font-bold text-sm transition-all flex items-center gap-2 shadow-xl shadow-slate-900/10 active:scale-95">
+      <div className="space-y-8">
+        <div className="flex items-center justify-end">
+          <Link
+            href="/master/tenants/new"
+            className="h-12 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl px-6 font-bold text-sm transition-all flex items-center gap-2 shadow-xl shadow-emerald-900/10 active:scale-95"
+          >
             <Plus className="h-4 w-4" />
             Create New Tenant
           </Link>
         </div>
 
-        {/* Tenant Table */}
-        <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50/50">
-                <th className="px-8 py-5 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Studio Name</th>
-                <th className="px-8 py-5 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Status</th>
-                <th className="px-8 py-5 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Activity</th>
-                <th className="px-8 py-5 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Engagement</th>
-                <th className="px-8 py-5 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {tenants.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-8 py-20 text-center">
-                    <p className="text-sm font-bold text-slate-400">No tenants registered yet.</p>
-                  </td>
-                </tr>
-              ) : tenants.map((tenant) => (
-                <tr key={tenant.id} className="group hover:bg-slate-50/30 transition-all duration-300">
-                  <td className="px-8 py-5">
-                    <div className="flex items-center gap-4">
-                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-50 text-slate-400 group-hover:bg-slate-900 group-hover:text-white transition-all duration-300 border border-slate-100 font-bold text-xs">
-                        {tenant.name.substring(0, 2).toUpperCase()}
-                      </div>
-                      <span className="font-bold text-slate-900">{tenant.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-8 py-5">
-                    <span className={`inline-flex items-center rounded-full px-4 py-1.5 text-[10px] font-bold tracking-widest ${
-                      !tenant.deletedAt ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
-                    }`}>
-                      {!tenant.deletedAt ? 'ACTIVE' : 'INACTIVE'}
-                    </span>
-                  </td>
-                  <td className="px-8 py-5">
-                    <div className="flex items-center gap-6">
-                      <div className="flex flex-col">
-                        <span className="text-[13px] font-bold text-slate-900">{tenant.deliveredGalleries}/{tenant._count.totalGalleries}</span>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Galleries</span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-[13px] font-bold text-slate-900">{tenant._count.bookings}</span>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Bookings</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-8 py-5">
-                    <div className="flex items-center gap-6">
-                      <div className="flex flex-col">
-                        <span className={cn("text-[13px] font-bold", tenant._count.activeEdits > 0 ? "text-rose-500" : "text-slate-900")}>
-                          {tenant._count.activeEdits}
-                        </span>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Open Edits</span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-[13px] font-bold text-slate-900">{tenant._count.memberships}</span>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Users</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-8 py-5 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <TenantActions tenant={tenant} />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <MasterTenantsList initialTenants={tenants} />
       </div>
     </DashboardShell>
   );
