@@ -103,6 +103,7 @@ export function GalleryPublicViewer({
 
   const [visibleCount, setVisibleCount] = useState(24);
   const loadMoreRef = useRef<HTMLDivElement>(null);
+  const didRefreshAssetsOnOpen = useRef(false);
 
   // Mobile-only header auto-hide on scroll (desktop/tablet unchanged)
   const [hideHeader, setHideHeader] = useState(false);
@@ -409,6 +410,61 @@ export function GalleryPublicViewer({
       loadInitial();
     }
   }, [gallery.id, assets.length, cursor]);
+
+  // Refresh assets on open to detect newly-added photos in Dropbox/Drive after gallery creation.
+  // This does a FULL refresh (pages through all items) so the gallery matches the source folder.
+  useEffect(() => {
+    if (didRefreshAssetsOnOpen.current) return;
+    didRefreshAssetsOnOpen.current = true;
+
+    (async () => {
+      setIsLoading(true);
+      try {
+        const keyOf = (a: any) => String(a?.id || a?.url || "");
+        const pageSize = 1000;
+        const expectedCount = Number((gallery.metadata as any)?.imageCount || 0);
+
+        const collected: any[] = [];
+        const seen = new Set<string>();
+        const push = (list: any[]) => {
+          for (const a of list || []) {
+            if (!isImageAsset(a)) continue;
+            const k = keyOf(a);
+            if (!k || seen.has(k)) continue;
+            seen.add(k);
+            collected.push(a);
+          }
+        };
+
+        const first = await getGalleryAssets(gallery.id, pageSize);
+        if (!first?.success) return;
+        push(first.assets || []);
+
+        let nextCursor: string | null = first.nextCursor || null;
+        let guard = 0;
+        while (
+          nextCursor &&
+          guard < 60 && // safety guard
+          (expectedCount <= 0 || collected.length < expectedCount)
+        ) {
+          guard++;
+          const next = await getGalleryAssets(gallery.id, pageSize, nextCursor);
+          if (!next?.success) break;
+          push(next.assets || []);
+          nextCursor = next.nextCursor || null;
+        }
+
+        // Replace assets entirely so the view matches Dropbox (not "old + some new")
+        setAssets(collected);
+        setCursor(nextCursor); // usually null after full load
+        setAllImages(null); // force re-enumeration for Select All / Download Selected
+      } catch (e) {
+        console.error("Refresh assets on open failed:", e);
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, [gallery.id]);
 
   const handleToggleFavorite = async (e: React.MouseEvent, item: any) => {
     e.stopPropagation();

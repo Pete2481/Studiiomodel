@@ -4,6 +4,15 @@ import { auth } from "@/auth";
 import sharp from "sharp";
 import { checkSubscriptionStatus } from "@/lib/tenant-guard";
 
+// Dropbox requires JSON args in the `Dropbox-API-Arg` header. Node's fetch (undici) enforces ByteString
+// for header values, so we must escape non-Latin-1 chars (e.g. U+202F) to avoid runtime errors.
+function toDropboxApiArg(obj: any) {
+  return JSON.stringify(obj).replace(/[^\u0000-\u00FF]/g, (ch) => {
+    const hex = ch.charCodeAt(0).toString(16).padStart(4, "0");
+    return `\\u${hex}`;
+  });
+}
+
 /**
  * PROXY ROUTE: Downloads high-res raw assets from Dropbox.
  * Bypasses CORS and handles token refreshing automatically.
@@ -112,7 +121,7 @@ export async function GET(
           method: "POST",
           headers: {
             "Authorization": `Bearer ${token}`,
-            "Dropbox-API-Arg": JSON.stringify(arg)
+            "Dropbox-API-Arg": toDropboxApiArg(arg)
           }
         });
       } else {
@@ -121,7 +130,7 @@ export async function GET(
           method: "POST",
           headers: {
             "Authorization": `Bearer ${token}`,
-            "Dropbox-API-Arg": JSON.stringify({ path })
+            "Dropbox-API-Arg": toDropboxApiArg({ path })
           }
         });
       }

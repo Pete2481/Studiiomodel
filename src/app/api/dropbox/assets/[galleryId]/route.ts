@@ -9,6 +9,15 @@ import { logger } from "@/lib/logger";
 const logoCache = new Map<string, { buffer: Buffer, timestamp: number }>();
 const LOGO_CACHE_TTL = 1000 * 60 * 60; // 1 hour
 
+// Dropbox requires JSON args in the `Dropbox-API-Arg` header. Node's fetch (undici) enforces ByteString
+// for header values, so we must escape non-Latin-1 chars (e.g. U+202F) to avoid runtime errors.
+function toDropboxApiArg(obj: any) {
+  return JSON.stringify(obj).replace(/[^\u0000-\u00FF]/g, (ch) => {
+    const hex = ch.charCodeAt(0).toString(16).padStart(4, "0");
+    return `\\u${hex}`;
+  });
+}
+
 /**
  * Proxy route to fetch high-res assets from Dropbox.
  * This avoids CORS issues and keeps tokens server-side.
@@ -101,7 +110,7 @@ export async function GET(
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`,
-          "Dropbox-API-Arg": JSON.stringify({
+          "Dropbox-API-Arg": toDropboxApiArg({
             resource,
             format: "jpeg",
             size: thumbnailSize,
@@ -140,7 +149,119 @@ export async function GET(
       }
     }
 
+    // Fallback: Dropbox can reject `get_thumbnail_v2` for some shared-link resources (notably with odd filenames).
+    // In that case, download the shared file and generate a thumbnail server-side.
     if (!dbResponse.ok) {
+      if (sharedLink) {
+        const parseSize = (s: string) => {
+          const m = /^w(\d+)h(\d+)$/.exec(s);
+          if (!m) return { width: 640, height: 480 };
+          return { width: Number(m[1]), height: Number(m[2]) };
+        };
+        const { width, height } = parseSize(thumbnailSize);
+
+        const getSharedFile = async (token: string) => {
+          const arg: any = { url: sharedLink };
+          if (path && path !== "/" && path !== "") arg.path = path;
+          return fetch("https://content.dropboxapi.com/2/sharing/get_shared_link_file", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${token}`,
+              "Dropbox-API-Arg": toDropboxApiArg(arg),
+            },
+          });
+        };
+
+        let fileRes = await getSharedFile(accessToken);
+        if (fileRes.status === 401 && refreshToken) {
+          const refreshResponse = await fetch("https://api.dropbox.com/oauth2/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              grant_type: "refresh_token",
+              refresh_token: refreshToken,
+              client_id: process.env.DROPBOX_CLIENT_ID!,
+              client_secret: process.env.DROPBOX_CLIENT_SECRET!,
+            }),
+          });
+          if (refreshResponse.ok) {
+            const refreshData = await refreshResponse.json();
+            accessToken = refreshData.access_token;
+            const tPrisma = await getTenantPrisma(tenantId);
+            await tPrisma.tenant.update({
+              where: { id: tenantId },
+              data: { dropboxAccessToken: accessToken },
+            });
+            fileRes = await getSharedFile(accessToken);
+          }
+        }
+
+        if (!fileRes.ok) {
+          logger.error("Dropbox shared-link fallback failed", null, {
+            galleryId,
+            status: fileRes.status,
+          });
+          return new NextResponse("Failed to fetch asset", { status: dbResponse.status });
+        }
+
+        const arrayBuffer = await fileRes.arrayBuffer();
+        let buffer: any = Buffer.from(arrayBuffer);
+        let contentType = "image/webp";
+
+        try {
+          let sharpInstance = sharp(buffer).resize({ width, height, fit: "inside" });
+
+          // Apply Watermark if enabled
+          if (gallery.watermarkEnabled && gallery.tenant.logoUrl) {
+            let logoBuffer: Buffer | null = null;
+            const cached = logoCache.get(gallery.tenant.logoUrl);
+
+            if (cached && Date.now() - cached.timestamp < LOGO_CACHE_TTL) {
+              logoBuffer = cached.buffer;
+            } else {
+              const logoResponse = await fetch(gallery.tenant.logoUrl);
+              if (logoResponse.ok) {
+                logoBuffer = Buffer.from(await logoResponse.arrayBuffer());
+                logoCache.set(gallery.tenant.logoUrl, { buffer: logoBuffer, timestamp: Date.now() });
+              }
+            }
+
+            if (logoBuffer) {
+              const processedLogo = await sharp(logoBuffer)
+                .resize({ width: 300, height: 300, fit: "inside" })
+                .composite([
+                  {
+                    input: Buffer.from([255, 255, 255, 128]),
+                    raw: { width: 1, height: 1, channels: 4 },
+                    tile: true,
+                    blend: "dest-in",
+                  },
+                ])
+                .toBuffer();
+
+              sharpInstance = sharpInstance.composite([
+                {
+                  input: processedLogo,
+                  gravity: "center",
+                },
+              ]);
+            }
+          }
+
+          buffer = await sharpInstance.webp({ quality: 80 }).toBuffer();
+        } catch (e) {
+          // If sharp fails, just return the original bytes.
+          contentType = fileRes.headers.get("Content-Type") || "application/octet-stream";
+        }
+
+        return new NextResponse(buffer, {
+          headers: {
+            "Content-Type": contentType,
+            "Cache-Control": "public, max-age=31536000, immutable",
+          },
+        });
+      }
+
       return new NextResponse("Failed to fetch asset", { status: dbResponse.status });
     }
 
