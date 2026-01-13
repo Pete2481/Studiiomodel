@@ -3,47 +3,55 @@
 import React, { useState } from "react";
 import { 
   Zap, 
-  Eraser, 
-  Sofa, 
   Sun, 
   Moon, 
   X, 
   CheckCircle2, 
   AlertCircle,
-  ChevronRight,
   Download,
-  Share2,
   Sparkles,
-  Cloud
+  Wand2,
+  ChevronDown,
+  Sofa,
+  Trash2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CameraLoader } from "@/components/ui/camera-loader";
-import { processImageWithAI, AITaskType } from "@/app/actions/ai-edit";
+import { AITaskType } from "@/app/actions/ai-edit";
 import { saveAIResult } from "@/app/actions/storage";
-import { AI_STAGING_STYLES, AIStyleSuite, AI_FURNITURE_BUNDLES, AIFurnitureBundle } from "@/lib/ai-styles";
+import dynamic from "next/dynamic";
+import { runAiSuiteRoomEditor } from "@/app/actions/ai-suite";
+
+const DownloadManager = dynamic(() => import("./download-manager").then(m => m.DownloadManager), { ssr: false });
 
 interface AISuiteDrawerProps {
   isOpen: boolean;
   onClose: () => void;
+  galleryId: string;
   assetUrl: string;
   assetName: string;
   dbxPath?: string;
   tenantId?: string;
+  isUnlocked: boolean;
+  remainingEdits: number;
+  onRequireUnlock?: () => void;
+  onAiSuiteUpdate?: (aiSuite: { unlocked?: boolean; remainingEdits?: number; unlockBlockId?: string | null }) => void;
   onComplete?: (newUrl: string) => void;
-  onStartPlacement?: () => void;
-  maskData?: string | null;
 }
 
 export function AISuiteDrawer({ 
   isOpen, 
   onClose, 
+  galleryId,
   assetUrl, 
   assetName,
   dbxPath,
   tenantId,
-  onComplete,
-  onStartPlacement,
-  maskData: externalMaskData
+  isUnlocked,
+  remainingEdits,
+  onRequireUnlock,
+  onAiSuiteUpdate,
+  onComplete
 }: AISuiteDrawerProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
@@ -52,104 +60,87 @@ export function AISuiteDrawer({
   const [prompt, setPrompt] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">("idle");
-  const [stagingStep, setStagingStep] = useState<"select_style" | "room_type" | "select_furniture" | "placement" | "ready">("select_style");
-  const [selectedStyle, setSelectedStyle] = useState<AIStyleSuite | null>(null);
-  const [selectedRoomTypes, setSelectedRoomTypes] = useState<string[]>([]);
-  const [selectedBundle, setSelectedBundle] = useState<AIFurnitureBundle | null>(null);
-  const [maskData, setMaskData] = useState<string | null>(null);
+  const [isDownloadOpen, setIsDownloadOpen] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showReplaceStyles, setShowReplaceStyles] = useState(false);
+  // Single tool: prompt-only room editing with Nano-Banana
+  const tool = {
+    id: "room_editor" as AITaskType,
+    name: "AI Room Editor",
+    desc: "Remove or replace furniture with written instructions",
+    icon: Wand2,
+    color: "text-emerald-400",
+    bg: "bg-emerald-400/10",
+    placeholder:
+      "Examples:\n- Remove all furniture, rugs/mats, decor, and wall art\n- Change all furniture style to rattan\n- Replace dining chairs with modern black chairs",
+  };
 
-  // NEW: Auto-trigger process when mask is received for Item Removal
-  React.useEffect(() => {
-    if (externalMaskData && activeTask === "object_removal" && !isProcessing && !resultUrl) {
-      const tool = tools.find(t => t.id === "object_removal");
-      if (tool) handleProcess(tool);
-    }
-  }, [externalMaskData, activeTask]);
-
-  const roomTypes = [
-    "Living Room", "Dining Room", "Bedroom", "Kitchen", "Home Office", "Media Room", "Outdoor / Patio"
-  ];
-
-  const tools = [
-    { 
-      id: "sky_replacement" as AITaskType, 
-      name: "Blue Sky Swap", 
-      icon: Sun, 
-      desc: "Replace grey skies with perfect blue",
-      color: "text-blue-500",
-      bg: "bg-blue-500/10"
-    },
-    { 
-      id: "day_to_dusk" as AITaskType, 
-      name: "Day to Dusk", 
-      icon: Moon, 
-      desc: "Golden hour & soft twilight",
-      color: "text-orange-400",
-      bg: "bg-orange-400/10"
-    },
-    { 
-      id: "object_removal" as AITaskType, 
-      name: "Item Removal", 
-      icon: Eraser, 
-      desc: "Remove furniture & clutter",
-      color: "text-rose-500",
-      bg: "bg-rose-500/10",
-      needsPrompt: false,
-      placeholder: "e.g. Remove the couch and coffee table"
-    },
-    { 
-      id: "virtual_staging" as AITaskType, 
-      name: "Virtual Staging", 
-      icon: Sofa, 
-      desc: "Furnish empty rooms with AI",
-      color: "text-emerald-500",
-      bg: "bg-emerald-500/10",
-      needsPrompt: false, // Handled via multi-step flow
-      placeholder: "e.g. Modern luxury living room furniture"
-    },
-  ];
-
-  const handleProcess = async (tool: typeof tools[0]) => {
-    // If we're calling this from the Item Removal auto-flow, ensure we have the mask
-    if (tool.id === "object_removal" && !externalMaskData) {
-      setError("Please mark the items you want to remove using the brush tool first.");
+  const runWithPrompt = async (nextPrompt: string) => {
+    const finalPrompt = (nextPrompt || "").trim();
+    if (!finalPrompt) {
+      setError("Please type an instruction (e.g. “Remove all furniture”).");
       return;
     }
-
-    if (tool.needsPrompt && !prompt) {
-      setError("Please describe what you want the AI to do.");
+    if (!isUnlocked || remainingEdits <= 0) {
+      onRequireUnlock?.();
+      setError(remainingEdits <= 0 ? "AI Suite limit reached. Unlock another 15 edits to continue." : "Unlock AI Suite to run edits.");
       return;
     }
-
+    if (!prompt.trim()) {
+      // keep prompt state in sync if it was empty; otherwise we may be running from a preset
+    }
     setIsProcessing(true);
     setError(null);
     setActiveTask(tool.id);
 
     try {
-      let finalPrompt = prompt;
-      if (tool.id === "virtual_staging" && selectedStyle) {
-        const bundleContext = selectedBundle 
-          ? `using this exact furniture set: ${selectedBundle.prompt}` 
-          : selectedStyle.prompt;
-        
-        const roomContext = selectedRoomTypes.length > 0 
-          ? `specifically for a ${selectedRoomTypes.join(" and ")}` 
-          : "specifically for this room";
-          
-        finalPrompt = `${bundleContext}, ${roomContext}`;
-      }
-
-      const result = await processImageWithAI(assetUrl, tool.id, finalPrompt, dbxPath, tenantId, externalMaskData || undefined);
+      const result = await runAiSuiteRoomEditor({
+        galleryId,
+        assetUrl,
+        prompt: finalPrompt,
+        dbxPath,
+      });
       if (result.success && result.outputUrl) {
         setResultUrl(result.outputUrl);
+        onAiSuiteUpdate?.(result.aiSuite as any);
       } else {
-        setError(result.error || "AI processing failed. Please try again.");
+        if (result.error === "AI_SUITE_LOCKED" || result.error === "AI_SUITE_LIMIT") {
+          onAiSuiteUpdate?.((result as any).aiSuite);
+          onRequireUnlock?.();
+        }
+        setError((result as any).error || "AI processing failed. Please try again.");
       }
     } catch (err) {
       setError("An unexpected error occurred.");
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleRun = async () => runWithPrompt(prompt);
+
+  const presetPrompts = {
+    dayToDusk:
+      "Transform this photo into a beautiful early dusk / golden hour scene. Keep it bright and clear (not too dark). Make interior/exterior lights glow softly and warmly where appropriate. Preserve the building/room structure exactly. Photorealistic.",
+    skyReplacement:
+      "Replace the sky with a perfect, beautiful clear blue sunny sky with soft wispy white clouds. Preserve the house/building, trees, and all architecture exactly. Keep lighting realistic and consistent. Photorealistic.",
+    removeAllFurniture:
+      "Remove ALL furniture and ALL movable items from this room (couches, chairs, tables, rugs/mats, lamps, plants, decor, wall art/frames, clutter). Leave the room completely empty. Do not change the room itself. Photorealistic.",
+  } as const;
+
+  const furnitureStyles = [
+    { id: "rattan", label: "Rattan", prompt: "Replace ALL furniture with high-end rattan furniture (coastal luxury). Keep room unchanged otherwise. Photorealistic." },
+    { id: "modern", label: "Modern", prompt: "Replace ALL furniture with modern luxury furniture (clean lines, neutral tones). Keep room unchanged otherwise. Photorealistic." },
+    { id: "scandi", label: "Scandinavian", prompt: "Replace ALL furniture with Scandinavian style furniture (light woods, minimal, cozy). Keep room unchanged otherwise. Photorealistic." },
+    { id: "coastal", label: "Coastal", prompt: "Replace ALL furniture with coastal style furniture (airy, light, natural textures). Keep room unchanged otherwise. Photorealistic." },
+    { id: "minimal", label: "Minimal", prompt: "Replace ALL furniture with minimal style furniture (very clean, sparse, premium). Keep room unchanged otherwise. Photorealistic." },
+  ] as const;
+
+  const runPreset = async (p: string) => {
+    setPrompt(p);
+    setShowAdvanced(false);
+    setShowReplaceStyles(false);
+    await runWithPrompt(p);
   };
 
   const handleSaveToStorage = async () => {
@@ -186,38 +177,7 @@ export function AISuiteDrawer({
 
   const handleDownload = async () => {
     if (!resultUrl) return;
-    
-    try {
-      // If it's already a data URL, we don't need to fetch it
-      if (resultUrl.startsWith('data:')) {
-        const a = document.createElement('a');
-        a.href = resultUrl;
-        a.download = `AI_${activeTask}_${assetName}`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        return;
-      }
-
-      const response = await fetch(resultUrl);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `AI_${activeTask}_${assetName}`;
-      document.body.appendChild(a);
-      a.click();
-      
-      // Wait a bit before revoking to ensure the browser has started the download
-      setTimeout(() => {
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      }, 150);
-    } catch (err) {
-      console.error("Download failed:", err);
-      // Fallback: open in new tab
-      window.open(resultUrl, '_blank');
-    }
+    setIsDownloadOpen(true);
   };
 
   const handleReset = () => {
@@ -225,11 +185,8 @@ export function AISuiteDrawer({
     setError(null);
     setActiveTask(null);
     setPrompt("");
-    setStagingStep("select_style");
-    setSelectedStyle(null);
-    setSelectedRoomTypes([]);
-    setSelectedBundle(null);
-    setMaskData(null);
+    setShowAdvanced(false);
+    setShowReplaceStyles(false);
   };
 
   return (
@@ -295,266 +252,155 @@ export function AISuiteDrawer({
 
           {!resultUrl ? (
             <div className="p-8 space-y-8">
-              {/* Item Removal Flow */}
-              {activeTask === "object_removal" ? (
-                <div className="space-y-8 animate-in fade-in duration-500">
-                  <div className="flex items-center gap-4 mb-2">
-                    <button 
-                      onClick={() => setActiveTask(null)}
-                      className="h-8 w-8 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10"
-                    >
-                      <X className="h-4 w-4 rotate-45" />
-                    </button>
-                    <div>
-                      <p className="text-[10px] font-black text-primary uppercase tracking-widest">
-                        Item Removal
-                      </p>
-                      <h4 className="text-sm font-bold">
-                        Mark Items to Erase
-                      </h4>
-                    </div>
+              <div className="space-y-6 animate-in fade-in duration-500">
+                <div className="flex items-center gap-4 mb-2">
+                  <div className={cn("h-12 w-12 rounded-2xl flex items-center justify-center shrink-0", tool.bg, tool.color)}>
+                    <tool.icon className="h-6 w-6" />
                   </div>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black text-primary uppercase tracking-widest">
+                      {tool.name}
+                    </p>
+                    <h4 className="text-sm font-bold text-white/90">
+                      {tool.desc}
+                    </h4>
+                  </div>
+                  <div className="ml-auto flex items-center gap-2">
+                    <span className={cn(
+                      "px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border",
+                      isUnlocked && remainingEdits > 0
+                        ? "bg-emerald-500/10 text-emerald-200 border-emerald-500/20"
+                        : "bg-rose-500/10 text-rose-200 border-rose-500/20"
+                    )}>
+                      {isUnlocked ? `${Math.max(0, remainingEdits)} / 15` : "Locked"}
+                    </span>
+                  </div>
+                </div>
 
-                  {!externalMaskData && !isProcessing && !resultUrl && (
-                    <div className="p-6 bg-white/5 rounded-3xl border border-white/10 text-center space-y-4">
-                      <div className="h-12 w-12 rounded-2xl bg-rose-500/10 text-rose-500 flex items-center justify-center mx-auto">
-                        <Eraser className="h-6 w-6" />
-                      </div>
-                      <p className="text-xs font-medium text-white/60">
-                        Use the brush tool to paint over the furniture or objects you want to remove from the room.
+                <div className="p-6 bg-white/5 rounded-[32px] border border-white/10 space-y-4">
+                  {!isUnlocked && (
+                    <div className="p-4 rounded-2xl border border-white/10 bg-white/5">
+                      <p className="text-xs font-bold text-white/80">
+                        Premium feature: unlock AI Suite for <span className="font-black">$50</span> (includes <span className="font-black">15 edits</span>).
                       </p>
-                      
                       <button
-                        onClick={onStartPlacement}
-                        className="w-full h-10 rounded-xl bg-white/5 text-white text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-all border border-white/5"
+                        type="button"
+                        onClick={() => onRequireUnlock?.()}
+                        className="mt-3 w-full h-10 rounded-2xl bg-primary text-white font-bold text-[10px] uppercase tracking-widest"
                       >
-                        Open Brush Tool
+                        Unlock AI Suite
+                      </button>
+                    </div>
+                  )}
+                  {isUnlocked && remainingEdits <= 0 && (
+                    <div className="p-4 rounded-2xl border border-white/10 bg-white/5">
+                      <p className="text-xs font-bold text-white/80">
+                        You’ve used all <span className="font-black">15 edits</span> for this gallery.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => onRequireUnlock?.()}
+                        className="mt-3 w-full h-10 rounded-2xl bg-primary text-white font-bold text-[10px] uppercase tracking-widest"
+                      >
+                        Unlock another 15 edits ($50)
                       </button>
                     </div>
                   )}
 
-                  {externalMaskData && !resultUrl && (
-                    <div className="p-12 text-center space-y-6">
-                      <CameraLoader size="lg" className="text-primary mx-auto" />
-                      <div className="space-y-2">
-                        <h4 className="text-xl font-bold tracking-tight uppercase">Processing Removal...</h4>
-                        <p className="text-xs text-white/40 leading-relaxed">
-                          We're erasing the marked items and rebuilding the background. This usually takes 15-20 seconds.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : activeTask === "virtual_staging" ? (
-                <div className="space-y-8 animate-in fade-in duration-500">
-                  {/* Step Header */}
-                  <div className="flex items-center gap-4 mb-2">
-                    <button 
-                      onClick={() => {
-                        if (stagingStep === "select_style") setActiveTask(null);
-                        else if (stagingStep === "room_type") setStagingStep("select_style");
-                        else if (stagingStep === "select_furniture") setStagingStep("room_type");
-                        else if (stagingStep === "placement") setStagingStep("select_furniture");
-                        else if (stagingStep === "ready") setStagingStep("placement");
-                      }}
-                      className="h-8 w-8 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10"
+                  {/* Presets (one-press) */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      disabled={isProcessing || !isUnlocked || remainingEdits <= 0}
+                      onClick={() => runPreset(presetPrompts.dayToDusk)}
+                      className="h-12 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all disabled:opacity-50"
                     >
-                      <X className="h-4 w-4 rotate-45" /> {/* Using rotate as a back arrow for now */}
+                      <Moon className="h-4 w-4" />
+                      Day to Dusk
                     </button>
-                    <div>
-                      <p className="text-[10px] font-black text-primary uppercase tracking-widest">
-                        Step {stagingStep === "select_style" ? "1 of 4" : stagingStep === "room_type" ? "2 of 4" : stagingStep === "select_furniture" ? "3 of 4" : "4 of 4"}
-                      </p>
-                      <h4 className="text-sm font-bold">
-                        {stagingStep === "select_style" ? "Pick Your Design Style" : stagingStep === "room_type" ? "What room is this?" : stagingStep === "select_furniture" ? "Select Furniture Set" : "Place Your Furniture"}
-                      </h4>
-                    </div>
+                    <button
+                      disabled={isProcessing || !isUnlocked || remainingEdits <= 0}
+                      onClick={() => runPreset(presetPrompts.skyReplacement)}
+                      className="h-12 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                    >
+                      <Sun className="h-4 w-4" />
+                      Sky Replace
+                    </button>
+                    <button
+                      disabled={isProcessing || !isUnlocked || remainingEdits <= 0}
+                      onClick={() => runPreset(presetPrompts.removeAllFurniture)}
+                      className="h-12 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all disabled:opacity-50 col-span-2"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Remove ALL Furniture
+                    </button>
+                    <button
+                      disabled={isProcessing || !isUnlocked || remainingEdits <= 0}
+                      onClick={() => setShowReplaceStyles(v => !v)}
+                      className="h-12 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all disabled:opacity-50 col-span-2"
+                    >
+                      <Sofa className="h-4 w-4" />
+                      Replace ALL Furniture
+                      <ChevronDown className={cn("h-4 w-4 transition-transform", showReplaceStyles && "rotate-180")} />
+                    </button>
                   </div>
 
-                  {stagingStep === "select_style" ? (
-                    <div className="grid grid-cols-2 gap-4">
-                      {AI_STAGING_STYLES.map((style) => (
+                  {showReplaceStyles && (
+                    <div className="grid grid-cols-2 gap-3 animate-in fade-in duration-200">
+                      {furnitureStyles.map((s) => (
                         <button
-                          key={style.id}
-                          onClick={() => {
-                            setSelectedStyle(style);
-                            setStagingStep("room_type");
-                          }}
-                          className="group relative aspect-[4/3] rounded-2xl overflow-hidden border-2 border-transparent hover:border-primary transition-all text-left"
+                          key={s.id}
+                          disabled={isProcessing || !isUnlocked || remainingEdits <= 0}
+                          onClick={() => runPreset(s.prompt)}
+                          className="h-11 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-100 font-black text-[10px] uppercase tracking-widest flex items-center justify-center transition-all disabled:opacity-50"
                         >
-                          <img src={style.thumbnail} className="h-full w-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" alt={style.name} />
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent p-4 flex flex-col justify-end">
-                            <p className="font-bold text-[11px] uppercase tracking-wider">{style.name}</p>
-                          </div>
+                          {s.label}
                         </button>
                       ))}
                     </div>
-                  ) : stagingStep === "room_type" ? (
-                    <div className="space-y-6 animate-in slide-in-from-right duration-300">
-                      <div className="grid grid-cols-1 gap-2">
-                        {roomTypes.map((type) => {
-                          const isSelected = selectedRoomTypes.includes(type);
-                          return (
-                            <button
-                              key={type}
-                              onClick={() => {
-                                if (isSelected) {
-                                  setSelectedRoomTypes(prev => prev.filter(t => t !== type));
-                                } else {
-                                  setSelectedRoomTypes(prev => [...prev, type]);
-                                }
-                              }}
-                              className={cn(
-                                "flex items-center justify-between px-6 py-4 rounded-2xl border-2 transition-all font-bold text-sm",
-                                isSelected 
-                                  ? "bg-primary/10 border-primary text-primary" 
-                                  : "bg-white/5 border-white/5 text-white/60 hover:bg-white/10"
-                              )}
-                            >
-                              {type}
-                              {isSelected && <CheckCircle2 className="h-4 w-4" />}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      
+                  )}
+
+                  {/* Advanced prompt (hidden by default) */}
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvanced(v => !v)}
+                    className="w-full h-10 rounded-2xl bg-white/0 hover:bg-white/5 border border-white/10 text-white/70 font-black text-[9px] uppercase tracking-widest transition-all"
+                  >
+                    {showAdvanced ? "Hide Advanced" : "Advanced"}
+                  </button>
+
+                  {showAdvanced && (
+                    <div className="space-y-3 animate-in fade-in duration-200">
+                      <textarea
+                        value={prompt}
+                        onChange={(e) => setPrompt(e.target.value)}
+                        placeholder={tool.placeholder}
+                        className="w-full bg-transparent border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-white/20 focus:ring-2 focus:ring-primary/20 focus:border-primary/40 resize-none h-32 font-medium leading-relaxed"
+                      />
                       <button
-                        onClick={() => setStagingStep("select_furniture")}
-                        disabled={selectedRoomTypes.length === 0}
+                        onClick={handleRun}
+                        disabled={isProcessing || !isUnlocked || remainingEdits <= 0}
                         className="w-full h-12 rounded-2xl bg-primary text-white font-bold text-xs uppercase tracking-widest hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                       >
-                        Next: Select Furniture
-                        <ChevronRight className="h-4 w-4" />
+                        <Sparkles className="h-4 w-4" />
+                        Run AI (Advanced)
                       </button>
                     </div>
-                  ) : stagingStep === "select_furniture" ? (
-                    <div className="space-y-6 animate-in slide-in-from-right duration-300">
-                      <div className="grid grid-cols-1 gap-4">
-                        {AI_FURNITURE_BUNDLES.filter(b => selectedRoomTypes.includes(b.roomType)).length > 0 ? (
-                          AI_FURNITURE_BUNDLES
-                            .filter(b => selectedRoomTypes.includes(b.roomType))
-                            .map((bundle) => (
-                              <button
-                                key={bundle.id}
-                                onClick={() => {
-                                  setSelectedBundle(bundle);
-                                  setStagingStep("placement");
-                                  if (onStartPlacement) onStartPlacement();
-                                }}
-                                className="group relative aspect-[16/9] rounded-[32px] overflow-hidden border-2 border-transparent hover:border-primary transition-all text-left bg-slate-900"
-                              >
-                                <img src={bundle.thumbnail} className="h-full w-full object-contain p-4 opacity-80 group-hover:opacity-100 transition-opacity" alt={bundle.name} />
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent p-6 flex flex-col justify-end">
-                                  <p className="font-bold text-xs uppercase tracking-widest text-white">{bundle.name}</p>
-                                </div>
-                              </button>
-                            ))
-                        ) : (
-                          <div className="p-8 text-center bg-white/5 rounded-[32px] border border-dashed border-white/10">
-                            <p className="text-xs font-medium text-white/40">No specific bundles found for this room type. You can still use the general style.</p>
-                            <button 
-                              onClick={() => setStagingStep("placement")}
-                              className="mt-4 text-primary font-bold text-[10px] uppercase tracking-widest hover:underline"
-                            >
-                              Skip to placement →
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-6 animate-in slide-in-from-right duration-300">
-                      <div className="p-6 bg-white/5 rounded-3xl border border-white/10 text-center space-y-4">
-                        <div className="h-12 w-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto">
-                          {externalMaskData ? <CheckCircle2 className="h-6 w-6" /> : <Sparkles className="h-6 w-6" />}
-                        </div>
-                        <p className="text-xs font-medium text-white/60">
-                          {externalMaskData 
-                            ? "Placement areas marked! You're ready to launch." 
-                            : "To get the best results, draw boxes or simple blobs where you'd like the furniture placed."}
-                        </p>
-                        
-                        {!externalMaskData && (
-                          <button
-                            onClick={onStartPlacement}
-                            className="w-full h-10 rounded-xl bg-white/5 text-white text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-all border border-white/5"
-                          >
-                            Open Placement Tool
-                          </button>
-                        )}
+                  )}
 
-                        <button
-                          onClick={() => {
-                            handleProcess(tools.find(t => t.id === "virtual_staging")!);
-                          }}
-                          className="w-full h-12 rounded-2xl bg-primary text-white font-bold text-xs uppercase tracking-widest hover:opacity-90 transition-all flex items-center justify-center gap-2"
-                        >
-                          Launch AI with {selectedStyle?.name}
-                        </button>
-                      </div>
+                  {isProcessing && (
+                    <div className="p-8 text-center space-y-4">
+                      <CameraLoader size="lg" className="text-primary mx-auto" />
+                      <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">
+                        Running Nano-Banana…
+                      </p>
                     </div>
                   )}
                 </div>
-              ) : (
-                /* Standard Tool Selection */
-              <div className="grid grid-cols-1 gap-4">
-                {tools.map((tool) => (
-                  <div key={tool.id} className="space-y-4">
-                    <button 
-                      onClick={() => {
-                          if (tool.id === "virtual_staging") {
-                            setActiveTask("virtual_staging");
-                            setStagingStep("select_style");
-                          } else if (tool.id === "object_removal") {
-                            setActiveTask("object_removal");
-                            if (onStartPlacement) onStartPlacement();
-                          } else if (tool.needsPrompt) {
-                          setActiveTask(tool.id);
-                        } else {
-                          handleProcess(tool);
-                        }
-                      }}
-                      disabled={isProcessing}
-                      className={cn(
-                        "w-full flex items-center gap-4 p-6 rounded-[32px] border transition-all text-left group relative overflow-hidden",
-                        activeTask === tool.id 
-                          ? "bg-white/10 border-white/20 ring-2 ring-primary/20" 
-                          : "bg-white/5 border-white/5 hover:border-white/20 hover:bg-white/10",
-                        isProcessing && activeTask !== tool.id && "opacity-40"
-                      )}
-                    >
-                      <div className={cn("h-12 w-12 rounded-2xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-110", tool.bg, tool.color)}>
-                        <tool.icon className="h-6 w-6" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-sm tracking-tight">{tool.name}</p>
-                        <p className="text-[10px] text-white/40 uppercase tracking-widest mt-0.5">{tool.desc}</p>
-                      </div>
-                      <ChevronRight className="h-4 w-4 text-white/20 group-hover:translate-x-1 transition-all" />
-                    </button>
 
-                      {activeTask === tool.id && tool.needsPrompt && !isProcessing && (tool.id as string) !== "virtual_staging" && (
-                      <div className="p-6 bg-white/5 rounded-[32px] border border-white/10 space-y-4 animate-in slide-in-from-top-4 duration-300">
-                        <textarea
-                          autoFocus
-                          value={prompt}
-                          onChange={(e) => setPrompt(e.target.value)}
-                          placeholder={tool.placeholder}
-                          className="w-full bg-transparent border-none p-0 text-sm text-white placeholder:text-white/20 focus:ring-0 resize-none h-24 font-medium"
-                        />
-                        <button
-                          onClick={() => handleProcess(tool)}
-                          className="w-full h-12 rounded-2xl bg-primary text-white font-bold text-xs uppercase tracking-widest hover:opacity-90 transition-all flex items-center justify-center gap-2"
-                        >
-                          <Sparkles className="h-4 w-4" />
-                          Launch AI Model
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                <p className="text-[10px] text-white/35 leading-relaxed">
+                  Tip: “Remove all furniture” is best-effort without masking. If you want extremely precise removal later, we can add auto-masking — but per your request this version is prompt-only.
+                </p>
               </div>
-              )}
             </div>
           ) : (
             <div className="p-8 space-y-8 animate-in fade-in duration-500">
@@ -575,7 +421,7 @@ export function AISuiteDrawer({
                   className="w-full h-14 rounded-2xl bg-white text-slate-950 font-bold flex items-center justify-center gap-3 hover:bg-slate-100 transition-all shadow-lg shadow-white/5"
                 >
                   <Download className="h-5 w-5" />
-                  Download High-Res
+                  Download (Print / Web / Social)
                 </button>
                 
                 <button 
@@ -611,6 +457,19 @@ export function AISuiteDrawer({
           </p>
         </div>
       </div>
+
+      {isDownloadOpen && resultUrl && (
+        <DownloadManager
+          galleryId={dbxPath || "ai"}
+          assets={[
+            {
+              name: `AI-${assetName}`,
+              url: resultUrl,
+            },
+          ]}
+          onClose={() => setIsDownloadOpen(false)}
+        />
+      )}
     </>
   );
 }

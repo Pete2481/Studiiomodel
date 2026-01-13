@@ -65,44 +65,10 @@ async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
     permissions: sessionUser.permissions || {}
   };
 
-  // Visibility Scoping
-  // We now fetch ALL bookings for the tenant to show "Limited Availability"
-  // but we will mask the data for anything not owned by the current user.
-  const bookingWhere: any = { 
-    deletedAt: null,
-    startAt: {
-      gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    },
-    endAt: {
-      lte: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
-    }
-  };
-
   const canViewAll = sessionUser.role === "TENANT_ADMIN" || sessionUser.role === "ADMIN";
   
   // Real data fetching
-  const [dbBookings, dbClients, dbServices, dbTeamMembers, dbAgents, tenant, currentMember] = await Promise.all([
-    tPrisma.booking.findMany({
-      where: bookingWhere,
-      select: {
-        id: true,
-        title: true,
-        startAt: true,
-        endAt: true,
-        status: true,
-        propertyStatus: true,
-        clientId: true,
-        agentId: true,
-        isPlaceholder: true,
-        slotType: true,
-        internalNotes: true,
-        clientNotes: true,
-        client: { select: { id: true, name: true, businessName: true } },
-        property: { select: { id: true, name: true } },
-        services: { select: { serviceId: true, service: { select: { name: true } } } },
-        assignments: { select: { teamMemberId: true, teamMember: { select: { id: true, displayName: true, avatarUrl: true } } } },
-      }
-    }),
+  const [dbClients, dbServices, dbTeamMembers, dbAgents, tenant, currentMember] = await Promise.all([
     tPrisma.client.findMany({ 
       where: !canViewAll && clientId ? { id: clientId, deletedAt: null } : { deletedAt: null }, 
       select: { id: true, name: true, businessName: true, avatarUrl: true, settings: true } 
@@ -148,61 +114,9 @@ async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
     "Tenanted Property", "Owner Occupied", "Empty (Keys at office)"
   ];
 
-  const bookings = (dbBookings as any[]).map((b: any) => {
-    const startAt = b.startAt instanceof Date && !isNaN(b.startAt.getTime()) ? b.startAt.toISOString() : null;
-    const endAt = b.endAt instanceof Date && !isNaN(b.endAt.getTime()) ? b.endAt.toISOString() : null;
-    if (!startAt || !endAt) return null;
-
-    // 1. Determine Ownership
-    let isOwned = canViewAll;
-    if (!isOwned) {
-      if (role === "CLIENT" && b.clientId === clientId) isOwned = true;
-      else if (role === "AGENT" && b.agentId === agentId) isOwned = true;
-      else if (teamMemberId && b.assignments.some((a: any) => a.teamMemberId === teamMemberId)) isOwned = true;
-    }
-
-    // 2. If NOT owned, mask the data as "LIMITED AVAILABILITY"
-    if (!isOwned && !b.isPlaceholder) {
-      return {
-        id: String(b.id),
-        title: "LIMITED AVAILABILITY",
-        startAt, endAt,
-        status: "blocked" as any, // Grey status
-        propertyStatus: "",
-        clientId: null,
-        agentId: null,
-        client: null,
-        property: { name: "RESTRICTED" },
-        internalNotes: "",
-        clientNotes: "",
-        isPlaceholder: false,
-        slotType: null,
-        services: [],
-        assignments: []
-      };
-    }
-
-    // 3. Standard mapping for owned or admin bookings
-    let status = (b.status || "REQUESTED").toLowerCase();
-    if (status === 'approved') status = 'confirmed';
-    
-    return {
-      id: String(b.id),
-      title: String(b.title || (b.isPlaceholder ? (b.slotType + " SLOT") : "Booking")),
-      startAt, endAt, status: status as any,
-      propertyStatus: b.propertyStatus || "",
-      clientId: b.clientId ? String(b.clientId) : null,
-      agentId: b.agentId ? String(b.agentId) : null,
-      client: !b.client ? null : { name: String(b.client.name || ""), businessName: String(b.client.businessName || "") },
-      property: !b.property ? { name: "TBC" } : { name: String(b.property.name || "TBC") },
-      internalNotes: String(b.internalNotes || ""),
-      clientNotes: String(b.clientNotes || ""),
-      isPlaceholder: !!b.isPlaceholder,
-      slotType: (b as any).slotType || null,
-      services: (b.services || []).map((s: any) => ({ serviceId: String(s.serviceId), name: String(s.service?.name || "Unknown Service") })),
-      assignments: (b.assignments || []).map((a: any) => ({ teamMemberId: String(a.teamMemberId), teamMember: { displayName: String(a.teamMember?.displayName || "To assign"), avatarUrl: a.teamMember?.avatarUrl || null } }))
-    };
-  }).filter(Boolean);
+  // IMPORTANT: We no longer SSR-load large booking sets. Calendar bookings load by visible range client-side
+  // via `/api/tenant/calendar/bookings` to make initial load instant.
+  const bookings: any[] = [];
 
   const clients = dbClients.map((c: any) => ({ 
     id: String(c.id), 

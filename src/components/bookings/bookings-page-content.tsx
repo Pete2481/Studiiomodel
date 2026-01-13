@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import { Plus, Calendar as CalendarIcon, Lock, GripHorizontal, Settings } from "lucide-react";
 import dynamic from "next/dynamic";
 import { BookingDrawer } from "./booking-drawer";
@@ -72,11 +72,75 @@ export function BookingsPageContent({
   const [selectedBooking, setSelectedBooking] = useState<any>(null);
   const [bookings, setBookings] = useState(initialBookings);
   const [currentDate, setCurrentDate] = useState(new Date());
+  const lastVisibleRangeRef = useRef<{ start: Date; end: Date } | null>(null);
+  const rangeCacheRef = useRef<Map<string, any[]>>(new Map());
+  const rangeInflightRef = useRef<Map<string, Promise<any[]>>>(new Map());
+  const hasLoadedInitialRangeRef = useRef(false);
 
   // Sync state when props update (crucial for router.refresh() to work)
   useEffect(() => {
-    setBookings(initialBookings);
+    // If server provides bookings (legacy), sync. If server provides [], we use range-loading instead.
+    if (Array.isArray(initialBookings) && initialBookings.length > 0) {
+      setBookings(initialBookings);
+    }
   }, [initialBookings]);
+
+  const mergeBookingsById = (prev: any[], next: any[]) => {
+    const map = new Map<string, any>();
+    prev.forEach((b) => b?.id && map.set(String(b.id), b));
+    next.forEach((b) => b?.id && map.set(String(b.id), b));
+    return Array.from(map.values());
+  };
+
+  const fetchBookingsForRange = async (start: Date, end: Date, opts?: { force?: boolean; prefetch?: boolean }) => {
+    const key = `${start.toISOString()}|${end.toISOString()}`;
+    if (!opts?.force && rangeCacheRef.current.has(key)) return rangeCacheRef.current.get(key)!;
+    if (!opts?.force && rangeInflightRef.current.has(key)) return rangeInflightRef.current.get(key)!;
+
+    const p = (async () => {
+      const url = `/api/tenant/calendar/bookings?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`;
+      const res = await fetch(url);
+      const data = await res.json().catch(() => ({}));
+      const items = Array.isArray(data?.bookings) ? data.bookings : [];
+      rangeCacheRef.current.set(key, items);
+      rangeInflightRef.current.delete(key);
+      return items;
+    })().catch((e) => {
+      rangeInflightRef.current.delete(key);
+      // Prefetch failures are non-blocking; visible-range fetch failures should still surface in console.
+      if (!opts?.prefetch) console.error("[CALENDAR] Range fetch failed:", e);
+      return [];
+    });
+
+    rangeInflightRef.current.set(key, p);
+    return p;
+  };
+
+  const handleVisibleRangeChange = async (start: Date, end: Date) => {
+    lastVisibleRangeRef.current = { start, end };
+
+    const items = await fetchBookingsForRange(start, end);
+    setBookings((prev) => mergeBookingsById(prev, items));
+
+    // After the first visible range loads, prefetch upcoming ranges in background.
+    if (!hasLoadedInitialRangeRef.current) {
+      hasLoadedInitialRangeRef.current = true;
+      // Prefetch next 2 ranges (best-effort)
+      const nextStart1 = new Date(end);
+      const nextEnd1 = new Date(end);
+      nextEnd1.setDate(nextEnd1.getDate() + Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))));
+      fetchBookingsForRange(nextStart1, nextEnd1, { prefetch: true }).then((prefetched) => {
+        if (prefetched.length) setBookings((prev) => mergeBookingsById(prev, prefetched));
+      });
+
+      const nextStart2 = new Date(nextEnd1);
+      const nextEnd2 = new Date(nextEnd1);
+      nextEnd2.setDate(nextEnd2.getDate() + Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))));
+      fetchBookingsForRange(nextStart2, nextEnd2, { prefetch: true }).then((prefetched) => {
+        if (prefetched.length) setBookings((prev) => mergeBookingsById(prev, prefetched));
+      });
+    }
+  };
 
   const statusFilter = searchParams.get("status");
   const canPlaceBookings = permissionService.can(user, "canPlaceBookings");
@@ -214,7 +278,13 @@ export function BookingsPageContent({
       });
       if (result.success) {
         setIsDrawerOpen(false);
-        // Soft refresh to update data without page flicker
+        // Keep existing behavior, but ensure the visible range refreshes immediately (we no longer SSR preload bookings).
+        if (lastVisibleRangeRef.current) {
+          const { start, end } = lastVisibleRangeRef.current;
+          const items = await fetchBookingsForRange(start, end, { force: true });
+          setBookings((prev) => mergeBookingsById(prev, items));
+        }
+        // Soft refresh to update any server-derived props
         router.refresh();
       } else {
         alert(result.error || "Something went wrong while saving the booking.");
@@ -230,7 +300,13 @@ export function BookingsPageContent({
       const result = await deleteBooking(id);
       if (result.success) {
         setIsDrawerOpen(false);
-        // Soft refresh to update data without page flicker
+        // Ensure the visible range refreshes immediately (we no longer SSR preload bookings).
+        if (lastVisibleRangeRef.current) {
+          const { start, end } = lastVisibleRangeRef.current;
+          const items = await fetchBookingsForRange(start, end, { force: true });
+          setBookings((prev) => mergeBookingsById(prev, items));
+        }
+        // Soft refresh to update any server-derived props
         router.refresh();
       } else {
         alert(result.error || "Failed to remove booking.");
@@ -398,6 +474,7 @@ export function BookingsPageContent({
               user={user}
               businessHours={businessHours}
               aiLogisticsEnabled={aiLogisticsEnabled}
+              onVisibleRangeChange={handleVisibleRangeChange}
             />
           </div>
         </>

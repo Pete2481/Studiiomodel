@@ -37,6 +37,7 @@ interface CalendarViewProps {
   defaultLon?: number;
   businessHours?: any;
   aiLogisticsEnabled?: boolean;
+  onVisibleRangeChange?: (start: Date, end: Date) => void;
 }
 
 export function CalendarView({ 
@@ -47,7 +48,8 @@ export function CalendarView({
   onExternalDrop, 
   user,
   businessHours,
-  aiLogisticsEnabled = false
+  aiLogisticsEnabled = false,
+  onVisibleRangeChange
 }: CalendarViewProps) {
   const calendarRef = useRef<any>(null);
   const [hoveredEvent, setHoveredEvent] = useState<{ event: any, x: number, y: number } | null>(null);
@@ -288,6 +290,14 @@ export function CalendarView({
           ref={calendarRef}
           plugins={[timeGridPlugin, interactionPlugin, ...extraPlugins]}
           initialView={view}
+          datesSet={(arg: any) => {
+            // Allows parent to fetch only visible range (no behavior change).
+            try {
+              onVisibleRangeChange?.(arg.start, arg.end);
+            } catch {
+              // non-blocking
+            }
+          }}
           hiddenDays={hiddenDays}
           slotDuration="00:30:00"
           expandRows={false}

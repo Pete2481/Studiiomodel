@@ -38,6 +38,7 @@ import { cn, formatDropboxUrl, cleanDropboxLink } from "@/lib/utils";
 import { getGalleryAssets } from "@/app/actions/storage";
 import { toggleFavorite } from "@/app/actions/gallery";
 import { createEditRequest } from "@/app/actions/edit-request";
+import { unlockAiSuiteForGallery } from "@/app/actions/ai-suite";
 import { permissionService } from "@/lib/permission-service";
 
 // Lazy-load heavy components to reduce TBT (Total Blocking Time)
@@ -88,9 +89,10 @@ export function GalleryPublicViewer({
   const [loadingDirection, setLoadingDirection] = useState<"prev" | "next" | null>(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isAISuiteOpen, setIsAISuiteOpen] = useState(false);
-  const [isAIPlacementMode, setIsAIPlacementMode] = useState(false);
-  const [aiMaskData, setAiMaskData] = useState<any>(null);
-  const [aiMaskUrl, setAiMaskUrl] = useState<string | null>(null);
+  const [isAiSuiteUnlockOpen, setIsAiSuiteUnlockOpen] = useState(false);
+  const [aiSuiteTermsAccepted, setAiSuiteTermsAccepted] = useState(false);
+  const [isAiSuiteUnlocking, setIsAiSuiteUnlocking] = useState(false);
+  // AI suite is prompt-only (no masking) per product requirement
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
   const [isChoiceModalOpen, setIsChoiceModalOpen] = useState(false);
   const [isAnnotationOpen, setIsAnnotationOpen] = useState(false);
@@ -110,6 +112,11 @@ export function GalleryPublicViewer({
   const [allImages, setAllImages] = useState<any[] | null>(null);
   const [isSelectingAll, setIsSelectingAll] = useState(false);
   const [selectAllLoadedCount, setSelectAllLoadedCount] = useState(0);
+
+  // Premium AI Suite state stored in gallery.metadata.aiSuite
+  const [aiSuiteState, setAiSuiteState] = useState<any>(() => (gallery.metadata as any)?.aiSuite || { unlocked: false, remainingEdits: 0 });
+  const aiSuiteUnlocked = !!aiSuiteState?.unlocked;
+  const aiSuiteRemainingEdits = typeof aiSuiteState?.remainingEdits === "number" ? aiSuiteState.remainingEdits : 0;
 
   const getAssetKey = (a: any) => String(a?.id || a?.url);
   const isImageAsset = (a: any) => (a?.type ? a.type === "image" : true);
@@ -1301,20 +1308,135 @@ export function GalleryPublicViewer({
               isOpen={isAISuiteOpen}
               onClose={() => {
                 setIsAISuiteOpen(false);
-                setAiMaskData(null);
               }}
+              galleryId={gallery.id}
               assetUrl={getImageUrl(selectedAsset.url, "w2048h1536")}
               assetName={selectedAsset.name}
               dbxPath={selectedAsset.path}
               tenantId={gallery.tenantId}
-              maskData={aiMaskUrl}
-              onStartPlacement={() => {
-                setIsAIPlacementMode(true);
+              isUnlocked={aiSuiteUnlocked}
+              remainingEdits={aiSuiteRemainingEdits}
+              onRequireUnlock={() => {
+                setAiSuiteTermsAccepted(false);
+                setIsAiSuiteUnlockOpen(true);
               }}
+              onAiSuiteUpdate={(next) => setAiSuiteState((prev: any) => ({ ...(prev || {}), ...(next || {}) }))}
               onComplete={(newUrl) => {
                 // Future: We could update the asset in the gallery
               }}
             />
+          )}
+
+          {isAiSuiteUnlockOpen && (
+            <div className="fixed inset-0 z-[250] flex items-center justify-center p-6">
+              <div
+                className="absolute inset-0 bg-slate-950/70 backdrop-blur-md"
+                onClick={() => setIsAiSuiteUnlockOpen(false)}
+              />
+              <div
+                className="relative w-full max-w-xl bg-white rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="p-8 border-b border-slate-100 flex items-center justify-between">
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest">Premium Feature</p>
+                    <h3 className="text-2xl font-bold text-slate-900 tracking-tight">
+                      Unlock AI Suite
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => setIsAiSuiteUnlockOpen(false)}
+                    className="h-12 w-12 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center hover:bg-slate-100 transition-all active:scale-95"
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
+
+                <div className="p-8 space-y-6">
+                  <div className="p-6 rounded-[28px] bg-slate-50 border border-slate-100">
+                    <p className="text-sm font-bold text-slate-900">
+                      This gallery includes a premium AI editor for:
+                    </p>
+                    <ul className="mt-3 space-y-2 text-sm text-slate-600 font-medium">
+                      <li>- Item removal</li>
+                      <li>- Day to dusk transitions</li>
+                      <li>- Furniture replacement (styles)</li>
+                      <li>- And more</li>
+                    </ul>
+                  </div>
+
+                  <div className="flex items-center justify-between p-6 rounded-[28px] border border-emerald-100 bg-emerald-50/50">
+                    <div>
+                      <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">One-off fee</p>
+                      <p className="text-xl font-black text-slate-900">$50</p>
+                      <p className="text-xs font-bold text-slate-500 mt-1">
+                        Includes a maximum of <span className="text-slate-900">15 edits</span> for this gallery.
+                      </p>
+                    </div>
+                    <div className="px-3 py-1 rounded-full bg-white border border-emerald-100 text-emerald-600 text-[10px] font-black uppercase tracking-widest">
+                      {aiSuiteUnlocked && aiSuiteRemainingEdits <= 0 ? "RE-PURCHASE" : "UNLOCK"}
+                    </div>
+                  </div>
+
+                  {!user?.role && (
+                    <div className="p-4 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 text-xs font-bold">
+                      Please log in to unlock AI Suite.
+                    </div>
+                  )}
+
+                  <label className="flex items-start gap-3 p-4 rounded-2xl border border-slate-100 bg-white">
+                    <input
+                      type="checkbox"
+                      checked={aiSuiteTermsAccepted}
+                      onChange={(e) => setAiSuiteTermsAccepted(e.target.checked)}
+                      className="mt-1 h-4 w-4"
+                      disabled={!user?.role}
+                    />
+                    <span className="text-sm font-medium text-slate-600">
+                      I understand this is a premium feature and the $50 unlock will be invoiced by the studio for this gallery.
+                    </span>
+                  </label>
+
+                  <button
+                    disabled={!user?.role || !aiSuiteTermsAccepted || isAiSuiteUnlocking}
+                    onClick={async () => {
+                      if (!user?.role) return;
+                      if (!aiSuiteTermsAccepted) return;
+                      setIsAiSuiteUnlocking(true);
+                      try {
+                        const res = await unlockAiSuiteForGallery(gallery.id);
+                        if (res.success) {
+                          setAiSuiteState(res.aiSuite);
+                          setIsAiSuiteUnlockOpen(false);
+                        } else {
+                          alert(res.error || "Failed to unlock AI Suite.");
+                        }
+                      } finally {
+                        setIsAiSuiteUnlocking(false);
+                      }
+                    }}
+                    className={cn(
+                      "w-full h-14 rounded-2xl font-black uppercase tracking-widest text-[11px] transition-all",
+                      (!user?.role || !aiSuiteTermsAccepted || isAiSuiteUnlocking)
+                        ? "bg-slate-200 text-slate-400"
+                        : "bg-slate-900 text-white hover:bg-slate-800"
+                    )}
+                  >
+                    {isAiSuiteUnlocking
+                      ? "Unlocking..."
+                      : aiSuiteUnlocked && aiSuiteRemainingEdits <= 0
+                        ? "Unlock another 15 edits ($50)"
+                        : "Unlock AI Suite ($50)"}
+                  </button>
+                </div>
+
+                <div className="px-8 py-6 bg-slate-50 border-t border-slate-100">
+                  <p className="text-[10px] font-bold text-slate-400 text-center uppercase tracking-widest">
+                    Unlock is per-gallery • 15 edits included
+                  </p>
+                </div>
+              </div>
+            </div>
           )}
 
           {isCopyModalOpen && (
@@ -1540,20 +1662,7 @@ export function GalleryPublicViewer({
             />
           )}
 
-          {isAIPlacementMode && (
-            <DrawingCanvas 
-              imageUrl={getImageUrl(selectedAsset.url, "w2048h1536")}
-              isMaskMode={true}
-              onSave={async (data, maskUrl) => {
-                setAiMaskData(data);
-                if (maskUrl) setAiMaskUrl(maskUrl);
-                setIsAIPlacementMode(false);
-              }}
-              onCancel={() => {
-                setIsAIPlacementMode(false);
-              }}
-            />
-          )}
+          {/* AI suite is prompt-only: no mask overlay */}
         </div>
       )}
 
@@ -1871,7 +1980,7 @@ export function GalleryPublicViewer({
 
             {/* Grid of Choices */}
             <div className="p-8 grid grid-cols-1 md:grid-cols-4 gap-6">
-              {/* Professional Studio Edit */}
+              {/* Professional Studio Edit (PREMIUM) */}
               <button 
                 onClick={() => {
                   setIsChoiceModalOpen(false);
@@ -1879,6 +1988,7 @@ export function GalleryPublicViewer({
                 }}
                 className="group p-8 rounded-[32px] border-2 border-slate-100 bg-white hover:border-primary/30 hover:bg-primary/[0.02] transition-all flex flex-col items-center text-center gap-6"
               >
+                <span className="text-[10px] font-black uppercase tracking-widest text-rose-500">PREMIUM</span>
                 <div className="h-16 w-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:scale-110 transition-transform">
                   <PenTool className="h-8 w-8" />
                 </div>
@@ -1893,7 +2003,34 @@ export function GalleryPublicViewer({
                 </div>
               </button>
 
-              {/* Pro Annotations */}
+              {/* AI Edit Suite (PREMIUM) */}
+              <button 
+                onClick={() => {
+                  setIsChoiceModalOpen(false);
+                  setIsAISuiteOpen(true);
+                  if (!aiSuiteUnlocked || aiSuiteRemainingEdits <= 0) {
+                    setAiSuiteTermsAccepted(false);
+                    setIsAiSuiteUnlockOpen(true);
+                  }
+                }}
+                className="group p-8 rounded-[32px] border-2 border-slate-100 bg-white hover:border-emerald-500/30 hover:bg-emerald-500/[0.02] transition-all flex flex-col items-center text-center gap-6"
+              >
+                <span className="text-[10px] font-black uppercase tracking-widest text-rose-500">PREMIUM</span>
+                <div className="h-16 w-16 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Zap className="h-8 w-8 fill-current" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-center gap-2">
+                    <p className="text-sm font-black text-slate-900 uppercase tracking-widest">AI Suite</p>
+                    <span className="px-2 py-0.5 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest rounded-md">COST</span>
+                  </div>
+                  <p className="text-xs font-medium text-slate-400 leading-relaxed">
+                    Instant automated AI enhancements.
+                  </p>
+                </div>
+              </button>
+
+              {/* Pro Annotations (FREE) */}
               <button 
                 onClick={() => {
                   setIsChoiceModalOpen(false);
@@ -1907,32 +2044,10 @@ export function GalleryPublicViewer({
                 <div className="space-y-2">
                   <div className="flex items-center justify-center gap-2">
                     <p className="text-sm font-black text-slate-900 uppercase tracking-widest">Pro Markup</p>
-                    <span className="px-2 py-0.5 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest rounded-md">COST</span>
+                    <span className="px-2 py-0.5 bg-emerald-500 text-white text-[9px] font-black uppercase tracking-widest rounded-md">FREE</span>
                   </div>
                   <p className="text-xs font-medium text-slate-400 leading-relaxed">
                     Add logo drop-pins & property boundaries.
-                  </p>
-                </div>
-              </button>
-
-              {/* AI Edit Suite */}
-              <button 
-                onClick={() => {
-                  setIsChoiceModalOpen(false);
-                  setIsAISuiteOpen(true);
-                }}
-                className="group p-8 rounded-[32px] border-2 border-slate-100 bg-white hover:border-emerald-500/30 hover:bg-emerald-500/[0.02] transition-all flex flex-col items-center text-center gap-6"
-              >
-                <div className="h-16 w-16 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <Zap className="h-8 w-8 fill-current" />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-center gap-2">
-                    <p className="text-sm font-black text-slate-900 uppercase tracking-widest">AI Suite</p>
-                    <span className="px-2 py-0.5 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest rounded-md">COST</span>
-                  </div>
-                  <p className="text-xs font-medium text-slate-400 leading-relaxed">
-                    Instant automated AI enhancements.
                   </p>
                 </div>
               </button>

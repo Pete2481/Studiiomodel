@@ -63,24 +63,12 @@ export default async function TenantDashboard() {
     editWhere.clientId = user.clientId;
   }
 
-  // 2. Upcoming-only filter for the booking list (do NOT apply to metrics)
-  const tenantTz =
-    (
-      await prisma.tenant.findUnique({
-        where: { id: tenantId },
-        select: { timezone: true },
-      })
-    )?.timezone || "Australia/Sydney";
-
-  const bookingWhereUpcoming: any = {
-    ...bookingWhere,
-    startAt: { gte: startOfTodayInTimeZone(tenantTz) },
-  };
-
   return (
     <div className="space-y-8 md:space-y-12 w-full max-w-full overflow-x-hidden">
       {/* Title & Subtitle update immediately */}
-      <DashboardHeader tenantId={tenantId} user={user} />
+      <Suspense fallback={<DashboardHeaderSkeleton />}>
+        <DashboardHeader tenantId={tenantId} user={user} />
+      </Suspense>
 
       <div className="grid gap-8 md:gap-12 w-full">
         <Suspense fallback={<MetricCardsSkeleton />}>
@@ -104,13 +92,17 @@ export default async function TenantDashboard() {
         <Suspense fallback={<BookingPipelineSkeleton />}>
           <BookingPipelineWrapper 
             tenantId={tenantId} 
-            bookingWhere={bookingWhereUpcoming} 
+            bookingWhere={bookingWhere}
             user={user}
           />
         </Suspense>
       </div>
     </div>
   );
+}
+
+function DashboardHeaderSkeleton() {
+  return <ShellSettings title="Operations" subtitle="Loading your workspace…" />;
 }
 
 async function DashboardHeader({ tenantId, user }: { tenantId: string, user: any }) {
@@ -245,9 +237,25 @@ async function GalleriesWrapper({ tenantId, galleryWhere, user }: any) {
 }
 
 async function BookingPipelineWrapper({ tenantId, bookingWhere, user }: any) {
+  // Upcoming-only filter for the booking list (do NOT apply to metrics).
+  // IMPORTANT: This used to run at the top-level and block the whole dashboard.
+  // Keeping it here ensures the dashboard shell renders immediately.
+  const tenantTz =
+    (
+      await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { timezone: true },
+      })
+    )?.timezone || "Australia/Sydney";
+
+  const bookingWhereUpcoming: any = {
+    ...bookingWhere,
+    startAt: { gte: startOfTodayInTimeZone(tenantTz) },
+  };
+
   const [dbBookingsList, isSubscribed] = await Promise.all([
     prisma.booking.findMany({
-      where: bookingWhere, 
+      where: bookingWhereUpcoming, 
       orderBy: { startAt: 'asc' }, 
       take: 5,
       include: { 

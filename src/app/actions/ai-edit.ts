@@ -6,9 +6,18 @@ import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { getTemporaryLink } from "./storage";
 
-export type AITaskType = "sky_replacement" | "day_to_dusk" | "object_removal" | "virtual_staging";
+export type AITaskType =
+  | "sky_replacement"
+  | "day_to_dusk"
+  | "object_removal"
+  | "virtual_staging"
+  | "room_editor";
 
 const ARCHITECTURAL_NEGATIVE_PROMPT = "structural changes, changing windows, changing walls, changing floor material, different room layout, perspective change, distorted architecture, blurry background, low quality, changing ceiling, removing built-in fixtures";
+const AUTO_REMOVE_ALL_ITEMS_PROMPT =
+  "Remove ALL furniture and ALL movable items from this room (couches, chairs, tables, rugs/mats, lamps, plants, decor, wall art/frames, clutter). Leave the room completely empty. Preserve the room exactly: walls, doors, windows, trims, ceiling, floor materials and colors, lighting direction, camera angle, and perspective. Do not change architectural features. Professional real estate photography, high resolution.";
+const ROOM_EDITOR_GUARDRAILS =
+  "Preserve the room EXACTLY: walls, ceiling, floor, doors, windows, trims, built-ins, colors, materials, lighting direction, camera angle, and perspective. Do not change architecture. Do not add new objects unless explicitly requested. Photorealistic, professional real estate photography, high resolution.";
 
 interface AIProcessResult {
   success: boolean;
@@ -131,20 +140,29 @@ export async function processImageWithAI(
         };
         break;
 
+      case "room_editor":
+        model = "google/nano-banana";
+        input = {
+          image_input: [publicImageUrl],
+          prompt: `${ROOM_EDITOR_GUARDRAILS}\n\nINSTRUCTION:\n${prompt || "Remove all furniture, rugs/mats, decor, and wall art. Leave the room empty."}`,
+          aspect_ratio: "match_input_image"
+        };
+        break;
+
       case "object_removal":
         // UPGRADED: Using Google's Nano-Banana for professional-grade inpainting
         if (maskUrl) {
           model = "google/nano-banana";
           input = {
             image_input: [publicImageUrl, maskUrl],
-            prompt: "Remove the objects highlighted in the mask and seamlessly rebuild the background floors and walls. Preserve the original lighting and architectural details exactly. High resolution, 4k, professional photography.",
+            prompt: "Remove ONLY the objects highlighted in the mask and seamlessly rebuild the background floors and walls. Preserve the original lighting and architectural details exactly. Do not change architecture, windows, doors, or colors. High resolution, professional real estate photography.",
             aspect_ratio: "match_input_image"
           };
         } else {
           model = "reve/edit-fast";
           input = {
             image: publicImageUrl,
-            prompt: prompt || "Remove objects and seamlessly blend the background.",
+            prompt: prompt || AUTO_REMOVE_ALL_ITEMS_PROMPT,
           };
         }
         break;
@@ -252,14 +270,15 @@ export async function processImageWithAI(
     }
 
     // --- HD UPSCALING STEP ---
-    console.log(`[AI_EDIT] Upscaling output to HD using nightmareai/real-esrgan for URL length: ${outputUrl.length}`);
+    const upscaleScale = taskType === "room_editor" ? 4 : 2;
+    console.log(`[AI_EDIT] Upscaling output to HD using nightmareai/real-esrgan (scale=${upscaleScale}) for URL length: ${outputUrl.length}`);
     try {
       const upscaleOutput: any = await replicate.run(
         "nightmareai/real-esrgan:b3ef194191d13140337468c916c2c5b96dd0cb06dffc032a022a31807f6a5ea8",
         {
           input: {
             image: outputUrl,
-            scale: 2, // 2x upscale for HD performance
+            scale: upscaleScale,
             face_enhance: false
           }
         }

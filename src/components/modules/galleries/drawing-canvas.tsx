@@ -16,9 +16,10 @@ interface DrawingCanvasProps {
   onSave: (drawingData: any, maskUrl?: string) => void;
   onCancel: () => void;
   isMaskMode?: boolean;
+  maskPurpose?: "remove" | "place";
 }
 
-export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode }: DrawingCanvasProps) {
+export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode, maskPurpose = "place" }: DrawingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -352,7 +353,11 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode }: Drawin
 
           <div className="flex items-center gap-2 px-4">
              <p className="text-[10px] font-black text-white/40 uppercase tracking-widest hidden sm:block">
-               {isMaskMode ? "Paint areas for furniture placement" : "Draw on image to mark changes"}
+               {isMaskMode
+                 ? (maskPurpose === "remove"
+                   ? "Paint over items you want removed (optional touch-up)"
+                   : "Paint areas for furniture placement")
+                 : "Draw on image to mark changes"}
              </p>
              <button 
               onClick={handleSave}
@@ -360,7 +365,7 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode }: Drawin
               className="h-10 px-6 rounded-xl bg-white text-slate-950 text-xs font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all shadow-xl disabled:opacity-50 disabled:hover:scale-100"
             >
               <Check className="h-4 w-4" />
-              {isMaskMode ? "Remove Marked Items" : "Done Drawing"}
+              {isMaskMode ? (maskPurpose === "remove" ? "Save Removal Mask" : "Save Placement Mask") : "Done Drawing"}
             </button>
           </div>
         </div>

@@ -26,6 +26,7 @@ import {
   Video,
   FileJson,
   Download,
+  Zap,
   Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -364,20 +365,45 @@ export function EditRequestsContent({ initialRequests, initialTags, teamMembers,
                       onClick={() => setSelectedRequest(request)}
                     >
                       <div className="h-24 w-32 rounded-2xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200 relative">
-                        {request.thumbnailUrl ? (
-                          <img src={request.thumbnailUrl} className="h-full w-full object-cover" />
-                        ) : (request.metadata?.videoTimestamp !== undefined && request.metadata?.videoTimestamp !== null) || request.metadata?.isBundled ? (
-                          <div className="h-full w-full flex flex-col items-center justify-center bg-slate-900 text-white gap-2">
-                            <Video className="h-6 w-6 text-primary" />
-                            <span className="text-[9px] font-black uppercase tracking-widest">
-                              {request.metadata?.isBundled ? "Video Review" : "Video Edit"}
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="h-full w-full flex items-center justify-center text-slate-300">
-                            <ImageIcon className="h-8 w-8" />
-                          </div>
-                        )}
+                        {(() => {
+                          const isAiSuiteUnlock =
+                            request?.metadata?.type === "aiSuiteUnlock" ||
+                            (Array.isArray(request?.tags) && request.tags.includes("AI_SUITE_UNLOCK"));
+
+                          if (request.thumbnailUrl) {
+                            return <img src={request.thumbnailUrl} className="h-full w-full object-cover" />;
+                          }
+
+                          if (isAiSuiteUnlock) {
+                            return (
+                              <div className="h-full w-full flex flex-col items-center justify-center bg-emerald-50 text-emerald-700 gap-2">
+                                <div className="h-10 w-10 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
+                                  <Zap className="h-5 w-5 fill-current" />
+                                </div>
+                                <span className="text-[9px] font-black uppercase tracking-widest text-emerald-700">
+                                  AI Suite
+                                </span>
+                              </div>
+                            );
+                          }
+
+                          if ((request.metadata?.videoTimestamp !== undefined && request.metadata?.videoTimestamp !== null) || request.metadata?.isBundled) {
+                            return (
+                              <div className="h-full w-full flex flex-col items-center justify-center bg-slate-900 text-white gap-2">
+                                <Video className="h-6 w-6 text-primary" />
+                                <span className="text-[9px] font-black uppercase tracking-widest">
+                                  {request.metadata?.isBundled ? "Video Review" : "Video Edit"}
+                                </span>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="h-full w-full flex items-center justify-center text-slate-300">
+                              <ImageIcon className="h-8 w-8" />
+                            </div>
+                          );
+                        })()}
                         {request.metadata?.drawing && (
                           <div className="absolute inset-0 bg-primary/20 flex items-center justify-center">
                             <PenTool className="h-5 w-5 text-primary" />
