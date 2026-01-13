@@ -35,6 +35,7 @@ export default async function MasterTenantsPage() {
       t."contactEmail",
       t."contactPhone",
       t."deletedAt",
+      t.settings,
       /* Totals */
       (SELECT COUNT(*) FROM "Booking" b 
         WHERE b."tenantId" = t.id 
@@ -95,6 +96,30 @@ export default async function MasterTenantsPage() {
     openEdits: Number(r.openEdits || 0),
     pendingBookings: Number(r.pendingBookings || 0),
     lastActiveAt: r.lastActiveAt ? new Date(r.lastActiveAt).toISOString() : null,
+    aiSuiteEnabled: (() => {
+      const s = (r.settings as any) || {};
+      const raw = s?.aiSuite?.enabled;
+      // Default OFF for safety until platform billing is live
+      return typeof raw === "boolean" ? raw : false;
+    })(),
+    aiSuiteFreeUnlocksRemaining: (() => {
+      const s = (r.settings as any) || {};
+      const raw = s?.aiSuite?.freeUnlocksRemaining;
+      // Default 1 if missing (trial pack), consistent with unlock logic
+      return typeof raw === "number" ? raw : 1;
+    })(),
+    aiSuiteRunsTotal: (() => {
+      const s = (r.settings as any) || {};
+      const raw = s?.aiSuite?.usage?.totalRuns;
+      return typeof raw === "number" ? raw : 0;
+    })(),
+    aiSuiteEstimatedUsdTotal: (() => {
+      const s = (r.settings as any) || {};
+      const raw = s?.aiSuite?.usage?.estimatedUsdTotal;
+      if (typeof raw === "number") return raw;
+      const runs = typeof s?.aiSuite?.usage?.totalRuns === "number" ? s.aiSuite.usage.totalRuns : 0;
+      return runs * 0.35;
+    })(),
   }));
 
   return (

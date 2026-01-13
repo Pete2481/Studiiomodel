@@ -92,6 +92,7 @@ export function GalleryPublicViewer({
   const [isAiSuiteUnlockOpen, setIsAiSuiteUnlockOpen] = useState(false);
   const [aiSuiteTermsAccepted, setAiSuiteTermsAccepted] = useState(false);
   const [isAiSuiteUnlocking, setIsAiSuiteUnlocking] = useState(false);
+  const [aiSuiteUnlockError, setAiSuiteUnlockError] = useState<string | null>(null);
   // AI suite is prompt-only (no masking) per product requirement
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
   const [isChoiceModalOpen, setIsChoiceModalOpen] = useState(false);
@@ -117,6 +118,27 @@ export function GalleryPublicViewer({
   const [aiSuiteState, setAiSuiteState] = useState<any>(() => (gallery.metadata as any)?.aiSuite || { unlocked: false, remainingEdits: 0 });
   const aiSuiteUnlocked = !!aiSuiteState?.unlocked;
   const aiSuiteRemainingEdits = typeof aiSuiteState?.remainingEdits === "number" ? aiSuiteState.remainingEdits : 0;
+  // NOTE: This flag now represents whether PAID AI unlocks are enabled for the tenant.
+  // Free trial packs can still be used even when this is false.
+  const tenantAiSuiteEnabled = (() => {
+    const raw = (tenant as any)?.settings?.aiSuite?.enabled;
+    // Default OFF for safety, matching server-side enforcement.
+    return typeof raw === "boolean" ? raw : false;
+  })();
+  const tenantFreeAiSuitePacksRemaining = (() => {
+    const raw = (tenant as any)?.settings?.aiSuite?.freeUnlocksRemaining;
+    if (typeof raw === "number") return raw;
+    // Default to 1 if unset (matches server-side default), so tenants can trial without extra setup.
+    // NOTE: unlock will still be blocked until Master enables AI for the tenant.
+    return 1;
+  })();
+  const canUseFreeAiSuitePack =
+    tenantFreeAiSuitePacksRemaining > 0 && (!aiSuiteUnlocked || aiSuiteRemainingEdits <= 0);
+
+  const canUsePaidAiSuiteUnlock = tenantAiSuiteEnabled;
+
+  const unlockFlowIsTrial = canUseFreeAiSuitePack;
+  const unlockAllowed = unlockFlowIsTrial ? true : canUsePaidAiSuiteUnlock;
 
   const getAssetKey = (a: any) => String(a?.id || a?.url);
   const isImageAsset = (a: any) => (a?.type ? a.type === "image" : true);
@@ -1368,19 +1390,36 @@ export function GalleryPublicViewer({
                   <div className="flex items-center justify-between p-6 rounded-[28px] border border-emerald-100 bg-emerald-50/50">
                     <div>
                       <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">One-off fee</p>
-                      <p className="text-xl font-black text-slate-900">$50</p>
+                      <p className="text-xl font-black text-slate-900">{unlockFlowIsTrial ? "$0" : "$50"}</p>
                       <p className="text-xs font-bold text-slate-500 mt-1">
                         Includes a maximum of <span className="text-slate-900">15 edits</span> for this gallery.
                       </p>
+                      {tenantFreeAiSuitePacksRemaining > 0 && (
+                        <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest mt-2">
+                          Free trial pack available • 1 per tenant
+                        </p>
+                      )}
                     </div>
                     <div className="px-3 py-1 rounded-full bg-white border border-emerald-100 text-emerald-600 text-[10px] font-black uppercase tracking-widest">
-                      {aiSuiteUnlocked && aiSuiteRemainingEdits <= 0 ? "RE-PURCHASE" : "UNLOCK"}
+                      {aiSuiteUnlocked && aiSuiteRemainingEdits <= 0 ? (canUseFreeAiSuitePack ? "FREE TRIAL" : "RE-PURCHASE") : (canUseFreeAiSuitePack ? "FREE TRIAL" : "UNLOCK")}
                     </div>
                   </div>
 
                   {!user?.role && (
                     <div className="p-4 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 text-xs font-bold">
                       Please log in to unlock AI Suite.
+                    </div>
+                  )}
+
+                  {!unlockFlowIsTrial && !canUsePaidAiSuiteUnlock && (
+                    <div className="p-4 rounded-2xl bg-amber-50 border border-amber-100 text-amber-700 text-xs font-bold">
+                      Paid AI unlocks are currently disabled for this studio. Please ask the platform admin to enable paid AI for your workspace.
+                    </div>
+                  )}
+
+                  {aiSuiteUnlockError && (
+                    <div className="p-4 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 text-xs font-bold">
+                      {aiSuiteUnlockError}
                     </div>
                   )}
 
@@ -1393,15 +1432,16 @@ export function GalleryPublicViewer({
                       disabled={!user?.role}
                     />
                     <span className="text-sm font-medium text-slate-600">
-                      I understand this is a premium feature and the $50 unlock will be invoiced by the studio for this gallery.
+                      I understand this is a premium feature{canUseFreeAiSuitePack ? " and this unlock will be covered by my studio’s free trial pack." : " and the $50 unlock will be invoiced by the studio for this gallery."}
                     </span>
                   </label>
 
                   <button
-                    disabled={!user?.role || !aiSuiteTermsAccepted || isAiSuiteUnlocking}
+                    disabled={!user?.role || !aiSuiteTermsAccepted || isAiSuiteUnlocking || !unlockAllowed}
                     onClick={async () => {
                       if (!user?.role) return;
                       if (!aiSuiteTermsAccepted) return;
+                      setAiSuiteUnlockError(null);
                       setIsAiSuiteUnlocking(true);
                       try {
                         const res = await unlockAiSuiteForGallery(gallery.id);
@@ -1409,7 +1449,13 @@ export function GalleryPublicViewer({
                           setAiSuiteState(res.aiSuite);
                           setIsAiSuiteUnlockOpen(false);
                         } else {
-                          alert(res.error || "Failed to unlock AI Suite.");
+                          if (res.error === "AI_DISABLED") {
+                            setAiSuiteUnlockError(
+                              "Paid AI unlocks are disabled for this studio. You can still use the free trial pack if available.",
+                            );
+                          } else {
+                            setAiSuiteUnlockError(res.error || "Failed to unlock AI Suite.");
+                          }
                         }
                       } finally {
                         setIsAiSuiteUnlocking(false);
@@ -1417,7 +1463,7 @@ export function GalleryPublicViewer({
                     }}
                     className={cn(
                       "w-full h-14 rounded-2xl font-black uppercase tracking-widest text-[11px] transition-all",
-                      (!user?.role || !aiSuiteTermsAccepted || isAiSuiteUnlocking)
+                      (!user?.role || !aiSuiteTermsAccepted || isAiSuiteUnlocking || !unlockAllowed)
                         ? "bg-slate-200 text-slate-400"
                         : "bg-slate-900 text-white hover:bg-slate-800"
                     )}
@@ -1425,8 +1471,8 @@ export function GalleryPublicViewer({
                     {isAiSuiteUnlocking
                       ? "Unlocking..."
                       : aiSuiteUnlocked && aiSuiteRemainingEdits <= 0
-                        ? "Unlock another 15 edits ($50)"
-                        : "Unlock AI Suite ($50)"}
+                        ? (unlockFlowIsTrial ? "Unlock 15 edits (Free Trial)" : "Unlock another 15 edits ($50)")
+                        : (unlockFlowIsTrial ? "Unlock AI Suite (Free Trial)" : "Unlock AI Suite ($50)")}
                   </button>
                 </div>
 

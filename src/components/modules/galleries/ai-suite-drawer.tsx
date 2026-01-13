@@ -104,11 +104,15 @@ export function AISuiteDrawer({
         setResultUrl(result.outputUrl);
         onAiSuiteUpdate?.(result.aiSuite as any);
       } else {
-        if (result.error === "AI_SUITE_LOCKED" || result.error === "AI_SUITE_LIMIT") {
+        if (result.error === "AI_DISABLED") {
+          setError("AI Suite is currently disabled for this studio. Please ask the platform admin to enable AI for your workspace.");
+        } else if (result.error === "AI_SUITE_LOCKED" || result.error === "AI_SUITE_LIMIT") {
           onAiSuiteUpdate?.((result as any).aiSuite);
           onRequireUnlock?.();
         }
-        setError((result as any).error || "AI processing failed. Please try again.");
+        if (result.error !== "AI_DISABLED") {
+          setError((result as any).error || "AI processing failed. Please try again.");
+        }
       }
     } catch (err) {
       setError("An unexpected error occurred.");

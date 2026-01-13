@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Building2, Calendar, ChevronDown, Clock, ImageIcon, Paintbrush, Search, Users } from "lucide-react";
+import { Building2, Calendar, ChevronDown, Clock, ImageIcon, Paintbrush, Search, Users, Zap } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { TenantActions } from "@/components/master/tenant-actions";
 import { PortalTooltip } from "@/components/ui/portal-tooltip";
+import { setAiSuiteEnabledForAllTenants } from "@/app/actions/master-ai";
 
 export type MasterTenantRow = {
   id: string;
@@ -24,6 +25,10 @@ export type MasterTenantRow = {
   openEdits: number;
   pendingBookings: number;
   lastActiveAt: string | null;
+  aiSuiteEnabled: boolean;
+  aiSuiteFreeUnlocksRemaining: number;
+  aiSuiteRunsTotal: number;
+  aiSuiteEstimatedUsdTotal: number;
 };
 
 type SortMode =
@@ -46,6 +51,7 @@ export function MasterTenantsList({ initialTenants }: { initialTenants: MasterTe
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get("q") || "");
   const [sortMode, setSortMode] = useState<SortMode>(() => (searchParams.get("sort") as SortMode) || "lastActive");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => (searchParams.get("status") as StatusFilter) || "all");
+  const [isGlobalAiBusy, setIsGlobalAiBusy] = useState(false);
 
   // Keep local state in sync with URL (supports refresh/back/forward).
   useEffect(() => {
@@ -151,6 +157,45 @@ export function MasterTenantsList({ initialTenants }: { initialTenants: MasterTe
             />
           </div>
         </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            disabled={isGlobalAiBusy}
+            onClick={async () => {
+              if (!confirm("Enable AI Suite for ALL active tenants?")) return;
+              try {
+                setIsGlobalAiBusy(true);
+                await setAiSuiteEnabledForAllTenants(true);
+              } catch (e: any) {
+                alert(e?.message || "Failed to enable AI Suite globally");
+              } finally {
+                setIsGlobalAiBusy(false);
+              }
+            }}
+            className="h-12 px-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
+            title="Turns AI Suite ON for all active tenants"
+          >
+            Enable AI (All)
+          </button>
+          <button
+            disabled={isGlobalAiBusy}
+            onClick={async () => {
+              if (!confirm("Disable AI Suite for ALL active tenants? This will block unlocks and runs.")) return;
+              try {
+                setIsGlobalAiBusy(true);
+                await setAiSuiteEnabledForAllTenants(false);
+              } catch (e: any) {
+                alert(e?.message || "Failed to disable AI Suite globally");
+              } finally {
+                setIsGlobalAiBusy(false);
+              }
+            }}
+            className="h-12 px-4 rounded-2xl bg-[#b5d0c1] text-slate-900 text-[11px] font-black uppercase tracking-widest transition-all border border-white/60 disabled:opacity-50"
+            title="Turns AI Suite OFF for all active tenants"
+          >
+            Disable AI (All)
+          </button>
+        </div>
       </div>
 
       {/* Tenant Cards (re-implementation of the screenshot UI) */}
@@ -193,6 +238,17 @@ export function MasterTenantsList({ initialTenants }: { initialTenants: MasterTe
                   >
                     {tenant.deletedAt ? "INACTIVE" : "ACTIVE"}
                   </span>
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-4 py-1.5 text-[10px] font-bold tracking-widest border",
+                      tenant.aiSuiteEnabled
+                        ? "bg-[#b5d0c1]/60 text-slate-900 border-white/60"
+                        : "bg-slate-50 text-slate-500 border-slate-100"
+                    )}
+                    title="AI Suite availability for this tenant"
+                  >
+                    {tenant.aiSuiteEnabled ? "AI ON" : "AI OFF"}
+                  </span>
                   <TenantActions tenant={tenant} />
                 </div>
               </div>
@@ -204,6 +260,15 @@ export function MasterTenantsList({ initialTenants }: { initialTenants: MasterTe
                 <Metric label="Clients (agencies)" icon={Building2} value={tenant.clientsTotal} />
                 <Metric label="Users (memberships)" icon={Users} value={tenant.usersTotal} />
                 <Metric label="Open edit requests" icon={Paintbrush} value={tenant.openEdits} highlight={tenant.openEdits > 0} />
+                <Metric
+                  label="AI Suite runs (total)"
+                  icon={Zap}
+                  value={tenant.aiSuiteRunsTotal}
+                  highlight={tenant.aiSuiteRunsTotal > 0}
+                  tooltipContent={`${Number(tenant.aiSuiteRunsTotal || 0).toLocaleString()} (est $${Number(
+                    tenant.aiSuiteEstimatedUsdTotal || 0,
+                  ).toFixed(2)} USD)`}
+                />
               </div>
             </div>
           </article>
@@ -219,10 +284,14 @@ export function MasterTenantsList({ initialTenants }: { initialTenants: MasterTe
   );
 }
 
-function Metric({ label, icon: Icon, value, highlight = false }: any) {
+function Metric({ label, icon: Icon, value, highlight = false, tooltipContent }: any) {
   const numeric = Number(value || 0);
   return (
-    <PortalTooltip title={label} content={`${numeric.toLocaleString()}`} placement="top">
+    <PortalTooltip
+      title={label}
+      content={typeof tooltipContent === "string" ? tooltipContent : `${numeric.toLocaleString()}`}
+      placement="top"
+    >
       <div className="flex items-center gap-2 cursor-default">
         <Icon className={cn("h-4 w-4", highlight ? "text-rose-500" : "text-slate-300")} />
         <span className={cn("text-lg font-black tabular-nums", highlight ? "text-rose-500" : "text-slate-900")}>

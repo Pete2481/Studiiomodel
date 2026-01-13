@@ -13,16 +13,80 @@ type AiSuiteMeta = {
   remainingEdits?: number;
   unlockBlockId?: string;
   lastUnlockedAt?: string;
+  unlockType?: "trial" | "paid";
 };
+
+type TenantAiSuiteSettings = {
+  enabled: boolean;
+  freeUnlocksRemaining: number;
+  settings: any;
+};
+
+async function getTenantAiSuiteSettings(tenantId: string): Promise<TenantAiSuiteSettings> {
+  const t = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { settings: true },
+  });
+  const settings = (t?.settings as any) || {};
+  const enabledRaw = settings?.aiSuite?.enabled;
+  // Default OFF for safety until platform billing is live (Master can toggle ON per tenant)
+  const enabled = typeof enabledRaw === "boolean" ? enabledRaw : false;
+
+  const freeRaw = settings?.aiSuite?.freeUnlocksRemaining;
+  // Default 1 if missing (trial pack)
+  const freeUnlocksRemaining = Math.max(0, typeof freeRaw === "number" ? freeRaw : (freeRaw === undefined ? 1 : 0));
+  return { enabled, freeUnlocksRemaining, settings };
+}
+
+async function incrementTenantAiSuiteUsage(tenantId: string, patch?: { model?: string; estimatedUsdDelta?: number }) {
+  try {
+    const t = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { settings: true },
+    });
+    const settings = (t?.settings as any) || {};
+    const aiSuite = (settings.aiSuite as any) || {};
+    const usage = (aiSuite.usage as any) || {};
+    const totalRuns = (typeof usage.totalRuns === "number" ? usage.totalRuns : 0) + 1;
+    const estimatedUsdTotal =
+      (typeof usage.estimatedUsdTotal === "number" ? usage.estimatedUsdTotal : 0) +
+      (typeof patch?.estimatedUsdDelta === "number" ? patch.estimatedUsdDelta : 0);
+
+    const next = {
+      ...settings,
+      aiSuite: {
+        ...aiSuite,
+        usage: {
+          ...usage,
+          totalRuns,
+          estimatedUsdTotal,
+          lastRunAt: new Date().toISOString(),
+          lastModel: patch?.model || usage.lastModel || null,
+        },
+      },
+    };
+
+    await prisma.tenant.update({
+      where: { id: tenantId },
+      data: { settings: next },
+    });
+  } catch (e) {
+    console.error("[AI_SUITE_USAGE] Failed to increment usage:", e);
+  }
+}
 
 function readAiSuiteMeta(metadata: any): AiSuiteMeta {
   const raw = (metadata as any)?.aiSuite;
   if (!raw || typeof raw !== "object") return {};
+  const unlockTypeRaw = (raw as any).unlockType;
+  const unlockType: AiSuiteMeta["unlockType"] =
+    unlockTypeRaw === "trial" || unlockTypeRaw === "paid" ? unlockTypeRaw : undefined;
   return {
     unlocked: !!raw.unlocked,
     remainingEdits: typeof raw.remainingEdits === "number" ? raw.remainingEdits : undefined,
     unlockBlockId: typeof raw.unlockBlockId === "string" ? raw.unlockBlockId : undefined,
     lastUnlockedAt: typeof raw.lastUnlockedAt === "string" ? raw.lastUnlockedAt : undefined,
+    unlockType,
   };
 }
 
@@ -33,6 +97,7 @@ function writeAiSuiteMeta(metadata: any, next: AiSuiteMeta) {
     remainingEdits: next.remainingEdits ?? 0,
     unlockBlockId: next.unlockBlockId || null,
     lastUnlockedAt: next.lastUnlockedAt || null,
+    unlockType: next.unlockType || null,
   };
   return safe;
 }
@@ -130,6 +195,8 @@ export async function unlockAiSuiteForGallery(galleryId: string) {
     return { success: false as const, error: "Unauthorized" };
   }
 
+  const tenantAi = await getTenantAiSuiteSettings(gallery.tenantId);
+
   const current = readAiSuiteMeta(gallery.metadata);
 
   // If already unlocked and still has quota, don't create a new block (prevents double-charge).
@@ -153,6 +220,15 @@ export async function unlockAiSuiteForGallery(galleryId: string) {
     return { success: true as const, aiSuite: current };
   }
 
+  // Free pack path (platform-funded): consume tenant free unlock if available, and DO NOT create an invoiceable EditRequest.
+  const canUseFreePack = tenantAi.freeUnlocksRemaining > 0;
+
+  // If paid AI is disabled for this tenant, still allow FREE TRIAL unlocks (if a pack is available),
+  // but block paid unlocks.
+  if (!tenantAi.enabled && !canUseFreePack) {
+    return { success: false as const, error: "AI_DISABLED" };
+  }
+
   // New unlock (or repurchase after limit reached)
   const unlockBlockId = crypto.randomUUID();
   const next: AiSuiteMeta = {
@@ -160,6 +236,7 @@ export async function unlockAiSuiteForGallery(galleryId: string) {
     remainingEdits: 15,
     unlockBlockId,
     lastUnlockedAt: new Date().toISOString(),
+    unlockType: canUseFreePack ? "trial" : "paid",
   };
 
   const nextMetadata = writeAiSuiteMeta(gallery.metadata, next);
@@ -170,20 +247,40 @@ export async function unlockAiSuiteForGallery(galleryId: string) {
     data: { metadata: nextMetadata },
   });
 
-  // Create the invoiceable EditRequest immediately upon acceptance (idempotent per unlockBlockId).
-  await ensureAiSuiteUnlockEditRequest({
-    tenantId: gallery.tenantId,
-    galleryId,
-    clientId: gallery.clientId || null,
-    requestedById: (session.user as any)?.id || null,
-    unlockBlockId,
-    mode: "accept",
-  });
+  if (canUseFreePack) {
+    // Consume 1 free unlock (best-effort, tenant-scoped settings).
+    try {
+      const nextSettings = {
+        ...(tenantAi.settings || {}),
+        aiSuite: {
+          ...((tenantAi.settings as any)?.aiSuite || {}),
+          freeUnlocksRemaining: Math.max(0, tenantAi.freeUnlocksRemaining - 1),
+          lastFreeUnlockUsedAt: new Date().toISOString(),
+        },
+      };
+      await prisma.tenant.update({
+        where: { id: gallery.tenantId },
+        data: { settings: nextSettings },
+      });
+    } catch (e) {
+      console.error("[AI_SUITE_TRIAL] Failed to decrement free unlock allowance:", e);
+    }
+  } else {
+    // Paid path: Create the invoiceable EditRequest immediately upon acceptance (idempotent per unlockBlockId).
+    await ensureAiSuiteUnlockEditRequest({
+      tenantId: gallery.tenantId,
+      galleryId,
+      clientId: gallery.clientId || null,
+      requestedById: (session.user as any)?.id || null,
+      unlockBlockId,
+      mode: "accept",
+    });
+  }
 
   revalidatePath(`/gallery/${galleryId}`);
   revalidatePath("/tenant/edits");
 
-  return { success: true as const, aiSuite: next };
+  return { success: true as const, aiSuite: next, usedFreePack: canUseFreePack };
 }
 
 export async function runAiSuiteRoomEditor(args: {
@@ -223,6 +320,12 @@ export async function runAiSuiteRoomEditor(args: {
     return { success: false as const, error: "AI_SUITE_LOCKED", aiSuite };
   }
 
+  const tenantAi = await getTenantAiSuiteSettings(gallery.tenantId);
+  // If paid AI is disabled, still allow running AI Suite for galleries unlocked via FREE TRIAL packs.
+  if (!tenantAi.enabled && aiSuite.unlockType !== "trial") {
+    return { success: false as const, error: "AI_DISABLED", aiSuite };
+  }
+
   // Decrement quota (best-effort). This counts each AI run attempt.
   const nextAiSuite: AiSuiteMeta = {
     ...aiSuite,
@@ -255,6 +358,13 @@ export async function runAiSuiteRoomEditor(args: {
   if (!result.success) {
     return { success: false as const, error: result.error || "AI processing failed", aiSuite: nextAiSuite };
   }
+
+  // Usage tracking (tenant scoped): best-effort counters for Master reporting.
+  // NOTE: Replicate doesn't reliably return $ cost per prediction in API responses, so we track counts + estimates.
+  await incrementTenantAiSuiteUsage(gallery.tenantId, {
+    model: "google/nano-banana",
+    estimatedUsdDelta: 0.35,
+  });
 
   return { success: true as const, outputUrl: result.outputUrl, aiSuite: nextAiSuite };
 }
