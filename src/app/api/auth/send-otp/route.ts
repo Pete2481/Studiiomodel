@@ -12,30 +12,13 @@ export async function POST(request: Request) {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    let membership = null;
-
-    // 1. Verify membership exists (unless Master Admin login)
-    if (tenantId !== "MASTER") {
-      membership = await prisma.tenantMembership.findFirst({
-        where: {
-          id: tenantId, // tenantId is now the membershipId
-          user: { email: normalizedEmail },
-          tenant: { deletedAt: null } // Ensure tenant is not deleted
-        },
-        include: { 
-          tenant: true,
-          teamMember: true // Include to check for team member deletion
-        }
-      });
-
-      if (!membership || membership.teamMember?.deletedAt) {
-        return NextResponse.json({ error: "No membership found for this workspace" }, { status: 403 });
-      }
-    } else {
-      // For MASTER login, verify user IS master admin
-      const user = await prisma.user.findUnique({
-        where: { email: normalizedEmail }
-      });
+    // NOTE (performance): We intentionally DO NOT check membership here.
+    // If the UI allowed the user to request an OTP for a workspace, we send it immediately.
+    // Actual authorization is enforced during OTP verification in the NextAuth credentials authorize().
+    //
+    // For MASTER login, keep the master-admin check.
+    if (tenantId === "MASTER") {
+      const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
       if (!user?.isMasterAdmin) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
       }
@@ -50,21 +33,29 @@ export async function POST(request: Request) {
     const identifier = `${normalizedEmail}:${tenantId}`;
 
     // Fallback: delete old tokens for this identifier and create new one
-    await prisma.verificationToken.deleteMany({
-      where: { identifier }
-    });
-    
-    await prisma.verificationToken.create({
-      data: { identifier, token: otp, expires }
-    });
+    // Do it in a transaction for fewer round-trips and consistency.
+    if (process.env.NODE_ENV === "development") {
+      // Token is globally unique; dev OTP "000000" can collide across identifiers.
+      // Clear it to keep local logins reliable.
+      await prisma.verificationToken.deleteMany({ where: { token: otp } });
+    }
+
+    await prisma.$transaction([
+      prisma.verificationToken.deleteMany({ where: { identifier } }),
+      prisma.verificationToken.create({ data: { identifier, token: otp, expires } }),
+    ]);
 
     // 4. Send Email via Notification Service
-    // Use the actual tenant ID for branding, not the membership ID
-    const actualTenantId = (tenantId === "MASTER" || !membership) ? "MASTER" : membership.tenantId;
-    
+    // Performance: send using MASTER to avoid tenant DB lookups in sendOTP/emailService.
+    // Local dev: fire-and-forget so the API responds instantly.
+    // Production: await to ensure delivery (serverless runtimes can stop executing after response).
     try {
-      await notificationService.sendOTP(normalizedEmail, otp, actualTenantId);
-      console.log(`[OTP SENT] To: ${normalizedEmail}, Tenant: ${actualTenantId}`);
+      if (process.env.NODE_ENV === "development") {
+        void notificationService.sendOTP(normalizedEmail, otp, "MASTER");
+      } else {
+        await notificationService.sendOTP(normalizedEmail, otp, "MASTER");
+      }
+      console.log(`[OTP SENT] To: ${normalizedEmail}`);
     } catch (notifError) {
       console.error("[OTP Email Error]:", notifError);
     }
