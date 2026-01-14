@@ -216,6 +216,118 @@ export function GalleryPublicViewer({
 
   const selectedCount = selectedImageIds.size;
 
+  const GalleryActionButtons = () => (
+    <div className="flex items-center gap-2 md:flex-nowrap flex-wrap justify-center">
+      {/* Step 1: Simple Share Selection Button */}
+      {!isShared && (user?.role === "TENANT_ADMIN" || user?.role === "ADMIN" || user?.role === "AGENT") && favorites.length > 0 && (
+        <button 
+          onClick={() => {
+            const currentPath = window.location.pathname.replace(/\/$/, ""); // Remove trailing slash if any
+            const shareUrl = `${window.location.origin}${currentPath}/shared`;
+            navigator.clipboard.writeText(shareUrl);
+            setShowCopiedToast(true);
+            setTimeout(() => setShowCopiedToast(false), 3000);
+          }}
+          className="hidden md:flex h-9 px-4 rounded-full bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-rose-500/20 hover:scale-105 active:scale-95 transition-all items-center gap-2"
+        >
+          <Heart className="h-3 w-3 fill-current" />
+          Share Selection ({favorites.length})
+        </button>
+      )}
+
+      {canDownload && (
+        <>
+          {/* Selection controls (images only, not on shared link view) */}
+          {!isShared && (
+            <div className="hidden md:flex items-center gap-2">
+              <button
+                onClick={handleSelectAllImages}
+                disabled={isSelectingAll}
+                className={cn(
+                  "h-9 px-3.5 rounded-full border text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                  isSelectingAll
+                    ? "bg-slate-50 text-slate-400 border-slate-200 cursor-wait"
+                    : "bg-white text-slate-700 border-slate-200 hover:border-[#b5d0c1] hover:text-slate-900"
+                )}
+                title="Select all images"
+              >
+                <BoxSelect className="h-3 w-3" />
+                {isSelectingAll ? `Selecting… ${selectAllLoadedCount}` : "Select All"}
+              </button>
+
+              {selectedCount > 0 && (
+                <button
+                  onClick={clearSelection}
+                  className="h-9 px-3.5 rounded-full bg-slate-50 text-slate-600 border border-slate-200 text-[10px] font-black uppercase tracking-widest hover:bg-slate-100 transition-all"
+                  title="Clear selection"
+                >
+                  Selected: {selectedCount} · Clear
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Download Selected */}
+          {!isShared && (
+            <button
+              onClick={async () => {
+                if (selectedCount === 0) return;
+                // Prefer currently-loaded items; only fetch-all if we don't have the selected set locally.
+                const localImages = allImages || assets.filter((a) => isImageAsset(a));
+                const localMap = new Map<string, any>();
+                localImages.forEach((a) => localMap.set(getAssetKey(a), a));
+
+                const hasAllSelectedLocally = Array.from(selectedImageIds).every((id) => localMap.has(id));
+                const sourceImages = hasAllSelectedLocally ? localImages : await ensureAllImagesLoaded();
+
+                const byId = new Map<string, any>();
+                sourceImages.forEach((a) => byId.set(getAssetKey(a), a));
+                const selected = Array.from(selectedImageIds)
+                  .map((id) => byId.get(id))
+                  .filter(Boolean);
+
+                setDownloadAssets(selected);
+                setIsDownloadManagerOpen(true);
+              }}
+              disabled={selectedCount === 0 || isSelectingAll}
+              className={cn(
+                "hidden md:flex h-9 px-4 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg transition-all items-center gap-2",
+                selectedCount === 0 || isSelectingAll
+                  ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
+                  : "bg-white text-slate-900 border border-slate-200 hover:scale-105 active:scale-95"
+              )}
+              title="Download selected images"
+            >
+              <Download className="h-3 w-3" />
+              Download Selected
+            </button>
+          )}
+
+          {/* Download All */}
+          <button 
+            onClick={() => {
+              setDownloadAssets(assets);
+              setIsDownloadManagerOpen(true);
+            }}
+            className="h-9 px-4 rounded-full bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-slate-900/10 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
+          >
+            <Download className="h-3 w-3" />
+            Download All
+          </button>
+        </>
+      )}
+
+      {!isShared && (
+        <button 
+          onClick={() => setIsShareModalOpen(true)}
+          className="hidden md:flex h-9 w-9 rounded-full bg-white border border-slate-200 text-slate-400 items-center justify-center hover:text-slate-900 transition-colors shadow-sm"
+        >
+          <Share2 className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  );
+
   // 1. Fetch user session client-side after hydration to avoid blocking SSR
   useEffect(() => {
     if (!initialUser) {
@@ -700,7 +812,7 @@ export function GalleryPublicViewer({
           hideHeader ? "-translate-y-full sm:translate-y-0" : "translate-y-0"
         )}
       >
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
+        <div className="max-w-[103rem] mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button 
               onClick={() => {
@@ -727,114 +839,7 @@ export function GalleryPublicViewer({
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            {/* Step 1: Simple Share Selection Button */}
-            {!isShared && (user?.role === "TENANT_ADMIN" || user?.role === "ADMIN" || user?.role === "AGENT") && favorites.length > 0 && (
-              <button 
-                onClick={() => {
-                  const currentPath = window.location.pathname.replace(/\/$/, ""); // Remove trailing slash if any
-                  const shareUrl = `${window.location.origin}${currentPath}/shared`;
-                  navigator.clipboard.writeText(shareUrl);
-                  setShowCopiedToast(true);
-                  setTimeout(() => setShowCopiedToast(false), 3000);
-                }}
-                className="hidden md:flex h-10 px-6 rounded-full bg-rose-500 text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-rose-500/20 hover:scale-105 active:scale-95 transition-all items-center gap-2"
-              >
-                <Heart className="h-3.5 w-3.5 fill-current" />
-                Share Selection ({favorites.length})
-              </button>
-            )}
-
-            {canDownload && (
-              <>
-                {/* Selection controls (images only, not on shared link view) */}
-                {!isShared && (
-                  <div className="hidden md:flex items-center gap-2 mr-2">
-                    <button
-                      onClick={handleSelectAllImages}
-                      disabled={isSelectingAll}
-                      className={cn(
-                        "h-10 px-4 rounded-full border text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
-                        isSelectingAll
-                          ? "bg-slate-50 text-slate-400 border-slate-200 cursor-wait"
-                          : "bg-white text-slate-700 border-slate-200 hover:border-[#b5d0c1] hover:text-slate-900"
-                      )}
-                      title="Select all images"
-                    >
-                      <BoxSelect className="h-3.5 w-3.5" />
-                      {isSelectingAll ? `Selecting… ${selectAllLoadedCount}` : "Select All"}
-                    </button>
-
-                    {selectedCount > 0 && (
-                      <button
-                        onClick={clearSelection}
-                        className="h-10 px-4 rounded-full bg-slate-50 text-slate-600 border border-slate-200 text-[11px] font-black uppercase tracking-widest hover:bg-slate-100 transition-all"
-                        title="Clear selection"
-                      >
-                        Selected: {selectedCount} · Clear
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {/* Download Selected */}
-                {!isShared && (
-                  <button
-                    onClick={async () => {
-                      if (selectedCount === 0) return;
-                      // Prefer currently-loaded items; only fetch-all if we don't have the selected set locally.
-                      const localImages = allImages || assets.filter((a) => isImageAsset(a));
-                      const localMap = new Map<string, any>();
-                      localImages.forEach((a) => localMap.set(getAssetKey(a), a));
-
-                      const hasAllSelectedLocally = Array.from(selectedImageIds).every((id) => localMap.has(id));
-                      const sourceImages = hasAllSelectedLocally ? localImages : await ensureAllImagesLoaded();
-
-                      const byId = new Map<string, any>();
-                      sourceImages.forEach((a) => byId.set(getAssetKey(a), a));
-                      const selected = Array.from(selectedImageIds)
-                        .map((id) => byId.get(id))
-                        .filter(Boolean);
-
-                      setDownloadAssets(selected);
-                      setIsDownloadManagerOpen(true);
-                    }}
-                    disabled={selectedCount === 0 || isSelectingAll}
-                    className={cn(
-                      "hidden md:flex h-10 px-6 rounded-full text-[11px] font-black uppercase tracking-widest shadow-lg transition-all items-center gap-2",
-                      selectedCount === 0 || isSelectingAll
-                        ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
-                        : "bg-white text-slate-900 border border-slate-200 hover:scale-105 active:scale-95"
-                    )}
-                    title="Download selected images"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    Download Selected
-                  </button>
-                )}
-
-                {/* Download All */}
-                <button 
-                  onClick={() => {
-                    setDownloadAssets(assets);
-                    setIsDownloadManagerOpen(true);
-                  }}
-                  className="h-10 px-6 rounded-full bg-slate-900 text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-slate-900/10 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Download All
-                </button>
-              </>
-            )}
-            {!isShared && (
-              <button 
-                onClick={() => setIsShareModalOpen(true)}
-                className="hidden md:flex h-10 w-10 rounded-full bg-white border border-slate-200 text-slate-400 items-center justify-center hover:text-slate-900 transition-colors shadow-sm"
-              >
-                <Share2 className="h-4 w-4" />
-              </button>
-            )}
-          </div>
+          {/* Actions moved to bottom-of-hero subheader (per design reference) */}
         </div>
       </header>
 
@@ -851,7 +856,7 @@ export function GalleryPublicViewer({
           // #endregion
           return (
             <section className="px-6 pt-6">
-              <div className="max-w-7xl mx-auto relative h-[60vh] w-full overflow-hidden rounded-[48px] shadow-2xl shadow-slate-200 bg-slate-100">
+              <div className="max-w-[103rem] mx-auto relative h-[60vh] w-full overflow-hidden rounded-[48px] shadow-2xl shadow-slate-200 bg-slate-100">
                 <Image 
                   src={finalBannerSrc} 
                   alt={gallery.title}
@@ -874,7 +879,7 @@ export function GalleryPublicViewer({
         if (videos.length > 0) {
           return (
             <section className="px-6 pt-6">
-              <div className="max-w-7xl mx-auto bg-black relative aspect-video w-full max-h-[70vh] overflow-hidden rounded-[48px] shadow-2xl group">
+              <div className="max-w-[103rem] mx-auto bg-black relative aspect-video w-full max-h-[70vh] overflow-hidden rounded-[48px] shadow-2xl group">
                 <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
                   <iframe 
                     src={formatVideoUrl(videos[0].url)}
@@ -892,7 +897,7 @@ export function GalleryPublicViewer({
         if (assets.length > 0) {
           return (
             <section className="px-6 pt-6">
-              <div className="max-w-7xl mx-auto relative h-[40vh] w-full overflow-hidden rounded-[48px] shadow-2xl shadow-slate-200">
+              <div className="max-w-[103rem] mx-auto relative h-[40vh] w-full overflow-hidden rounded-[48px] shadow-2xl shadow-slate-200">
                 <img 
                   src={getImageUrl(assets[0].url, "w1024h768")} 
                   alt={gallery.title}
@@ -913,7 +918,7 @@ export function GalleryPublicViewer({
 
       {/* Main Content */}
       <main className="flex-1 bg-white">
-        <div className="max-w-7xl mx-auto px-6 py-12">
+        <div className="max-w-[103rem] mx-auto px-6 py-12">
           {/* Sub Header / Filters */}
           {!isShared && (
             <div className="flex flex-col md:flex-row items-center justify-between mb-12 gap-6">
@@ -930,18 +935,8 @@ export function GalleryPublicViewer({
                 />
               </div>
               
-              <div className="flex items-center gap-3">
-                <div className="flex -space-x-2">
-                  {/* Visual indicator of multiple folders */}
-                  {Array.from(new Set(assets.map(a => a.folderName))).map((folder, i) => (
-                    <div key={i} className="h-8 w-8 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-slate-400" title={folder}>
-                      <ImageIcon className="h-3.5 w-3.5" />
-                    </div>
-                  ))}
-                </div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  Aggregating from {Array.from(new Set(assets.map(a => a.folderName))).length} Production Folders
-                </p>
+              <div className="flex flex-col items-center md:items-end gap-3">
+                <GalleryActionButtons />
               </div>
             </div>
           )}
@@ -957,7 +952,7 @@ export function GalleryPublicViewer({
 
           {/* Grid */}
           {isLoading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
             {[1, 2, 3, 4, 5, 6].map(i => (
               <div key={i} className="aspect-[3/2] rounded-[32px] bg-slate-50 animate-pulse border border-slate-100 flex items-center justify-center">
                 <ImageIcon className="h-8 w-8 text-slate-100" />
@@ -980,7 +975,8 @@ export function GalleryPublicViewer({
             </div>
           ) : (
             <>
-              <div className="columns-2 sm:columns-2 lg:columns-3 gap-4 sm:gap-8">
+              {/* True masonry packing (reference-style): CSS columns stack independently and avoid grid holes. */}
+              <div className="columns-2 sm:columns-2 md:columns-3 lg:columns-4 gap-3 sm:gap-4 lg:gap-5">
                 {combinedMedia.slice(0, visibleCount).map((item: any, idx: number) => (
                   (() => {
                     const isSelectableImage = !isShared && item.type === "image";
@@ -989,7 +985,8 @@ export function GalleryPublicViewer({
                   <div 
                     key={item.id || idx} 
                     className={cn(
-                      "break-inside-avoid relative rounded-[32px] overflow-hidden bg-slate-50 cursor-zoom-in border border-slate-100 group transition-all duration-500 hover:shadow-2xl hover:shadow-slate-200 mb-4 sm:mb-8",
+                      // Square edges to match reference masonry look
+                      "break-inside-avoid relative overflow-hidden bg-slate-50 cursor-zoom-in border border-slate-100 group transition-all duration-500 hover:shadow-2xl hover:shadow-slate-200 mb-3 sm:mb-4 lg:mb-5",
                       isSelected && "border-transparent"
                     )}
                     onClick={() => {
@@ -1029,7 +1026,7 @@ export function GalleryPublicViewer({
                     {/* Selected outline (thicker + Safari-safe rounded corners) */}
                     {isSelected && (
                       <div
-                        className="pointer-events-none absolute inset-0 z-20 rounded-[32px] border-[6px] border-[#b5d0c1]"
+                        className="pointer-events-none absolute inset-0 z-20 border-[6px] border-[#b5d0c1]"
                       />
                     )}
 
@@ -1076,7 +1073,7 @@ export function GalleryPublicViewer({
                       />
                     )}
                     
-                    <div className="absolute inset-0 rounded-[32px] bg-slate-900/0 group-hover:bg-slate-900/40 transition-all duration-300 pointer-events-none" />
+                    <div className="absolute inset-0 bg-slate-900/0 group-hover:bg-slate-900/40 transition-all duration-300 pointer-events-none" />
                     
                     {/* Removed: old top-left tag pill (e.g. “PRODUCTION LINK”) per new selection UI */}
 
@@ -1976,7 +1973,7 @@ export function GalleryPublicViewer({
 
       {/* Simple Footer */}
       <footer className="py-20 border-t border-slate-100 bg-slate-50/50">
-        <div className="max-w-7xl mx-auto px-6 text-center">
+        <div className="max-w-[103rem] mx-auto px-6 text-center">
           {tenant.logoUrl && (
             <img src={tenant.logoUrl} alt={tenant.name} className="h-12 w-auto mx-auto mb-8 opacity-40 grayscale" />
           )}
@@ -2280,13 +2277,14 @@ function ProgressiveImage({ src, alt, className, getImageUrl, priority, directUr
 
   return (
     <div 
-      className="relative w-full overflow-hidden rounded-[32px] bg-slate-50 safari-rounded-fix"
-      style={{ aspectRatio: '3/2' }}
+      // Square-edge tiles + allow natural height so masonry can pack correctly
+      className="relative w-full overflow-hidden bg-slate-50"
     >
       <Image 
         src={finalSrc}
         alt={alt}
-        fill
+        width={1200}
+        height={800}
         priority={priority}
         className={cn(
           className,
@@ -2298,7 +2296,8 @@ function ProgressiveImage({ src, alt, className, getImageUrl, priority, directUr
           console.error("[IMAGE] Failed to load:", finalSrc);
           setHasError(true);
         }}
-        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+        // Let the image size itself naturally in the flow; width is 100% via className passed in.
+        sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
       />
     </div>
   );

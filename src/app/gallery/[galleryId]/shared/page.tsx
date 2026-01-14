@@ -183,7 +183,7 @@ function GalleryShellPlaceholder({ gallery, tenant }: any) {
   return (
     <div className="flex flex-col min-h-screen">
       <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-100 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
+        <div className="max-w-[103rem] mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="h-10 w-10 rounded-full bg-slate-50 mr-2" />
             {tenant.logoUrl ? (
@@ -203,7 +203,7 @@ function GalleryShellPlaceholder({ gallery, tenant }: any) {
 
       {gallery.bannerImageUrl && (
         <section className="px-6 pt-6">
-          <div className="max-w-7xl mx-auto relative h-[60vh] w-full overflow-hidden rounded-[48px] bg-slate-100 animate-pulse border border-slate-50">
+          <div className="max-w-[103rem] mx-auto relative h-[60vh] w-full overflow-hidden rounded-[48px] bg-slate-100 animate-pulse border border-slate-50">
             <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent z-10" />
             <div className="absolute bottom-12 left-12 text-white space-y-1 z-20">
               <h2 className="text-4xl font-bold tracking-tight opacity-20">{gallery.title}</h2>
@@ -214,7 +214,7 @@ function GalleryShellPlaceholder({ gallery, tenant }: any) {
       )}
 
       <main className="flex-1 bg-white">
-        <div className="max-w-7xl mx-auto px-6 py-12">
+        <div className="max-w-[103rem] mx-auto px-6 py-12">
           <div className="flex items-center justify-between mb-12">
             <div className="flex gap-2">
               {[1, 2, 3].map(i => (

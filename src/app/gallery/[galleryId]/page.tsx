@@ -192,7 +192,7 @@ function GalleryShellPlaceholder({ gallery, tenant }: any) {
   return (
     <div className="flex flex-col min-h-screen">
       <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-100 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
+        <div className="max-w-[103rem] mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="h-10 w-10 rounded-full bg-slate-50 mr-2" />
             {tenant.logoUrl ? (
@@ -218,7 +218,7 @@ function GalleryShellPlaceholder({ gallery, tenant }: any) {
 
       {gallery.bannerImageUrl && (
         <section className="px-6 pt-6">
-          <div className="max-w-7xl mx-auto relative h-[60vh] w-full overflow-hidden rounded-[48px] bg-slate-100 border border-slate-50">
+          <div className="max-w-[103rem] mx-auto relative h-[60vh] w-full overflow-hidden rounded-[48px] bg-slate-100 border border-slate-50">
             <Image 
               src={gallery.bannerImageUrl} 
               alt={gallery.title}
@@ -237,7 +237,7 @@ function GalleryShellPlaceholder({ gallery, tenant }: any) {
       )}
 
       <main className="flex-1 bg-white">
-        <div className="max-w-7xl mx-auto px-6 py-12">
+        <div className="max-w-[103rem] mx-auto px-6 py-12">
           <div className="flex items-center justify-between mb-12">
             <div className="flex gap-2">
               {[1, 2, 3].map(i => (
