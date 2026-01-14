@@ -957,7 +957,8 @@ export function BookingDrawer({
                               if (aMatch && !bMatch) return -1;
                               if (!aMatch && bMatch) return 1;
                             }
-                            return 0;
+                            // Secondary: alphabetical A→Z (case-insensitive)
+                            return String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" });
                           })
                           .map(s => {
                             const isSelected = formData.serviceIds.includes(s.id);
