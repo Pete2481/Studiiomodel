@@ -46,18 +46,33 @@ export async function POST(request: Request) {
     ]);
 
     // 4. Send Email via Notification Service
-    // Performance: send using MASTER to avoid tenant DB lookups in sendOTP/emailService.
+    // IMPORTANT: Send using the ACTUAL tenantId (not membershipId) so we can use tenant SMTP settings.
+    // This avoids relying on MASTER SMTP env vars being present.
+    //
     // Local dev: fire-and-forget so the API responds instantly.
     // Production: await to ensure delivery (serverless runtimes can stop executing after response).
     try {
-      if (process.env.NODE_ENV === "development") {
-        void notificationService.sendOTP(normalizedEmail, otp, "MASTER");
-      } else {
-        await notificationService.sendOTP(normalizedEmail, otp, "MASTER");
+      let actualTenantId: string | "MASTER" = "MASTER";
+      if (tenantId !== "MASTER") {
+        const m = await prisma.tenantMembership.findUnique({
+          where: { id: tenantId }, // tenantId is membershipId in this flow
+          select: { tenantId: true },
+        });
+        if (m?.tenantId) actualTenantId = m.tenantId;
       }
-      console.log(`[OTP SENT] To: ${normalizedEmail}`);
+
+      if (process.env.NODE_ENV === "development") {
+        void notificationService.sendOTP(normalizedEmail, otp, actualTenantId);
+      } else {
+        await notificationService.sendOTP(normalizedEmail, otp, actualTenantId);
+      }
+      console.log(`[OTP SENT] To: ${normalizedEmail}, Tenant: ${actualTenantId}`);
     } catch (notifError) {
       console.error("[OTP Email Error]:", notifError);
+      // Don't silently succeed in non-dev environments.
+      if (process.env.NODE_ENV !== "development") {
+        return NextResponse.json({ error: "Failed to send OTP" }, { status: 500 });
+      }
     }
     
     return NextResponse.json({ success: true });

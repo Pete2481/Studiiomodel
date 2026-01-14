@@ -55,6 +55,7 @@ export function CalendarView({
   const [hoveredEvent, setHoveredEvent] = useState<{ event: any, x: number, y: number } | null>(null);
   const [view, setView] = useState<string>("timeGridWeek");
   const [extraPlugins, setExtraPlugins] = useState<any[]>([]);
+  const [pendingView, setPendingView] = useState<string | null>(null);
 
   // Responsive View Handler
   useEffect(() => {
@@ -85,6 +86,19 @@ export function CalendarView({
     const plugin = (mod as any).default || mod;
     setExtraPlugins((prev) => (prev.includes(plugin) ? prev : [...prev, plugin]));
   };
+
+  // If we requested a view that requires a lazily loaded plugin, wait until it is present before switching.
+  useEffect(() => {
+    if (!pendingView) return;
+    if (pendingView === "dayGridMonth") {
+      const hasDayGrid = extraPlugins.some((p) => p?.name === "dayGrid" || p?.id === "dayGrid");
+      if (!hasDayGrid) return;
+    }
+    const api = calendarRef.current?.getApi?.();
+    api?.changeView(pendingView);
+    setView(pendingView);
+    setPendingView(null);
+  }, [pendingView, extraPlugins]);
 
   const isClientOrRestrictedAgent = user?.role === "CLIENT" || (user?.role === "AGENT" && !user?.permissions?.seeAll);
   const isRestrictedRole = user?.role === "CLIENT" || user?.role === "AGENT";
@@ -306,8 +320,7 @@ export function CalendarView({
               text: "Month",
               click: async () => {
                 await ensureDayGridPlugin();
-                const api = calendarRef.current?.getApi?.();
-                api?.changeView("dayGridMonth");
+                setPendingView("dayGridMonth");
               }
             }
           }}
