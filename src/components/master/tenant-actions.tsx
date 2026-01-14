@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { MoreVertical, Edit3, ShieldAlert, Zap, Plus, Sparkles } from "lucide-react";
 import { EditTenantModal } from "./edit-tenant-modal";
 import { cn } from "@/lib/utils";
-import { activateTenantAiSuiteFreeTrial, grantTenantAiSuiteFreePack, setTenantAiSuiteEnabled } from "@/app/actions/master-ai";
+import { activateTenantAiSuiteFreeTrial, grantTenantAiSuiteFreePack, setTenantAiSuiteEnabled, setTenantAiSuitePackEditsOverride } from "@/app/actions/master-ai";
 import { createPortal } from "react-dom";
 
 interface TenantActionsProps {
@@ -17,6 +17,7 @@ interface TenantActionsProps {
     slug: string;
     aiSuiteEnabled?: boolean;
     aiSuiteFreeUnlocksRemaining?: number;
+    aiSuitePackEditsOverride?: number | null;
   };
 }
 
@@ -157,6 +158,44 @@ export function TenantActions({ tenant }: TenantActionsProps) {
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">15</span>
               </button>
             )}
+
+            <button
+              onClick={async () => {
+                try {
+                  const current = tenant.aiSuitePackEditsOverride ?? null;
+                  const input = prompt(
+                    "Set AI pack edits override for this tenant (blank to clear). Example: 25",
+                    current === null ? "" : String(current),
+                  );
+                  if (input === null) return;
+                  const next = input.trim() === "" ? null : Number(input);
+                  if (next !== null && (!Number.isFinite(next) || next < 1)) {
+                    alert("Please enter a valid number (>= 1), or leave blank to clear.");
+                    return;
+                  }
+                  setIsBusy(true);
+                  const res = await setTenantAiSuitePackEditsOverride(tenant.id, next as any);
+                  if (!(res as any)?.success) throw new Error((res as any)?.error || "Failed to update override");
+                  router.refresh();
+                } catch (e: any) {
+                  alert(e?.message || "Failed to update pack edits override");
+                } finally {
+                  setIsBusy(false);
+                  setIsOpen(false);
+                }
+              }}
+              disabled={isBusy}
+              className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl hover:bg-slate-50 text-slate-600 hover:text-slate-900 transition-colors text-sm font-bold disabled:opacity-50"
+              title="Overrides the number of edits granted per AI pack for this tenant (within Master min/max)."
+            >
+              <span className="flex items-center gap-3">
+                <Sparkles className="h-4 w-4" />
+                Pack edits override
+              </span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                {tenant.aiSuitePackEditsOverride ?? "—"}
+              </span>
+            </button>
 
             <button
               onClick={async () => {

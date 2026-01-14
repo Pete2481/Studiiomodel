@@ -3,15 +3,12 @@
 import React, { useRef, useState, useEffect } from "react";
 import { Plus, Calendar as CalendarIcon, Lock, GripHorizontal, Settings } from "lucide-react";
 import dynamic from "next/dynamic";
-import { BookingDrawer } from "./booking-drawer";
-import { BusinessHoursModal } from "./business-hours-modal";
-import { SlotManagementModal } from "./slot-management-modal";
-import { CalendarSubscriptionModal } from "./calendar-subscription-modal";
 import { upsertBooking, deleteBooking } from "@/app/actions/booking-upsert";
 import { BookingList } from "@/components/dashboard/booking-list";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { permissionService } from "@/lib/permission-service";
+import { getClientServiceFavorites } from "@/app/actions/service";
 
 const CalendarView = dynamic(
   () => import("./calendar-view").then((m) => m.CalendarView),
@@ -19,6 +16,30 @@ const CalendarView = dynamic(
     ssr: false,
     loading: () => <div className="h-[60vh] bg-slate-100 rounded-[32px] animate-pulse" />,
   }
+);
+
+const BookingDrawer = dynamic(
+  () => import("./booking-drawer").then((m) => m.BookingDrawer),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="fixed inset-0 z-[120] bg-white/50 backdrop-blur-sm">
+        <div className="absolute right-6 top-6 h-10 w-10 rounded-full bg-slate-100 animate-pulse" />
+      </div>
+    ),
+  }
+);
+const BusinessHoursModal = dynamic(
+  () => import("./business-hours-modal").then((m) => m.BusinessHoursModal),
+  { ssr: false, loading: () => null }
+);
+const SlotManagementModal = dynamic(
+  () => import("./slot-management-modal").then((m) => m.SlotManagementModal),
+  { ssr: false, loading: () => null }
+);
+const CalendarSubscriptionModal = dynamic(
+  () => import("./calendar-subscription-modal").then((m) => m.CalendarSubscriptionModal),
+  { ssr: false, loading: () => null }
 );
 
 interface BookingsPageContentProps {
@@ -77,6 +98,28 @@ export function BookingsPageContent({
   const rangeInflightRef = useRef<Map<string, Promise<any[]>>>(new Map());
   const hasLoadedInitialRangeRef = useRef(false);
 
+  const [localClients, setLocalClients] = useState(clients || []);
+  const [localServices, setLocalServices] = useState(services || []);
+  const [localTeamMembers, setLocalTeamMembers] = useState(teamMembers || []);
+  const [localAgents, setLocalAgents] = useState(agents || []);
+  const hasLoadedReferenceRef = useRef(false);
+  const [clientFavServiceIds, setClientFavServiceIds] = useState<Set<string>>(new Set());
+  const hasLoadedClientFavsRef = useRef(false);
+
+  // Keep local reference data in sync if SSR provides it (list page, or future SSR improvements)
+  useEffect(() => {
+    if (Array.isArray(clients) && clients.length) setLocalClients(clients);
+  }, [clients]);
+  useEffect(() => {
+    if (Array.isArray(services) && services.length) setLocalServices(services);
+  }, [services]);
+  useEffect(() => {
+    if (Array.isArray(teamMembers) && teamMembers.length) setLocalTeamMembers(teamMembers);
+  }, [teamMembers]);
+  useEffect(() => {
+    if (Array.isArray(agents) && agents.length) setLocalAgents(agents);
+  }, [agents]);
+
   // Sync state when props update (crucial for router.refresh() to work)
   useEffect(() => {
     // If server provides bookings (legacy), sync. If server provides [], we use range-loading instead.
@@ -84,6 +127,55 @@ export function BookingsPageContent({
       setBookings(initialBookings);
     }
   }, [initialBookings]);
+
+  // Calendar page loads reference data client-side after first paint to keep SSR fast.
+  useEffect(() => {
+    if (mode !== "calendar") return;
+    if (hasLoadedReferenceRef.current) return;
+    const needs = !(localClients.length && localServices.length && localTeamMembers.length && localAgents.length);
+    if (!needs) {
+      hasLoadedReferenceRef.current = true;
+      return;
+    }
+
+    hasLoadedReferenceRef.current = true;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/tenant/calendar/reference");
+        const data = await res.json().catch(() => ({}));
+        if (Array.isArray(data?.clients)) setLocalClients(data.clients);
+        if (Array.isArray(data?.services)) setLocalServices(data.services);
+        if (Array.isArray(data?.teamMembers)) setLocalTeamMembers(data.teamMembers);
+        if (Array.isArray(data?.agents)) setLocalAgents(data.agents);
+      } catch (e) {
+        console.error("[CALENDAR] Reference fetch failed:", e);
+      }
+    };
+
+    // Let first paint happen; then fetch reference data.
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      (window as any).requestIdleCallback(() => load(), { timeout: 1500 });
+    } else {
+      setTimeout(() => load(), 250);
+    }
+
+    // Warm the drawer bundle so the first open feels instant.
+    void import("./booking-drawer");
+  }, [mode, localClients.length, localServices.length, localTeamMembers.length, localAgents.length]);
+
+  // Client favorites (per agency) for calendar quick-add.
+  useEffect(() => {
+    if (mode !== "calendar") return;
+    if (user?.role !== "CLIENT") return;
+    if (hasLoadedClientFavsRef.current) return;
+    hasLoadedClientFavsRef.current = true;
+    (async () => {
+      const res = await getClientServiceFavorites();
+      if (res.success) {
+        setClientFavServiceIds(new Set((res as any).favoriteServiceIds || []));
+      }
+    })().catch((e) => console.error("[CALENDAR] Client favorites failed:", e));
+  }, [mode, user?.role]);
 
   const mergeBookingsById = (prev: any[], next: any[]) => {
     const map = new Map<string, any>();
@@ -125,20 +217,25 @@ export function BookingsPageContent({
     // After the first visible range loads, prefetch upcoming ranges in background.
     if (!hasLoadedInitialRangeRef.current) {
       hasLoadedInitialRangeRef.current = true;
-      // Prefetch next 2 ranges (best-effort)
-      const nextStart1 = new Date(end);
-      const nextEnd1 = new Date(end);
-      nextEnd1.setDate(nextEnd1.getDate() + Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))));
-      fetchBookingsForRange(nextStart1, nextEnd1, { prefetch: true }).then((prefetched) => {
-        if (prefetched.length) setBookings((prev) => mergeBookingsById(prev, prefetched));
-      });
+      const rangeDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
 
-      const nextStart2 = new Date(nextEnd1);
-      const nextEnd2 = new Date(nextEnd1);
-      nextEnd2.setDate(nextEnd2.getDate() + Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))));
-      fetchBookingsForRange(nextStart2, nextEnd2, { prefetch: true }).then((prefetched) => {
-        if (prefetched.length) setBookings((prev) => mergeBookingsById(prev, prefetched));
-      });
+      // Avoid prefetching huge ranges (e.g. Month view) which can slow the UI/network.
+      if (rangeDays <= 14) {
+        // Prefetch next 2 ranges (best-effort)
+        const nextStart1 = new Date(end);
+        const nextEnd1 = new Date(end);
+        nextEnd1.setDate(nextEnd1.getDate() + rangeDays);
+        fetchBookingsForRange(nextStart1, nextEnd1, { prefetch: true }).then((prefetched) => {
+          if (prefetched.length) setBookings((prev) => mergeBookingsById(prev, prefetched));
+        });
+
+        const nextStart2 = new Date(nextEnd1);
+        const nextEnd2 = new Date(nextEnd1);
+        nextEnd2.setDate(nextEnd2.getDate() + rangeDays);
+        fetchBookingsForRange(nextStart2, nextEnd2, { prefetch: true }).then((prefetched) => {
+          if (prefetched.length) setBookings((prev) => mergeBookingsById(prev, prefetched));
+        });
+      }
     }
   };
 
@@ -246,7 +343,7 @@ export function BookingsPageContent({
       return;
     }
     
-    const service = services.find(s => s.id === serviceId);
+    const service = localServices.find((s: any) => s.id === serviceId);
     
     const isClient = user?.role === "CLIENT";
     
@@ -278,14 +375,20 @@ export function BookingsPageContent({
       });
       if (result.success) {
         setIsDrawerOpen(false);
-        // Keep existing behavior, but ensure the visible range refreshes immediately (we no longer SSR preload bookings).
+        // Optimistic update (makes the booking appear instantly).
+        if (result.booking) {
+          setBookings((prev) => mergeBookingsById(prev, [result.booking]));
+        }
+
+        // Ensure the visible range is consistent (best-effort, non-blocking).
         if (lastVisibleRangeRef.current) {
           const { start, end } = lastVisibleRangeRef.current;
-          const items = await fetchBookingsForRange(start, end, { force: true });
-          setBookings((prev) => mergeBookingsById(prev, items));
+          fetchBookingsForRange(start, end, { force: true }).then((items) => {
+            if (items.length) setBookings((prev) => mergeBookingsById(prev, items));
+          });
         }
-        // Soft refresh to update any server-derived props
-        router.refresh();
+        // Keep any server-derived props in sync (non-blocking)
+        queueMicrotask(() => router.refresh());
       } else {
         alert(result.error || "Something went wrong while saving the booking.");
       }
@@ -300,14 +403,17 @@ export function BookingsPageContent({
       const result = await deleteBooking(id);
       if (result.success) {
         setIsDrawerOpen(false);
-        // Ensure the visible range refreshes immediately (we no longer SSR preload bookings).
+        // Optimistic remove
+        setBookings((prev) => prev.filter((b: any) => String(b?.id) !== String(id)));
+
+        // Ensure the visible range is consistent (best-effort, non-blocking).
         if (lastVisibleRangeRef.current) {
           const { start, end } = lastVisibleRangeRef.current;
-          const items = await fetchBookingsForRange(start, end, { force: true });
-          setBookings((prev) => mergeBookingsById(prev, items));
+          fetchBookingsForRange(start, end, { force: true }).then((items) => {
+            setBookings((prev) => mergeBookingsById(prev.filter((b: any) => String(b?.id) !== String(id)), items));
+          });
         }
-        // Soft refresh to update any server-derived props
-        router.refresh();
+        queueMicrotask(() => router.refresh());
       } else {
         alert(result.error || "Failed to remove booking.");
       }
@@ -369,14 +475,16 @@ export function BookingsPageContent({
                   <p className="mt-0.5 text-[10px] font-bold text-rose-400">Unavailable for Clients</p>
                 </div>
               )}
-              {services
-                .filter(s => {
-                  if (!s.isFavorite) return false;
-                  if (user?.role !== "CLIENT") return true;
-                  if (s.clientVisible === false) return false;
-                  const currentClient = clients.find(c => c.id === user?.clientId);
-                  if (currentClient?.disabledServices?.includes(s.id)) return false;
-                  return true;
+              {localServices
+                .filter((s: any) => {
+                  if (user?.role === "CLIENT") {
+                    if (!clientFavServiceIds.has(String(s.id))) return false;
+                    if (s.clientVisible === false) return false;
+                    const currentClient = localClients.find((c: any) => c.id === user?.clientId);
+                    if (currentClient?.disabledServices?.includes(s.id)) return false;
+                    return true;
+                  }
+                  return !!s.isFavorite;
                 })
                 .map((service) => (
                 <div 
@@ -525,10 +633,10 @@ export function BookingsPageContent({
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         booking={selectedBooking}
-        clients={clients}
-        services={services}
-        teamMembers={teamMembers}
-        agents={agents}
+        clients={localClients}
+        services={localServices}
+        teamMembers={localTeamMembers}
+        agents={localAgents}
         onSave={handleSave}
         onDelete={handleDeleteBooking}
         role={user?.role}

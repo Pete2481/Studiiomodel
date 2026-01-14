@@ -211,7 +211,7 @@ export function ClientDrawer({
                 {/* Profile Picture Section */}
                 <div className="flex flex-col items-center justify-center py-4">
                   <div className="relative group">
-                    <div className="h-32 w-32 rounded-[40px] bg-slate-100 overflow-hidden border-4 border-white shadow-xl flex items-center justify-center">
+                    <div className="h-32 w-32 rounded-[40px] bg-slate-300 overflow-hidden border-4 border-white shadow-xl flex items-center justify-center">
                       {previewUrl ? (
                         <img src={previewUrl} className="h-full w-full object-cover" alt="Profile preview" />
                       ) : (

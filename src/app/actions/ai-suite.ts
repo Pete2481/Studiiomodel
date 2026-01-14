@@ -22,6 +22,62 @@ type TenantAiSuiteSettings = {
   settings: any;
 };
 
+type AiSuiteGlobalLimits = {
+  defaultPackEdits: number;
+  minPackEdits: number;
+  maxPackEdits: number;
+  forcePackEdits: number | null;
+};
+
+function clampInt(n: any, min: number, max: number) {
+  const v = Math.floor(Number(n));
+  if (!Number.isFinite(v)) return min;
+  return Math.max(min, Math.min(max, v));
+}
+
+async function getAiSuiteGlobalLimits(): Promise<AiSuiteGlobalLimits> {
+  // Stored in a dedicated SystemConfig row (`id="aiSuite"`) using the Json field `welcomeEmailBlocks`.
+  const cfg = await prisma.systemConfig.upsert({
+    where: { id: "aiSuite" },
+    update: {},
+    create: {
+      id: "aiSuite",
+      welcomeEmailSubject: "AI_SUITE_CONFIG",
+      welcomeEmailBlocks: { defaultPackEdits: 15, minPackEdits: 5, maxPackEdits: 50, forcePackEdits: null } as any,
+    },
+    select: { welcomeEmailBlocks: true },
+  });
+
+  const raw = (cfg?.welcomeEmailBlocks as any) || {};
+  const minPackEdits = clampInt(raw.minPackEdits ?? 5, 1, 999);
+  const maxPackEdits = clampInt(raw.maxPackEdits ?? 50, 1, 999);
+  const defaultPackEdits = clampInt(raw.defaultPackEdits ?? 15, minPackEdits, maxPackEdits);
+  const forcePackEdits =
+    raw.forcePackEdits === null || raw.forcePackEdits === undefined
+      ? null
+      : clampInt(raw.forcePackEdits, minPackEdits, maxPackEdits);
+
+  return { defaultPackEdits, minPackEdits, maxPackEdits, forcePackEdits };
+}
+
+async function resolvePackEditsForTenant(tenantId: string, tenantSettings: any) {
+  const global = await getAiSuiteGlobalLimits();
+  const tenantOverrideRaw = (tenantSettings as any)?.aiSuite?.packEditsOverride;
+  const tenantOverride =
+    tenantOverrideRaw === null || tenantOverrideRaw === undefined
+      ? null
+      : clampInt(tenantOverrideRaw, global.minPackEdits, global.maxPackEdits);
+
+  const packEdits =
+    global.forcePackEdits !== null
+      ? global.forcePackEdits
+      : tenantOverride !== null
+        ? tenantOverride
+        : global.defaultPackEdits;
+
+  return { packEdits, global, tenantOverride };
+}
+
 async function getTenantAiSuiteSettings(tenantId: string): Promise<TenantAiSuiteSettings> {
   const t = await prisma.tenant.findUnique({
     where: { id: tenantId },
@@ -109,6 +165,7 @@ async function ensureAiSuiteUnlockEditRequest(args: {
   requestedById: string | null;
   unlockBlockId: string;
   mode: "accept" | "backfill";
+  editsIncluded?: number;
 }) {
   const { tenantId, galleryId, clientId, requestedById, unlockBlockId, mode } = args;
   const tPrisma = await getTenantPrisma(tenantId);
@@ -144,6 +201,7 @@ async function ensureAiSuiteUnlockEditRequest(args: {
     mode === "accept"
       ? "AI Suite unlocked for this gallery ($50 one-off). Includes 15 AI edits."
       : "AI Suite unlock charge recorded (backfilled). Includes 15 AI edits.";
+  const editsIncluded = Math.max(1, Math.floor(Number((args as any)?.editsIncluded || 15)));
 
   const created = await (tPrisma as any).editRequest.create({
     data: {
@@ -161,7 +219,7 @@ async function ensureAiSuiteUnlockEditRequest(args: {
         type: "aiSuiteUnlock",
         unlockBlockId,
         amount: 50,
-        editsIncluded: 15,
+        editsIncluded,
         recordedMode: mode,
         acceptedAt: new Date().toISOString(),
       },
@@ -196,6 +254,7 @@ export async function unlockAiSuiteForGallery(galleryId: string) {
   }
 
   const tenantAi = await getTenantAiSuiteSettings(gallery.tenantId);
+  const { packEdits } = await resolvePackEditsForTenant(gallery.tenantId, tenantAi.settings);
 
   const current = readAiSuiteMeta(gallery.metadata);
 
@@ -203,6 +262,8 @@ export async function unlockAiSuiteForGallery(galleryId: string) {
   // But do ensure the unlock EditRequest exists (in case a prior attempt failed silently).
   if (current.unlocked && (current.remainingEdits ?? 0) > 0 && current.unlockBlockId) {
     try {
+      const tenantAi = await getTenantAiSuiteSettings(gallery.tenantId);
+      const { packEdits } = await resolvePackEditsForTenant(gallery.tenantId, tenantAi.settings);
       await ensureAiSuiteUnlockEditRequest({
         tenantId: gallery.tenantId,
         galleryId,
@@ -210,6 +271,7 @@ export async function unlockAiSuiteForGallery(galleryId: string) {
         requestedById: (session.user as any)?.id || null,
         unlockBlockId: current.unlockBlockId,
         mode: "backfill",
+        editsIncluded: packEdits,
       });
     } catch (e) {
       console.error("[AI_SUITE_UNLOCK] Failed to ensure unlock EditRequest:", e);
@@ -233,7 +295,7 @@ export async function unlockAiSuiteForGallery(galleryId: string) {
   const unlockBlockId = crypto.randomUUID();
   const next: AiSuiteMeta = {
     unlocked: true,
-    remainingEdits: 15,
+    remainingEdits: packEdits,
     unlockBlockId,
     lastUnlockedAt: new Date().toISOString(),
     unlockType: canUseFreePack ? "trial" : "paid",
@@ -274,6 +336,7 @@ export async function unlockAiSuiteForGallery(galleryId: string) {
       requestedById: (session.user as any)?.id || null,
       unlockBlockId,
       mode: "accept",
+      editsIncluded: packEdits,
     });
   }
 

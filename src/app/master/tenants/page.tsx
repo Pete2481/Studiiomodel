@@ -120,6 +120,13 @@ export default async function MasterTenantsPage() {
       const runs = typeof s?.aiSuite?.usage?.totalRuns === "number" ? s.aiSuite.usage.totalRuns : 0;
       return runs * 0.35;
     })(),
+    aiSuitePackEditsOverride: (() => {
+      const s = (r.settings as any) || {};
+      const raw = s?.aiSuite?.packEditsOverride;
+      if (raw === null) return null;
+      if (typeof raw === "number") return raw;
+      return null;
+    })(),
   }));
 
   return (

@@ -4,7 +4,7 @@ import { getTenantPrisma } from "@/lib/tenant-guard";
 import { Suspense } from "react";
 import { ShellSettings } from "@/components/layout/shell-settings";
 import { Loader2 } from "lucide-react";
-import { ServicePageContent } from "@/components/modules/services/service-page-content";
+import { ClientServicePageContent, ServicePageContent } from "@/components/modules/services/service-page-content";
 
 export const dynamic = "force-dynamic";
 
@@ -46,9 +46,31 @@ function ServicesSkeleton() {
 }
 
 async function ServicesDataWrapper() {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+  const sessionUser = session.user as any;
   const tPrisma = await getTenantPrisma();
 
+  const isClient = sessionUser.role === "CLIENT";
+  let disabledServices: string[] = [];
+  if (isClient && sessionUser.clientId) {
+    const client = await (tPrisma as any).client.findFirst({
+      where: { id: sessionUser.clientId as string },
+      select: { settings: true },
+    });
+    disabledServices = Array.isArray((client?.settings as any)?.disabledServices)
+      ? (client.settings as any).disabledServices.map((x: any) => String(x))
+      : [];
+  }
+
   const dbServices = await tPrisma.service.findMany({
+    where: isClient
+      ? {
+          active: true,
+          clientVisible: true,
+          ...(disabledServices.length ? { id: { notIn: disabledServices } } : {}),
+        }
+      : undefined,
     orderBy: { name: 'asc' }
   });
 
@@ -65,6 +87,10 @@ async function ServicesDataWrapper() {
     clientVisible: s.clientVisible !== false,
     settings: s.settings || {}
   }));
+
+  if (isClient) {
+    return <ClientServicePageContent initialServices={initialServices} />;
+  }
 
   return <ServicePageContent initialServices={initialServices} />;
 }

@@ -326,7 +326,7 @@ export function ClientPageContent({
           >
             {/* Profile */}
             <div className="flex items-center gap-4">
-              <div className="h-12 w-12 rounded-2xl overflow-hidden bg-slate-100 shrink-0 shadow-inner flex items-center justify-center">
+              <div className="h-12 w-12 rounded-2xl overflow-hidden bg-slate-300 shrink-0 shadow-inner flex items-center justify-center">
                 {client.avatarUrl ? (
                   <img src={formatDropboxUrl(client.avatarUrl)} alt={client.name} className="h-full w-full object-cover" />
                 ) : (

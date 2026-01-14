@@ -53,7 +53,6 @@ function CalendarSkeleton() {
 
 async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any, isGlobal: boolean }) {
   const tPrisma = (isGlobal && sessionUser.isMasterAdmin ? prisma : await getTenantPrisma()) as any;
-  const { role, teamMemberId, clientId, agentId } = sessionUser;
 
   const user = {
     name: sessionUser.name || "User",
@@ -65,45 +64,30 @@ async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
     permissions: sessionUser.permissions || {}
   };
 
-  const canViewAll = sessionUser.role === "TENANT_ADMIN" || sessionUser.role === "ADMIN";
-  
-  // Real data fetching
-  const [dbClients, dbServices, dbTeamMembers, dbAgents, tenant, currentMember] = await Promise.all([
-    tPrisma.client.findMany({ 
-      where: !canViewAll && clientId ? { id: clientId, deletedAt: null } : { deletedAt: null }, 
-      select: { id: true, name: true, businessName: true, avatarUrl: true, settings: true } 
-    }),
-    tPrisma.service.findMany({ 
-      where: { active: true },
-      select: { id: true, name: true, price: true, durationMinutes: true, icon: true, slotType: true, clientVisible: true, settings: true }
-    }),
-    tPrisma.teamMember.findMany({ 
-      where: { deletedAt: null },
-      select: { id: true, displayName: true, avatarUrl: true }
-    }),
-    tPrisma.agent.findMany({ 
-      where: !canViewAll && clientId ? { clientId, deletedAt: null } : { deletedAt: null },
-      select: { id: true, name: true, clientId: true, avatarUrl: true }
-    }),
+  // SSR only what we need for the initial calendar shell.
+  // Reference data (clients/services/team/agents) loads client-side after first paint.
+  const [tenant, currentMember] = await Promise.all([
     tPrisma.tenant.findUnique({
       where: { id: sessionUser.tenantId as string },
-      select: { 
-        id: true, 
-        bookingStatuses: true, 
-        businessHours: true, 
-        sunriseSlotTime: true, 
-        duskSlotTime: true, 
-        sunriseSlotsPerDay: true, 
-        duskSlotsPerDay: true, 
+      select: {
+        id: true,
+        bookingStatuses: true,
+        businessHours: true,
+        sunriseSlotTime: true,
+        duskSlotTime: true,
+        sunriseSlotsPerDay: true,
+        duskSlotsPerDay: true,
         calendarSecret: true,
         settings: true,
-        aiLogisticsEnabled: true
-      }
+        aiLogisticsEnabled: true,
+      },
     }),
-    sessionUser.teamMemberId ? prisma.teamMember.findUnique({
-      where: { id: sessionUser.teamMemberId },
-      select: { calendarSecret: true }
-    }) : null
+    sessionUser.teamMemberId
+      ? prisma.teamMember.findUnique({
+          where: { id: sessionUser.teamMemberId },
+          select: { calendarSecret: true },
+        })
+      : null,
   ]);
 
   const calendarSecret = (sessionUser.role === "TENANT_ADMIN" || sessionUser.role === "ADMIN")
@@ -118,16 +102,10 @@ async function CalendarDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
   // via `/api/tenant/calendar/bookings` to make initial load instant.
   const bookings: any[] = [];
 
-  const clients = dbClients.map((c: any) => ({ 
-    id: String(c.id), 
-    name: String(c.name), 
-    businessName: String(c.businessName || ""), 
-    avatarUrl: c.avatarUrl || null,
-    disabledServices: (c.settings as any)?.disabledServices || []
-  }));
-  const services = dbServices.map((s: any) => ({ id: String(s.id), name: String(s.name), price: Number(s.price), durationMinutes: Number(s.durationMinutes), icon: String(s.icon || "CAMERA"), slotType: (s as any).slotType || null, clientVisible: (s as any).clientVisible !== false, isFavorite: (s.settings as any)?.isFavorite || false }));
-  const teamMembers = dbTeamMembers.map((m: any) => ({ id: String(m.id), displayName: String(m.displayName), avatarUrl: m.avatarUrl || null }));
-  const agents = dbAgents.map((a: any) => ({ id: String(a.id), name: String(a.name), clientId: String(a.clientId), avatarUrl: a.avatarUrl || null }));
+  const clients: any[] = [];
+  const services: any[] = [];
+  const teamMembers: any[] = [];
+  const agents: any[] = [];
 
   return (
     <BookingsPageContent 

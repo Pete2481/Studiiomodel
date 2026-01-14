@@ -114,6 +114,7 @@ export class PermissionService {
       if (module === "invoices") return this.can(user, "canViewInvoices");
       if (module === "bookings") return true; // They can see their bookings
       if (module === "galleries") return true; // They can see their galleries
+      if (module === "services") return true; // Client/Agent view-only access to the catalogue
     }
 
     // Map modules to granular permissions

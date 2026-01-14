@@ -45,24 +45,27 @@ export class BookingService {
 
     const isBlocked = status === 'BLOCKED' || status === 'blocked';
 
-    // 0. Fetch Tenant settings for AI Logistics and constraints
-    const tenant = await tPrisma.tenant.findUnique({
-      where: { id: tenantId },
-      select: { aiLogisticsEnabled: true, businessHours: true }
-    });
+    // Hard Switch: AI Logistics parked for now
+    const isAiEnabled = false;
+    let businessHours: any = null;
+    let services: any[] = [];
+    let totalDuration = 0;
 
-    // Hard Switch: Force AI to false for now while we refactor the logic
-    const isAiEnabled = false; // tenant?.aiLogisticsEnabled;
-    const businessHours = tenant?.businessHours as any;
+    // Only fetch extra data when AI logistics is enabled (keeps booking create/update snappy).
+    if (isAiEnabled) {
+      const tenant = await tPrisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { aiLogisticsEnabled: true, businessHours: true }
+      });
+      businessHours = tenant?.businessHours as any;
 
-    // 0.5. Fetch service details for AI calculations
-    const services = await tPrisma.service.findMany({
-      where: { id: { in: serviceIds } },
-      select: { id: true, slotType: true, durationMinutes: true, name: true }
-    });
+      services = await tPrisma.service.findMany({
+        where: { id: { in: serviceIds } },
+        select: { id: true, slotType: true, durationMinutes: true, name: true }
+      });
 
-    // Calculate total duration for the primary booking
-    const totalDuration = services.reduce((acc: number, s: any) => acc + s.durationMinutes, 0);
+      totalDuration = services.reduce((acc: number, s: any) => acc + s.durationMinutes, 0);
+    }
 
     // 0.6. Smart Booking Split (Dusk/Drone logic)
     let secondaryBooking = null;
@@ -356,18 +359,21 @@ export class BookingService {
     // 2. Handle Notifications
     if (!isBlocked) {
       try {
+        const fire = (p: Promise<any>) => {
+          void p.catch((e) => console.error("NOTIFICATION ERROR (non-blocking):", e));
+        };
         if (!id) {
-          await notificationService.sendNewBookingNotification(booking.id);
+          fire(notificationService.sendNewBookingNotification(booking.id));
           if (status === "APPROVED") {
-            await notificationService.sendBookingConfirmationToClient(booking.id);
+            fire(notificationService.sendBookingConfirmationToClient(booking.id));
             for (const tid of teamMemberIds) {
-              await notificationService.sendBookingAssignmentNotification(booking.id, tid);
+              fire(notificationService.sendBookingAssignmentNotification(booking.id, tid));
             }
           }
         } else if (status === "APPROVED") {
-          await notificationService.sendBookingConfirmationToClient(booking.id);
+          fire(notificationService.sendBookingConfirmationToClient(booking.id));
           for (const tid of teamMemberIds) {
-            await notificationService.sendBookingAssignmentNotification(booking.id, tid);
+            fire(notificationService.sendBookingAssignmentNotification(booking.id, tid));
           }
         }
       } catch (notifError) {

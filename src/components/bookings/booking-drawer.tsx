@@ -46,6 +46,8 @@ export function BookingDrawer({
   aiLogisticsEnabled = false
 }: BookingDrawerProps) {
   const isClient = role === "CLIENT";
+  const LABEL = "text-[11px] font-black text-slate-500 uppercase tracking-widest";
+  const SELECTED_FIELD = "border-emerald-400 ring-2 ring-emerald-500/10";
 
   const [formData, setFormData] = useState({
     title: "",
@@ -212,6 +214,18 @@ export function BookingDrawer({
     "EDIT PEN": Edit3,
     PERSON: User,
     Zap: Zap // Fallback for old data
+  };
+
+  const IconColorMap: Record<string, { bg: string; text: string; ring: string }> = {
+    CAMERA: { bg: "bg-emerald-50", text: "text-emerald-600", ring: "ring-emerald-200" },
+    DRONE: { bg: "bg-sky-50", text: "text-sky-600", ring: "ring-sky-200" },
+    VIDEO: { bg: "bg-violet-50", text: "text-violet-600", ring: "ring-violet-200" },
+    FILETEXT: { bg: "bg-amber-50", text: "text-amber-600", ring: "ring-amber-200" },
+    SERVICE: { bg: "bg-teal-50", text: "text-teal-700", ring: "ring-teal-200" },
+    SUNSET: { bg: "bg-orange-50", text: "text-orange-600", ring: "ring-orange-200" },
+    PACKAGE: { bg: "bg-indigo-50", text: "text-indigo-600", ring: "ring-indigo-200" },
+    "EDIT PEN": { bg: "bg-lime-50", text: "text-lime-700", ring: "ring-lime-200" },
+    PERSON: { bg: "bg-rose-50", text: "text-rose-600", ring: "ring-rose-200" },
   };
 
   const [mounted, setMounted] = useState(false);
@@ -426,316 +440,224 @@ export function BookingDrawer({
         <div className="flex-1 overflow-y-auto px-10 pb-10 space-y-8 custom-scrollbar">
           <form id="booking-form" onSubmit={handleSubmit} className="space-y-8">
             
-            {/* Address (At the top for everyone, but crucial for clients) */}
-            {!isBlockedType && (
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Property Address</label>
-                <Hint 
-                  title="Shoot Location" 
-                  content="Enter the address of the property. We'll use this for mapping and weather forecasting."
-                >
-                  <AddressAutocomplete 
-                    value={formData.address}
-                    onChange={(newAddress) => {
-                      // Auto-fill title if it hasn't been manually touched or is empty
-                      setFormData(prev => ({
-                        ...prev, 
-                        address: newAddress,
-                        title: prev.title === prev.address || prev.title === "" ? newAddress : prev.title
-                      }));
-                    }}
-                    placeholder="45 Jarra Rd, Clunes" 
-                    className="ui-input-tight" 
-                  />
-                </Hint>
+            {/* Client / Agency (Top) */}
+            {!isClient && !isBlockedType && (
+              <div className="space-y-2 relative">
+                <div className="flex items-center justify-between">
+                  <label className={LABEL}>Client Type</label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, clientMode: "existing" }))}
+                      className={cn(
+                        "h-8 px-3 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all",
+                        formData.clientMode === "existing"
+                          ? "bg-primary/10 text-primary border-primary/20"
+                          : "bg-white text-slate-400 border-slate-200 hover:text-slate-700"
+                      )}
+                    >
+                      Agency
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormData(prev => ({
+                          ...prev,
+                          clientMode: "otc",
+                          clientId: "",
+                          agentId: "",
+                        }))
+                      }
+                      className={cn(
+                        "h-8 px-3 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all",
+                        formData.clientMode === "otc"
+                          ? "bg-primary/10 text-primary border-primary/20"
+                          : "bg-white text-slate-400 border-slate-200 hover:text-slate-700"
+                      )}
+                    >
+                      OTC
+                    </button>
+                  </div>
+                </div>
+
+                {formData.clientMode === "otc" ? (
+                  <div className="mt-3 space-y-3">
+                    <div className="space-y-2">
+                      <label className={LABEL}>OTC Name</label>
+                      <input
+                        value={formData.otcName}
+                        onChange={(e) => setFormData({ ...formData, otcName: e.target.value })}
+                        className={cn("ui-input-tight", formData.otcName?.trim() && SELECTED_FIELD)}
+                        placeholder="One-time client name…"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <label className={LABEL}>Email</label>
+                        <input
+                          value={formData.otcEmail}
+                          onChange={(e) => setFormData({ ...formData, otcEmail: e.target.value })}
+                          className={cn("ui-input-tight", formData.otcEmail?.trim() && SELECTED_FIELD)}
+                          placeholder="email@…"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className={LABEL}>Phone</label>
+                        <input
+                          value={formData.otcPhone}
+                          onChange={(e) => setFormData({ ...formData, otcPhone: e.target.value })}
+                          className={cn("ui-input-tight", formData.otcPhone?.trim() && SELECTED_FIELD)}
+                          placeholder="04…"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <label className={LABEL}>Agency</label>
+                      <button
+                        type="button"
+                        onClick={() => setIsQuickClientOpen(true)}
+                        className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline"
+                      >
+                        + Express Add
+                      </button>
+                    </div>
+
+                    <Hint
+                      title="Agency Selection"
+                      content="Link this booking to a client agency. Use '+ Express Add' if they don't exist yet."
+                    >
+                      <div
+                        onClick={() => setIsClientDropdownOpen(!isClientDropdownOpen)}
+                        className={cn(
+                          "h-12 px-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between bg-white",
+                          isClientDropdownOpen
+                            ? "border-emerald-500 ring-2 ring-emerald-500/10"
+                            : cn("border-slate-100 hover:border-slate-200", formData.clientId && SELECTED_FIELD)
+                        )}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          {formData.clientId ? (
+                            (() => {
+                              const client = localClients.find(c => c.id === formData.clientId);
+                              return (
+                                <>
+                                  <div className="h-7 w-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20 overflow-hidden">
+                                    {client?.avatarUrl ? (
+                                      <img src={client.avatarUrl} className="h-full w-full object-cover" alt={client.businessName || client.name} />
+                                    ) : (
+                                      <User className="h-3.5 w-3.5" />
+                                    )}
+                                  </div>
+                                  <div className="flex flex-col min-w-0">
+                                    <span className="text-sm font-bold text-slate-900 truncate">
+                                      {client?.businessName || client?.name || "Select agency..."}
+                                    </span>
+                                    {client?.businessName && (
+                                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
+                                        {client.name}
+                                      </span>
+                                    )}
+                                  </div>
+                                </>
+                              );
+                            })()
+                          ) : (
+                            <span className="text-sm text-slate-400">Select agency...</span>
+                          )}
+                        </div>
+                        <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform duration-300", isClientDropdownOpen && "rotate-180")} />
+                      </div>
+                    </Hint>
+
+                    {/* Client Dropdown Menu */}
+                    {isClientDropdownOpen && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-10"
+                          onClick={() => setIsClientDropdownOpen(false)}
+                        />
+                        <div className="absolute top-full left-0 right-0 mt-2 bg-slate-50 border border-slate-200/60 rounded-2xl shadow-2xl shadow-slate-200/50 z-20 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                          <div className="p-2 border-b border-slate-200/60">
+                            <div className="relative">
+                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                              <input
+                                type="text"
+                                autoFocus
+                                placeholder="Search agencies..."
+                                value={clientSearchQuery}
+                                onChange={(e) => setClientSearchQuery(e.target.value)}
+                                className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200/60 rounded-xl text-xs focus:ring-0 placeholder:text-slate-400"
+                              />
+                            </div>
+                          </div>
+                          <div className="max-h-[240px] overflow-y-auto custom-scrollbar py-1">
+                            {localClients
+                              .filter(c =>
+                                c.name.toLowerCase().includes(clientSearchQuery.toLowerCase()) ||
+                                (c.businessName && c.businessName.toLowerCase().includes(clientSearchQuery.toLowerCase()))
+                              )
+                              .map(c => {
+                                const isSelected = formData.clientId === c.id;
+                                return (
+                                  <button
+                                    key={c.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setFormData({ ...formData, clientId: c.id, agentId: "" });
+                                      setIsClientDropdownOpen(false);
+                                    }}
+                                    className={cn(
+                                      "w-full flex items-center justify-between px-4 py-2.5 text-left transition-colors group",
+                                      isSelected ? "bg-primary/10/50" : "hover:bg-white/70"
+                                    )}
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      <div className="h-8 w-8 rounded-xl bg-slate-200/70 text-slate-500 flex items-center justify-center transition-colors shrink-0 shadow-inner overflow-hidden">
+                                        {c.avatarUrl ? (
+                                          <img src={c.avatarUrl} className="h-full w-full object-cover" alt={c.businessName || c.name} />
+                                        ) : (
+                                          <User className="h-4 w-4" />
+                                        )}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <p className={cn(
+                                          "text-sm font-bold truncate transition-colors",
+                                          isSelected ? "text-primary" : "text-slate-700 group-hover:text-slate-900"
+                                        )}>
+                                          {c.businessName || c.name}
+                                        </p>
+                                        {c.businessName && (
+                                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
+                                            {c.name}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                    {isSelected && (
+                                      <Check className="h-4 w-4 text-primary animate-in zoom-in duration-200" />
+                                    )}
+                                  </button>
+                                );
+                              })}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
               </div>
             )}
 
-            {/* Title */}
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                {isBlockedType ? "Block Out Name" : "Booking Title"}
-              </label>
-              <input 
-                required
-                value={formData.title}
-                onChange={(e) => setFormData({...formData, title: e.target.value})}
-                type="text" 
-                placeholder={isBlockedType ? "e.g. Studio Maintenance" : "Enter name..."}
-                className="ui-input-tight font-bold" 
-              />
-            </div>
-
-            {/* Status & Client (Conditional Rendering) */}
-            <div className="grid grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</label>
-                <div className="relative">
-                  {isClient ? (
-                    <div className="h-12 px-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex items-center">
-                      <span className="text-sm font-bold text-rose-500 uppercase tracking-widest">Requested</span>
-                    </div>
-                  ) : (
-                    <>
-                      <select 
-                        value={formData.status}
-                        onChange={(e) => setFormData({...formData, status: e.target.value})}
-                        className={cn(
-                          "ui-input-tight appearance-none bg-white pr-10",
-                          isBlockedType && "border-rose-500 bg-rose-50 text-rose-700"
-                        )}
-                      >
-                        <option value="requested">Requested</option>
-                        <option value="confirmed">Approved</option>
-                        <option value="pencilled">Pending / Pencilled</option>
-                        <option value="declined">Declined</option>
-                        <option value="blocked">Time Block Out (Unavailable for Clients)</option>
-                      </select>
-                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {isBlockedType && (
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Repeat Block Out</label>
-                  <div className="relative">
-                    <select 
-                      value={formData.repeat}
-                      onChange={(e) => setFormData({...formData, repeat: e.target.value as any})}
-                      className="ui-input-tight appearance-none bg-white pr-10"
-                    >
-                      <option value="none">Does not repeat</option>
-                      <option value="daily">Daily (for 7 days)</option>
-                      <option value="weekly">Weekly (for 4 weeks)</option>
-                      <option value="weekly_6m">Weekly (for 6 months)</option>
-                      <option value="weekly_1y">Weekly (for 1 year)</option>
-                      <option value="monthly_6m">Monthly (for 6 months)</option>
-                      <option value="monthly_1y">Monthly (for 1 year)</option>
-                    </select>
-                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-                  </div>
-                </div>
-              )}
-
-              {!isClient && !isBlockedType && (
-                <div className="space-y-2 relative">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client Type</label>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setFormData(prev => ({ ...prev, clientMode: "existing" }))}
-                        className={cn(
-                          "h-8 px-3 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all",
-                          formData.clientMode === "existing"
-                            ? "bg-primary/10 text-primary border-primary/20"
-                            : "bg-white text-slate-400 border-slate-200 hover:text-slate-700"
-                        )}
-                      >
-                        Agency
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setFormData(prev => ({
-                            ...prev,
-                            clientMode: "otc",
-                            clientId: "",
-                            agentId: "",
-                          }))
-                        }
-                        className={cn(
-                          "h-8 px-3 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all",
-                          formData.clientMode === "otc"
-                            ? "bg-primary/10 text-primary border-primary/20"
-                            : "bg-white text-slate-400 border-slate-200 hover:text-slate-700"
-                        )}
-                      >
-                        OTC
-                      </button>
-                    </div>
-                  </div>
-
-                  {formData.clientMode === "otc" ? (
-                    <div className="mt-3 space-y-3">
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">OTC Name</label>
-                        <input
-                          value={formData.otcName}
-                          onChange={(e) => setFormData({ ...formData, otcName: e.target.value })}
-                          className="ui-input-tight"
-                          placeholder="One-time client name…"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Email</label>
-                          <input
-                            value={formData.otcEmail}
-                            onChange={(e) => setFormData({ ...formData, otcEmail: e.target.value })}
-                            className="ui-input-tight"
-                            placeholder="email@…"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Phone</label>
-                          <input
-                            value={formData.otcPhone}
-                            onChange={(e) => setFormData({ ...formData, otcPhone: e.target.value })}
-                            className="ui-input-tight"
-                            placeholder="04…"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                  <div className="flex items-center justify-between">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Agency</label>
-                    <button 
-                      type="button"
-                      onClick={() => setIsQuickClientOpen(true)}
-                      className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline"
-                    >
-                      + Express Add
-                    </button>
-                  </div>
-                  
-                  {/* Selected Client Display */}
-                  <Hint 
-                    title="Agency Selection" 
-                    content="Link this booking to a client agency. Use '+ Express Add' if they don't exist yet."
-                  >
-                    <div 
-                      onClick={() => setIsClientDropdownOpen(!isClientDropdownOpen)}
-                      className={cn(
-                        "h-12 px-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between bg-white",
-                        isClientDropdownOpen ? "border-emerald-500 ring-2 ring-emerald-500/10" : "border-slate-100 hover:border-slate-200"
-                      )}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        {formData.clientId ? (
-                          (() => {
-                            const client = localClients.find(c => c.id === formData.clientId);
-                            return (
-                              <>
-                                <div className="h-7 w-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20 overflow-hidden">
-                                  {client?.avatarUrl ? (
-                                    <img src={client.avatarUrl} className="h-full w-full object-cover" alt={client.businessName || client.name} />
-                                  ) : (
-                                    <User className="h-3.5 w-3.5" />
-                                  )}
-                                </div>
-                                <div className="flex flex-col min-w-0">
-                                  <span className="text-sm font-bold text-slate-900 truncate">
-                                    {client?.businessName || client?.name || "Select agency..."}
-                                  </span>
-                                  {client?.businessName && (
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
-                                      {client.name}
-                                    </span>
-                                  )}
-                                </div>
-                              </>
-                            );
-                          })()
-                        ) : (
-                          <span className="text-sm text-slate-400">Select agency...</span>
-                        )}
-                      </div>
-                      <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform duration-300", isClientDropdownOpen && "rotate-180")} />
-                    </div>
-                  </Hint>
-
-                  {/* Client Dropdown Menu */}
-                  {isClientDropdownOpen && (
-                    <>
-                      <div 
-                        className="fixed inset-0 z-10" 
-                        onClick={() => setIsClientDropdownOpen(false)} 
-                      />
-                      <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-100 rounded-2xl shadow-2xl shadow-slate-200/50 z-20 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                        <div className="p-2 border-b border-slate-50">
-                          <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                            <input 
-                              type="text"
-                              autoFocus
-                              placeholder="Search agencies..."
-                              value={clientSearchQuery}
-                              onChange={(e) => setClientSearchQuery(e.target.value)}
-                              className="w-full pl-9 pr-4 py-2 bg-slate-50 border-none rounded-xl text-xs focus:ring-0 placeholder:text-slate-400"
-                            />
-                          </div>
-                        </div>
-                        <div className="max-h-[240px] overflow-y-auto custom-scrollbar py-1">
-                          {localClients
-                            .filter(c => 
-                              c.name.toLowerCase().includes(clientSearchQuery.toLowerCase()) || 
-                              (c.businessName && c.businessName.toLowerCase().includes(clientSearchQuery.toLowerCase()))
-                            )
-                            .map(c => {
-                              const isSelected = formData.clientId === c.id;
-                              return (
-                                <button
-                                  key={c.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setFormData({ ...formData, clientId: c.id, agentId: "" });
-                                    setIsClientDropdownOpen(false);
-                                  }}
-                                  className={cn(
-                                    "w-full flex items-center justify-between px-4 py-2.5 text-left transition-colors group",
-                                    isSelected ? "bg-primary/10/50" : "hover:bg-slate-50"
-                                  )}
-                                >
-                                  <div className="flex items-center gap-3">
-                                  <div className="h-8 w-8 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center group-hover:bg-primary/10 group-hover:text-primary transition-colors shrink-0 shadow-inner overflow-hidden">
-                                    {c.avatarUrl ? (
-                                      <img src={c.avatarUrl} className="h-full w-full object-cover" alt={c.businessName || c.name} />
-                                    ) : (
-                                      <User className="h-4 w-4" />
-                                    )}
-                                  </div>
-                                    <div className="min-w-0">
-                                      <p className={cn(
-                                        "text-sm font-bold truncate transition-colors",
-                                        isSelected ? "text-primary" : "text-slate-700 group-hover:text-slate-900"
-                                      )}>
-                                        {c.businessName || c.name}
-                                      </p>
-                                      {c.businessName && (
-                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
-                                          {c.name}
-                                        </p>
-                                      )}
-                                    </div>
-                                  </div>
-                                  {isSelected && (
-                                    <Check className="h-4 w-4 text-primary animate-in zoom-in duration-200" />
-                                  )}
-                                </button>
-                              );
-                            })}
-                        </div>
-                      </div>
-                    </>
-                  )}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Lead Agent (Conditional on Agency selection) */}
+            {/* Lead Agent (after Client/Agency) */}
             {(formData.clientId || isClient) && !isBlockedType && (
               <div className="space-y-2 relative animate-in fade-in slide-in-from-top-2 duration-300">
                 <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Lead Agent</label>
+                  <label className={LABEL}>Lead Agent</label>
                   {!isClient && (
-                    <button 
+                    <button
                       type="button"
                       onClick={() => setIsQuickAgentOpen(true)}
                       className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline"
@@ -744,13 +666,14 @@ export function BookingDrawer({
                     </button>
                   )}
                 </div>
-                
-                {/* Selected Agent Display */}
-                <div 
+
+                <div
                   onClick={() => setIsAgentDropdownOpen(!isAgentDropdownOpen)}
                   className={cn(
                     "h-12 px-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between bg-white",
-                    isAgentDropdownOpen ? "border-emerald-500 ring-2 ring-emerald-500/10" : "border-slate-100 hover:border-slate-200"
+                    isAgentDropdownOpen
+                      ? "border-emerald-500 ring-2 ring-emerald-500/10"
+                      : cn("border-slate-100 hover:border-slate-200", formData.agentId && SELECTED_FIELD)
                   )}
                 >
                   <div className="flex items-center gap-3 min-w-0">
@@ -779,7 +702,6 @@ export function BookingDrawer({
                   <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform duration-300", isAgentDropdownOpen && "rotate-180")} />
                 </div>
 
-                {/* Agent Dropdown Menu */}
                 {isAgentDropdownOpen && (
                   <>
                     <div className="fixed inset-0 z-10" onClick={() => setIsAgentDropdownOpen(false)} />
@@ -787,7 +709,7 @@ export function BookingDrawer({
                       <div className="p-2 border-b border-slate-50">
                         <div className="relative">
                           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                          <input 
+                          <input
                             type="text"
                             autoFocus
                             placeholder="Search agents..."
@@ -849,11 +771,97 @@ export function BookingDrawer({
               </div>
             )}
 
+            {/* Address (At the top for everyone, but crucial for clients) */}
+            {!isBlockedType && (
+              <div className="space-y-2">
+                <label className={LABEL}>Property Address</label>
+                <Hint 
+                  title="Shoot Location" 
+                  content="Enter the address of the property. We'll use this for mapping and weather forecasting."
+                >
+                  <AddressAutocomplete 
+                    value={formData.address}
+                    onChange={(newAddress) => {
+                      // Auto-fill title if it hasn't been manually touched or is empty
+                      setFormData(prev => ({
+                        ...prev, 
+                        address: newAddress,
+                        title: prev.title === prev.address || prev.title === "" ? newAddress : prev.title
+                      }));
+                    }}
+                    placeholder="45 Jarra Rd, Clunes" 
+                    className={cn("ui-input-tight", formData.address?.trim() && SELECTED_FIELD)} 
+                  />
+                </Hint>
+              </div>
+            )}
+
+            {/* Title */}
+            <div className="space-y-2">
+              <label className={LABEL}>
+                {isBlockedType ? "Block Out Name" : "Booking Title"}
+              </label>
+              <input 
+                required
+                value={formData.title}
+                onChange={(e) => setFormData({...formData, title: e.target.value})}
+                type="text" 
+                placeholder={isBlockedType ? "e.g. Studio Maintenance" : "Enter name..."}
+                className={cn("ui-input-tight font-bold", formData.title?.trim() && SELECTED_FIELD)} 
+              />
+            </div>
+
+            {/* Block-out controls (Status + Repeat) */}
+            {isBlockedType && (
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className={LABEL}>Status</label>
+                  <div className="relative">
+                    <select 
+                      value={formData.status}
+                      onChange={(e) => setFormData({...formData, status: e.target.value})}
+                      className={cn(
+                        "ui-input-tight appearance-none bg-white pr-10",
+                        "border-rose-500 bg-rose-50 text-rose-700"
+                      )}
+                    >
+                      <option value="requested">Requested</option>
+                      <option value="confirmed">Approved</option>
+                      <option value="pencilled">Pending / Pencilled</option>
+                      <option value="declined">Declined</option>
+                      <option value="blocked">Time Block Out (Unavailable for Clients)</option>
+                    </select>
+                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className={LABEL}>Repeat Block Out</label>
+                  <div className="relative">
+                    <select 
+                      value={formData.repeat}
+                      onChange={(e) => setFormData({...formData, repeat: e.target.value as any})}
+                      className="ui-input-tight appearance-none bg-white pr-10"
+                    >
+                      <option value="none">Does not repeat</option>
+                      <option value="daily">Daily (for 7 days)</option>
+                      <option value="weekly">Weekly (for 4 weeks)</option>
+                      <option value="weekly_6m">Weekly (for 6 months)</option>
+                      <option value="weekly_1y">Weekly (for 1 year)</option>
+                      <option value="monthly_6m">Monthly (for 6 months)</option>
+                      <option value="monthly_1y">Monthly (for 1 year)</option>
+                    </select>
+                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Services */}
             {!isBlockedType && (
               <div className="space-y-3 relative">
                 <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Services</label>
+                  <label className={LABEL}>Services</label>
                   <button 
                     type="button"
                     onClick={() => setIsQuickServiceOpen(true)}
@@ -872,7 +880,9 @@ export function BookingDrawer({
                     onClick={() => setIsServiceDropdownOpen(!isServiceDropdownOpen)}
                     className={cn(
                       "min-h-[52px] p-2 rounded-2xl border transition-all cursor-pointer flex flex-wrap gap-2 items-center bg-white",
-                      isServiceDropdownOpen ? "border-emerald-500 ring-2 ring-emerald-500/10" : "border-slate-100 hover:border-slate-200"
+                      isServiceDropdownOpen
+                        ? "border-emerald-500 ring-2 ring-emerald-500/10"
+                        : cn("border-slate-100 hover:border-slate-200", formData.serviceIds.length > 0 && SELECTED_FIELD)
                     )}
                   >
                     {formData.serviceIds.length > 0 ? (
@@ -881,12 +891,16 @@ export function BookingDrawer({
                           key={s.id} 
                           className="flex items-center gap-2 pl-2 pr-3 py-1 bg-primary/10 text-emerald-700 rounded-full border border-primary/20 transition-all animate-in zoom-in duration-200"
                         >
-                          <div className="h-5 w-5 flex items-center justify-center text-primary shrink-0">
-                            {(() => {
-                              const Icon = IconMap[s.icon?.toUpperCase() || "CAMERA"] || Camera;
-                              return <Icon className="h-3.5 w-3.5" />;
-                            })()}
-                          </div>
+                          {(() => {
+                            const key = String(s.icon || "CAMERA").toUpperCase();
+                            const Icon = IconMap[key] || Camera;
+                            const iconStyle = IconColorMap[key] || IconColorMap.CAMERA;
+                            return (
+                              <div className={cn("h-5 w-5 rounded-md flex items-center justify-center ring-1 shrink-0", iconStyle.bg, iconStyle.text, iconStyle.ring)}>
+                                <Icon className="h-3.5 w-3.5" />
+                              </div>
+                            );
+                          })()}
                           <span className="text-[11px] font-bold whitespace-nowrap uppercase tracking-tighter">{s.name}</span>
                           <button 
                             type="button"
@@ -947,7 +961,9 @@ export function BookingDrawer({
                           })
                           .map(s => {
                             const isSelected = formData.serviceIds.includes(s.id);
-                            const Icon = IconMap[s.icon?.toUpperCase() || "CAMERA"] || Camera;
+                            const key = String(s.icon || "CAMERA").toUpperCase();
+                            const Icon = IconMap[key] || Camera;
+                            const iconStyle = IconColorMap[key] || IconColorMap.CAMERA;
                             return (
                               <button
                                 key={s.id}
@@ -964,7 +980,12 @@ export function BookingDrawer({
                                 )}
                               >
                                 <div className="flex items-center gap-3">
-                                  <div className="h-8 w-8 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center group-hover:bg-primary/10 group-hover:text-primary transition-colors shrink-0 shadow-inner">
+                                  <div className={cn(
+                                    "h-8 w-8 rounded-xl flex items-center justify-center transition-colors shrink-0 shadow-inner ring-1",
+                                    iconStyle.bg,
+                                    iconStyle.text,
+                                    iconStyle.ring
+                                  )}>
                                     <Icon className="h-4 w-4" />
                                   </div>
                                   <div className="min-w-0">
@@ -1001,7 +1022,7 @@ export function BookingDrawer({
             {/* Assigned Team */}
             {!isBlockedType && (
               <div className="space-y-4">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Assigned Team</label>
+                <label className={LABEL}>Assigned Team</label>
                 
                 {isClient ? (
                   <div className="h-12 px-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 flex items-center gap-3">
@@ -1017,7 +1038,9 @@ export function BookingDrawer({
                       onClick={() => setIsTeamDropdownOpen(!isTeamDropdownOpen)}
                       className={cn(
                         "min-h-[52px] p-2 rounded-2xl border transition-all cursor-pointer flex flex-wrap gap-2 items-center bg-white",
-                        isTeamDropdownOpen ? "border-emerald-500 ring-2 ring-emerald-500/10" : "border-slate-100 hover:border-slate-200"
+                        isTeamDropdownOpen
+                          ? "border-emerald-500 ring-2 ring-emerald-500/10"
+                          : cn("border-slate-100 hover:border-slate-200", formData.teamMemberIds.length > 0 && SELECTED_FIELD)
                       )}
                     >
                       {formData.teamMemberIds.length > 0 ? (
@@ -1304,7 +1327,7 @@ export function BookingDrawer({
             {!isBlockedType && (
               <div className="grid grid-cols-2 gap-6 animate-in fade-in duration-300">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                  <label className={LABEL}>
                     Duration
                   </label>
                   <div className="relative">
@@ -1323,7 +1346,7 @@ export function BookingDrawer({
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ends At</label>
+                  <label className={LABEL}>Ends At</label>
                   <div className="h-12 flex items-center px-5 text-[11px] font-medium text-slate-400 italic bg-slate-50/30 rounded-2xl border border-slate-50">
                     {(() => {
                       try {
@@ -1339,9 +1362,38 @@ export function BookingDrawer({
               </div>
             )}
 
+            {/* Status (below time/weather for standard bookings) */}
+            {!isBlockedType && (
+              <div className="space-y-2">
+                <label className={LABEL}>Status</label>
+                <div className="relative">
+                  {isClient ? (
+                    <div className="h-12 px-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex items-center">
+                      <span className="text-sm font-bold text-rose-500 uppercase tracking-widest">Requested</span>
+                    </div>
+                  ) : (
+                    <>
+                      <select
+                        value={formData.status}
+                        onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                        className="ui-input-tight appearance-none bg-white pr-10"
+                      >
+                        <option value="requested">Requested</option>
+                        <option value="confirmed">Approved</option>
+                        <option value="pencilled">Pending / Pencilled</option>
+                        <option value="declined">Declined</option>
+                        <option value="blocked">Time Block Out (Unavailable for Clients)</option>
+                      </select>
+                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Notes */}
             <div className="space-y-2">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              <label className={LABEL}>
                 {isBlockedType ? "Private Note" : "Notes"}
               </label>
               <textarea 
@@ -1355,7 +1407,7 @@ export function BookingDrawer({
             {/* Property Access Status */}
             {!isBlockedType && (
               <div className="space-y-3 relative">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Access Status</label>
+                <label className={LABEL}>Access Status</label>
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <div 

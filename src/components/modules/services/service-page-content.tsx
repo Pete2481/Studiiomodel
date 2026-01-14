@@ -8,6 +8,7 @@ import {
   Clock, 
   MoreVertical, 
   Upload, 
+  Copy,
   Camera, 
   Zap, 
   Video, 
@@ -25,7 +26,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ServiceDrawer } from "./service-drawer";
-import { upsertService, deleteService, importServicesCsv, toggleServiceFavorite } from "@/app/actions/service";
+import { upsertService, deleteService, importServicesCsv, toggleServiceFavorite, duplicateService, getClientServiceFavorites, toggleClientServiceFavorite } from "@/app/actions/service";
 import { useSearchParams, usePathname } from "next/navigation";
 
 interface ServicePageContentProps {
@@ -43,6 +44,18 @@ const IconMap: Record<string, any> = {
   PACKAGE: Box,
   "EDIT PEN": Edit3,
   PERSON: User
+};
+
+const IconColorMap: Record<string, { bg: string; text: string; ring: string }> = {
+  CAMERA: { bg: "bg-emerald-50", text: "text-emerald-600", ring: "ring-emerald-200" },
+  DRONE: { bg: "bg-sky-50", text: "text-sky-600", ring: "ring-sky-200" },
+  VIDEO: { bg: "bg-violet-50", text: "text-violet-600", ring: "ring-violet-200" },
+  FILETEXT: { bg: "bg-amber-50", text: "text-amber-600", ring: "ring-amber-200" },
+  SERVICE: { bg: "bg-teal-50", text: "text-teal-700", ring: "ring-teal-200" },
+  SUNSET: { bg: "bg-orange-50", text: "text-orange-600", ring: "ring-orange-200" },
+  PACKAGE: { bg: "bg-indigo-50", text: "text-indigo-600", ring: "ring-indigo-200" },
+  "EDIT PEN": { bg: "bg-lime-50", text: "text-lime-700", ring: "ring-lime-200" },
+  PERSON: { bg: "bg-rose-50", text: "text-rose-600", ring: "ring-rose-200" },
 };
 
 export function ServicePageContent({ 
@@ -96,6 +109,20 @@ export function ServicePageContent({
       } else {
         alert(result.error);
       }
+    }
+    setIsActionsOpen(null);
+  };
+
+  const handleDuplicate = async (service: any) => {
+    if (isActionLocked) {
+      window.location.href = "/tenant/settings?tab=billing";
+      return;
+    }
+    const result = await duplicateService(service.id);
+    if (result.success) {
+      window.location.reload();
+    } else {
+      alert(result.error || "Failed to duplicate service");
     }
     setIsActionsOpen(null);
   };
@@ -222,7 +249,9 @@ export function ServicePageContent({
       {/* List */}
       <div className="space-y-3">
         {filteredServices.map((service) => {
-          const Icon = IconMap[service.iconName] || Camera;
+          const iconKey = String(service.icon || "CAMERA").toUpperCase();
+          const Icon = IconMap[iconKey] || Camera;
+          const iconStyle = IconColorMap[iconKey] || IconColorMap.CAMERA;
           return (
             <div 
               key={service.id} 
@@ -231,7 +260,12 @@ export function ServicePageContent({
             >
               {/* Name & Icon */}
               <div className="flex items-center gap-4">
-                <div className="h-12 w-12 rounded-2xl bg-slate-50 text-slate-400 flex items-center justify-center group-hover:bg-emerald-50 group-hover:text-emerald-600 transition-colors shrink-0 shadow-inner">
+                <div className={cn(
+                  "h-12 w-12 rounded-2xl flex items-center justify-center transition-colors shrink-0 shadow-inner ring-1",
+                  iconStyle.bg,
+                  iconStyle.text,
+                  iconStyle.ring
+                )}>
                   <Icon className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
@@ -325,6 +359,12 @@ export function ServicePageContent({
                         <Edit2 className="h-3.5 w-3.5" /> Edit Service
                       </button>
                       <button 
+                        onClick={(e) => { e.stopPropagation(); handleDuplicate(service); }}
+                        className="w-full flex items-center gap-3 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                      >
+                        <Copy className="h-3.5 w-3.5" /> Duplicate
+                      </button>
+                      <button 
                         onClick={(e) => { e.stopPropagation(); handleDelete(service.id); }}
                         className="w-full flex items-center gap-3 px-4 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 transition-colors"
                       >
@@ -350,6 +390,124 @@ export function ServicePageContent({
         service={selectedService}
         onSave={handleSave}
       />
+    </div>
+  );
+}
+
+export function ClientServicePageContent({ initialServices }: { initialServices: any[] }) {
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+  const [loadingFavs, setLoadingFavs] = useState(true);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoadingFavs(true);
+      const res = await getClientServiceFavorites();
+      if (!cancelled) {
+        if (res.success) setFavoriteIds(new Set((res as any).favoriteServiceIds || []));
+        setLoadingFavs(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const filtered = initialServices.filter((s) => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return String(s.name || "").toLowerCase().includes(q) || String(s.description || "").toLowerCase().includes(q);
+  });
+
+  const onToggle = async (serviceId: string) => {
+    const nextFav = !favoriteIds.has(serviceId);
+    setTogglingId(serviceId);
+    try {
+      const res = await toggleClientServiceFavorite(serviceId, nextFav);
+      if (res.success) {
+        setFavoriteIds(new Set((res as any).favoriteServiceIds || []));
+      } else {
+        alert(res.error || "Failed to update favorite");
+      }
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="relative flex-1 max-w-md group">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
+          <input
+            type="text"
+            placeholder="Search services..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="ui-input w-80 pl-11"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {filtered.map((service) => {
+          const iconKey = String(service.icon || "CAMERA").toUpperCase();
+          const Icon = IconMap[iconKey] || Camera;
+          const iconStyle = IconColorMap[iconKey] || IconColorMap.CAMERA;
+          const isFav = favoriteIds.has(String(service.id));
+          return (
+            <div
+              key={service.id}
+              className="grid grid-cols-1 lg:grid-cols-[2fr_2fr_1fr_0.5fr] gap-4 items-center px-8 py-5 bg-white rounded-[32px] border border-slate-100 hover:border-emerald-200 hover:shadow-xl hover:shadow-slate-100 transition-all"
+            >
+              <div className="flex items-center gap-4">
+                <div className={cn("h-12 w-12 rounded-2xl flex items-center justify-center shadow-inner ring-1", iconStyle.bg, iconStyle.text, iconStyle.ring)}>
+                  <Icon className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-sm font-bold text-slate-900 truncate">{service.name}</h4>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Catalogue</p>
+                </div>
+              </div>
+
+              <p className="text-xs font-medium text-slate-500 line-clamp-2 pr-4">{service.description}</p>
+
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
+                  <Clock className="h-3 w-3" /> {service.durationMinutes}m
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end">
+                <button
+                  onClick={() => onToggle(String(service.id))}
+                  disabled={loadingFavs || togglingId === String(service.id)}
+                  className={cn(
+                    "h-10 w-10 flex items-center justify-center rounded-full border transition-colors",
+                    isFav ? "border-amber-200 bg-amber-50 text-amber-500" : "border-slate-100 bg-white text-slate-300 hover:text-slate-500"
+                  )}
+                  title={isFav ? "Remove from favorites" : "Add to favorites"}
+                >
+                  {togglingId === String(service.id) ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                  ) : (
+                    <Star className={cn("h-5 w-5", isFav && "fill-current")} />
+                  )}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+
+        {filtered.length === 0 && (
+          <div className="py-20 text-center text-slate-400 text-sm font-medium">
+            No services found.
+          </div>
+        )}
+      </div>
     </div>
   );
 }

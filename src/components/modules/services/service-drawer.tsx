@@ -23,6 +23,18 @@ const ICON_OPTIONS = [
   { name: "PERSON", icon: User },
 ];
 
+const IconColorMap: Record<string, { bg: string; text: string; ring: string }> = {
+  CAMERA: { bg: "bg-emerald-50", text: "text-emerald-600", ring: "ring-emerald-200" },
+  DRONE: { bg: "bg-sky-50", text: "text-sky-600", ring: "ring-sky-200" },
+  VIDEO: { bg: "bg-violet-50", text: "text-violet-600", ring: "ring-violet-200" },
+  FILETEXT: { bg: "bg-amber-50", text: "text-amber-600", ring: "ring-amber-200" },
+  SERVICE: { bg: "bg-teal-50", text: "text-teal-700", ring: "ring-teal-200" },
+  SUNSET: { bg: "bg-orange-50", text: "text-orange-600", ring: "ring-orange-200" },
+  PACKAGE: { bg: "bg-indigo-50", text: "text-indigo-600", ring: "ring-indigo-200" },
+  "EDIT PEN": { bg: "bg-lime-50", text: "text-lime-700", ring: "ring-lime-200" },
+  PERSON: { bg: "bg-rose-50", text: "text-rose-600", ring: "ring-rose-200" },
+};
+
 export function ServiceDrawer({ isOpen, onClose, service, onSave }: ServiceDrawerProps) {
   const [formData, setFormData] = useState({
     id: "",
@@ -182,20 +194,28 @@ export function ServiceDrawer({ isOpen, onClose, service, onSave }: ServiceDrawe
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Select Icon</label>
               <div className="grid grid-cols-5 gap-3">
                 {ICON_OPTIONS.map((opt) => (
+                  (() => {
+                    const iconStyle = IconColorMap[opt.name] || IconColorMap.CAMERA;
+                    const isActive = formData.icon === opt.name;
+                    return (
                   <button
                     key={opt.name}
                     type="button"
                     onClick={() => setFormData({...formData, icon: opt.name})}
                     className={cn(
-                      "h-16 flex flex-col items-center justify-center rounded-2xl border transition-all gap-2 px-1",
-                      formData.icon === opt.name 
-                        ? "bg-emerald-50 border-emerald-500 text-emerald-600 shadow-sm" 
-                        : "bg-white border-slate-100 text-slate-400 hover:border-slate-200"
+                      "h-16 flex flex-col items-center justify-center rounded-2xl transition-all gap-2 px-1 ring-1",
+                      isActive
+                        ? "border-emerald-500 ring-emerald-200 shadow-sm"
+                        : "border-slate-100 ring-slate-100 hover:border-slate-200",
+                      iconStyle.bg,
+                      iconStyle.text
                     )}
                   >
                     <opt.icon className="h-4 w-4" />
                     <span className="text-[8px] font-bold uppercase tracking-tight text-center leading-none">{opt.name}</span>
                   </button>
+                    );
+                  })()
                 ))}
               </div>
             </div>

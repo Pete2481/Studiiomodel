@@ -55,6 +55,7 @@ export function CalendarView({
   const [hoveredEvent, setHoveredEvent] = useState<{ event: any, x: number, y: number } | null>(null);
   const [view, setView] = useState<string>("timeGridWeek");
   const [extraPlugins, setExtraPlugins] = useState<any[]>([]);
+  const [dayGridPlugin, setDayGridPlugin] = useState<any>(null);
   const [pendingView, setPendingView] = useState<string | null>(null);
 
   // Responsive View Handler
@@ -65,9 +66,14 @@ export function CalendarView({
       
       if (calendarRef.current) {
         const calendarApi = calendarRef.current.getApi();
+        // If the user is in Month view, do not force-switch views on resize.
+        if (calendarApi.view?.type === "dayGridMonth") return;
         if (calendarApi.view.type !== newView) {
-          calendarApi.changeView(newView);
-          setView(newView);
+          // Defer to avoid React flushSync warnings from FullCalendar internals.
+          queueMicrotask(() => {
+            calendarApi.changeView(newView);
+            setView(newView);
+          });
         }
       }
     };
@@ -79,26 +85,23 @@ export function CalendarView({
 
   // Lazy-load heavier calendar plugins only when needed (e.g. Month view).
   const ensureDayGridPlugin = async () => {
-    const alreadyLoaded = extraPlugins.some((p) => p?.name === "dayGrid" || p?.id === "dayGrid");
-    if (alreadyLoaded) return;
-
+    if (dayGridPlugin) return;
     const mod = await import("@fullcalendar/daygrid");
     const plugin = (mod as any).default || mod;
-    setExtraPlugins((prev) => (prev.includes(plugin) ? prev : [...prev, plugin]));
+    setDayGridPlugin(plugin);
   };
 
   // If we requested a view that requires a lazily loaded plugin, wait until it is present before switching.
   useEffect(() => {
     if (!pendingView) return;
     if (pendingView === "dayGridMonth") {
-      const hasDayGrid = extraPlugins.some((p) => p?.name === "dayGrid" || p?.id === "dayGrid");
-      if (!hasDayGrid) return;
+      if (!dayGridPlugin) return;
     }
     const api = calendarRef.current?.getApi?.();
     api?.changeView(pendingView);
     setView(pendingView);
     setPendingView(null);
-  }, [pendingView, extraPlugins]);
+  }, [pendingView, extraPlugins, dayGridPlugin]);
 
   const isClientOrRestrictedAgent = user?.role === "CLIENT" || (user?.role === "AGENT" && !user?.permissions?.seeAll);
   const isRestrictedRole = user?.role === "CLIENT" || user?.role === "AGENT";
@@ -302,12 +305,13 @@ export function CalendarView({
       <div className="calendar-container h-[85vh] md:h-[900px] bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm p-2 md:p-2 md:px-6 overflow-hidden w-full">
         <FullCalendar
           ref={calendarRef}
-          plugins={[timeGridPlugin, interactionPlugin, ...extraPlugins]}
+          plugins={[timeGridPlugin, interactionPlugin, ...(dayGridPlugin ? [dayGridPlugin] : []), ...extraPlugins]}
           initialView={view}
           datesSet={(arg: any) => {
             // Allows parent to fetch only visible range (no behavior change).
             try {
-              onVisibleRangeChange?.(arg.start, arg.end);
+              // Defer: FullCalendar may call this during its own lifecycle; avoid flushSync warnings.
+              queueMicrotask(() => onVisibleRangeChange?.(arg.start, arg.end));
             } catch {
               // non-blocking
             }
@@ -456,8 +460,9 @@ export function CalendarView({
                 isPlaceholder ? "" : config.border,
                 isMasked && "opacity-80",
                 isStatic && "cursor-default",
-                isBlocked && "shadow-lg shadow-rose-200/50",
-                isBlocked && (isStatic ? "bg-rose-400 border-rose-500 text-white/90" : "bg-rose-500 border-rose-600 text-white"),
+                // Block-outs should be visible but subtle
+                isBlocked && "shadow-sm shadow-rose-100/40",
+                isBlocked && "bg-rose-100/45 border-rose-200/70 text-rose-700",
                 isPlaceholder && !canPlaceBookings && "opacity-50 grayscale cursor-not-allowed"
               )}>
                 {/* Book Now Badge - Only for placeholders */}
@@ -487,7 +492,7 @@ export function CalendarView({
                     <div className="flex items-center gap-1.5">
                       <span className={cn(
                         "text-[10px] font-black uppercase tracking-wider truncate block transition-colors duration-300",
-                        isPlaceholder ? "text-amber-700 group-hover:text-amber-900" : (isBlocked ? "text-white" : "text-slate-700")
+                        isPlaceholder ? "text-amber-700 group-hover:text-amber-900" : (isBlocked ? "text-rose-700" : "text-slate-700")
                       )}>
                         {isPlaceholder ? `${eventInfo.event.extendedProps.slotType} SLOT` : 
                          (isBlocked ? (user?.role === "CLIENT" ? "UNAVAILABLE" : "TIME BLOCK OUT") :
@@ -506,7 +511,7 @@ export function CalendarView({
                       </div>
                     )}
                     {isBlocked && (
-                      <div className="flex items-center gap-1 text-[9px] font-bold text-rose-100/80 uppercase tracking-widest">
+                      <div className="flex items-center gap-1 text-[9px] font-bold text-rose-600/80 uppercase tracking-widest">
                         <IconClock className="h-2 w-2" />
                         <span>Unavailable for Clients</span>
                       </div>
@@ -525,7 +530,7 @@ export function CalendarView({
                       </span>
                     </div>
                   ) : isBlocked ? (
-                    <div className="bg-white/20 text-white px-3 py-1.5 rounded-full flex items-center justify-center border border-white/30">
+                    <div className="bg-white/70 text-rose-700 px-3 py-1.5 rounded-full flex items-center justify-center border border-rose-200/60">
                       <span className="text-[9px] font-black tracking-widest uppercase flex items-center gap-1">
                         {eventInfo.event.start && eventInfo.event.end ? (
                           `${format(eventInfo.event.start, "h:mma").toUpperCase()} — ${format(eventInfo.event.end, "h:mma").toUpperCase()}`

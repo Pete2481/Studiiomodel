@@ -8,7 +8,7 @@ import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { TenantActions } from "@/components/master/tenant-actions";
 import { PortalTooltip } from "@/components/ui/portal-tooltip";
-import { setAiSuiteEnabledForAllTenants } from "@/app/actions/master-ai";
+import { getAiSuiteGlobalLimits, setAiSuiteEnabledForAllTenants, setAiSuiteGlobalLimits } from "@/app/actions/master-ai";
 
 export type MasterTenantRow = {
   id: string;
@@ -29,6 +29,7 @@ export type MasterTenantRow = {
   aiSuiteFreeUnlocksRemaining: number;
   aiSuiteRunsTotal: number;
   aiSuiteEstimatedUsdTotal: number;
+  aiSuitePackEditsOverride: number | null;
 };
 
 type SortMode =
@@ -52,6 +53,17 @@ export function MasterTenantsList({ initialTenants }: { initialTenants: MasterTe
   const [sortMode, setSortMode] = useState<SortMode>(() => (searchParams.get("sort") as SortMode) || "lastActive");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => (searchParams.get("status") as StatusFilter) || "all");
   const [isGlobalAiBusy, setIsGlobalAiBusy] = useState(false);
+  const [limits, setLimits] = useState<{ defaultPackEdits: number; minPackEdits: number; maxPackEdits: number; forcePackEdits: number | null } | null>(null);
+  const [limitsBusy, setLimitsBusy] = useState(false);
+
+  useEffect(() => {
+    // Fetch once (Master-only)
+    getAiSuiteGlobalLimits()
+      .then((res: any) => {
+        if (res?.success) setLimits(res.limits);
+      })
+      .catch(() => {});
+  }, []);
 
   // Keep local state in sync with URL (supports refresh/back/forward).
   useEffect(() => {
@@ -159,6 +171,65 @@ export function MasterTenantsList({ initialTenants }: { initialTenants: MasterTe
         </div>
 
         <div className="flex items-center gap-2">
+          {limits && (
+            <div className="hidden lg:flex items-center gap-2 mr-2">
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">AI Pack Edits</span>
+              <input
+                value={String(limits.defaultPackEdits)}
+                onChange={(e) => setLimits((p) => (p ? { ...p, defaultPackEdits: Number(e.target.value || 0) } : p))}
+                className="h-12 w-16 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-900"
+                title="Default edits per pack"
+                type="number"
+                min={1}
+              />
+              <input
+                value={String(limits.minPackEdits)}
+                onChange={(e) => setLimits((p) => (p ? { ...p, minPackEdits: Number(e.target.value || 0) } : p))}
+                className="h-12 w-16 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-900"
+                title="Min"
+                type="number"
+                min={1}
+              />
+              <input
+                value={String(limits.maxPackEdits)}
+                onChange={(e) => setLimits((p) => (p ? { ...p, maxPackEdits: Number(e.target.value || 0) } : p))}
+                className="h-12 w-16 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-900"
+                title="Max"
+                type="number"
+                min={1}
+              />
+              <input
+                value={limits.forcePackEdits === null ? "" : String(limits.forcePackEdits)}
+                onChange={(e) =>
+                  setLimits((p) =>
+                    p ? { ...p, forcePackEdits: e.target.value === "" ? null : Number(e.target.value || 0) } : p,
+                  )
+                }
+                className="h-12 w-20 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-900"
+                title="Force override (blank = off)"
+                type="number"
+                min={1}
+              />
+              <button
+                disabled={limitsBusy}
+                onClick={async () => {
+                  try {
+                    setLimitsBusy(true);
+                    const res: any = await setAiSuiteGlobalLimits(limits as any);
+                    if (!res?.success) throw new Error(res?.error || "Failed to save");
+                    setLimits(res.limits);
+                  } catch (e: any) {
+                    alert(e?.message || "Failed to save AI limits");
+                  } finally {
+                    setLimitsBusy(false);
+                  }
+                }}
+                className="h-12 px-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
+              >
+                Save
+              </button>
+            </div>
+          )}
           <button
             disabled={isGlobalAiBusy}
             onClick={async () => {
