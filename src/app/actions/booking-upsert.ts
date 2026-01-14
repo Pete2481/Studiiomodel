@@ -1,6 +1,6 @@
 "use server";
 
-import { getTenantPrisma, getSessionTenantId, enforceSubscription } from "@/lib/tenant-guard";
+import { getTenantPrisma, enforceSubscription } from "@/lib/tenant-guard";
 import { revalidatePath } from "next/cache";
 import { bookingService } from "@/server/services/booking.service";
 import { auth } from "@/auth";
@@ -13,31 +13,8 @@ function toIso(d: any) {
   return dt.toISOString();
 }
 
-async function getCalendarBookingById(tenantId: string, bookingId: string) {
-  const tPrisma = (await getTenantPrisma(tenantId)) as any;
-  const b = await tPrisma.booking.findUnique({
-    where: { id: bookingId },
-    select: {
-      id: true,
-      title: true,
-      startAt: true,
-      endAt: true,
-      status: true,
-      propertyStatus: true,
-      clientId: true,
-      agentId: true,
-      isPlaceholder: true,
-      slotType: true,
-      internalNotes: true,
-      clientNotes: true,
-      client: { select: { name: true, businessName: true } },
-      property: { select: { name: true } },
-      services: { select: { serviceId: true, service: { select: { name: true } } } },
-      assignments: { select: { teamMemberId: true, teamMember: { select: { displayName: true, avatarUrl: true } } } },
-    },
-  });
+function toCalendarBooking(b: any) {
   if (!b) return null;
-
   const s = toIso(b.startAt);
   const e = toIso(b.endAt);
   if (!s || !e) return null;
@@ -71,7 +48,7 @@ async function getCalendarBookingById(tenantId: string, bookingId: string) {
 export async function upsertBooking(data: any) {
   try {
     const session = await auth();
-    const tenantId = await getSessionTenantId();
+    const tenantId = session?.user?.tenantId as string | undefined;
     if (!session || !tenantId) return { success: false, error: "Unauthorized" };
 
     // PERMISSION CHECK
@@ -80,7 +57,7 @@ export async function upsertBooking(data: any) {
     }
 
     // SECURITY: Prevent API-level bypass of the paywall
-    await enforceSubscription();
+    await enforceSubscription(tenantId);
 
     const startAt = data.startAt ? new Date(data.startAt) : new Date(`${data.date}T${data.startTime}:00`);
     const endAt = data.endAt ? new Date(data.endAt) : new Date(startAt.getTime() + (parseFloat(data.duration || "1") * 60 * 60 * 1000));
@@ -100,7 +77,7 @@ export async function upsertBooking(data: any) {
     revalidatePath("/");
     
     // Return a calendar-ready payload so the UI can update immediately without waiting on range refetch.
-    const calendarBooking = await getCalendarBookingById(tenantId, String(booking.id));
+    const calendarBooking = toCalendarBooking(booking);
     return { success: true, bookingId: String(booking.id), booking: calendarBooking };
   } catch (error: any) {
     console.error("UPSERT ERROR:", error);

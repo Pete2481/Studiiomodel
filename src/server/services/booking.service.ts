@@ -269,7 +269,18 @@ export class BookingService {
               role: "PHOTOGRAPHER" 
             }))
           }
-        }
+        },
+        include: {
+          client: { select: { name: true, businessName: true } },
+          property: { select: { name: true } },
+          services: { select: { serviceId: true, service: { select: { name: true } } } },
+          assignments: {
+            select: {
+              teamMemberId: true,
+              teamMember: { select: { displayName: true, avatarUrl: true } },
+            },
+          },
+        },
       });
     } else {
       booking = await tPrisma.booking.create({
@@ -287,7 +298,18 @@ export class BookingService {
               role: "PHOTOGRAPHER" 
             }))
           }
-        }
+        },
+        include: {
+          client: { select: { name: true, businessName: true } },
+          property: { select: { name: true } },
+          services: { select: { serviceId: true, service: { select: { name: true } } } },
+          assignments: {
+            select: {
+              teamMemberId: true,
+              teamMember: { select: { displayName: true, avatarUrl: true } },
+            },
+          },
+        },
       });
 
       // 1.5. Create Secondary Booking if split occurred

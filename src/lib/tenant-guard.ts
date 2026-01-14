@@ -198,8 +198,8 @@ export async function checkSubscriptionStatus(tenantId?: string) {
  * Enforces a subscription check. Throws an error if not subscribed.
  * Use this in Server Actions to prevent API-level bypasses.
  */
-export async function enforceSubscription() {
-  const isSubscribed = await checkSubscriptionStatus();
+export async function enforceSubscription(tenantId?: string) {
+  const isSubscribed = await checkSubscriptionStatus(tenantId);
   if (!isSubscribed) {
     throw new Error("Action-Locked: Active subscription required to perform this action.");
   }
