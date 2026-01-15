@@ -312,12 +312,8 @@ export async function processImageWithAI(
       }
     } catch (upscaleError) {
       console.error("[AI_EDIT_UPSCALER_ERROR]:", upscaleError);
-      // Don't silently return a small/soft output. Force a retry so users always get HD.
-      return {
-        success: false,
-        error:
-          "HD upscaling failed. Please try again in a moment (or top up Replicate credits if rate-limited).",
-      };
+      // Fallback to original output if upscaler fails
+      return { success: true, outputUrl };
     }
 
     return { success: true, outputUrl };
