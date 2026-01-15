@@ -6,6 +6,7 @@ import { ChevronDown, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { updateGalleryStatus } from "@/app/actions/gallery";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
+import { useRouter } from "next/navigation";
 
 interface GalleryStatusDropdownProps {
   galleryId: string;
@@ -14,6 +15,7 @@ interface GalleryStatusDropdownProps {
 }
 
 export function GalleryStatusDropdown({ galleryId, currentStatus, user }: GalleryStatusDropdownProps) {
+  const router = useRouter();
   const [isUpdating, setIsUpdating] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -21,6 +23,7 @@ export function GalleryStatusDropdown({ galleryId, currentStatus, user }: Galler
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [localStatus, setLocalStatus] = useState(currentStatus);
 
   const statuses = useMemo(() => ([
     { value: 'DRAFT', label: 'DRAFT', color: 'bg-slate-100 text-slate-600 border-slate-200' },
@@ -29,8 +32,12 @@ export function GalleryStatusDropdown({ galleryId, currentStatus, user }: Galler
     { value: 'ARCHIVED', label: 'ARCHIVED', color: 'bg-slate-800 text-white border-slate-700' },
   ]), []);
 
+  useEffect(() => {
+    setLocalStatus(currentStatus);
+  }, [currentStatus]);
+
   const handleStatusClick = (newStatus: string) => {
-    if (newStatus === currentStatus) {
+    if (newStatus === localStatus) {
       setIsOpen(false);
       return;
     }
@@ -48,6 +55,10 @@ export function GalleryStatusDropdown({ galleryId, currentStatus, user }: Galler
       const res = await updateGalleryStatus(galleryId, pendingStatus);
       if (!res.success) {
         alert(res.error || "Failed to update status");
+      } else {
+        // Update immediately so the user sees the change, then refresh server data.
+        setLocalStatus(pendingStatus);
+        router.refresh();
       }
     } catch (err) {
       console.error("Status update error:", err);
@@ -58,7 +69,7 @@ export function GalleryStatusDropdown({ galleryId, currentStatus, user }: Galler
     }
   };
 
-  const currentConfig = statuses.find(s => s.value === currentStatus) || statuses[0];
+  const currentConfig = statuses.find(s => s.value === localStatus) || statuses[0];
 
   useEffect(() => {
     setMounted(true);
@@ -92,7 +103,7 @@ export function GalleryStatusDropdown({ galleryId, currentStatus, user }: Galler
         "rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider shadow-sm border whitespace-nowrap",
         currentConfig.color
       )}>
-        {currentStatus}
+        {localStatus}
       </span>
     );
   }
@@ -115,7 +126,7 @@ export function GalleryStatusDropdown({ galleryId, currentStatus, user }: Galler
           {isUpdating ? (
             <Loader2 className="h-2.5 w-2.5 animate-spin" />
           ) : (
-            currentStatus
+            localStatus
           )}
           <ChevronDown className="h-2.5 w-2.5 opacity-60" />
         </button>
@@ -143,7 +154,7 @@ export function GalleryStatusDropdown({ galleryId, currentStatus, user }: Galler
                     }}
                     className={cn(
                       "w-full px-4 py-2 text-left text-[10px] font-black uppercase tracking-widest transition-colors",
-                      currentStatus === s.value ? "bg-slate-50 text-primary" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                      localStatus === s.value ? "bg-slate-50 text-primary" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                     )}
                   >
                     {s.label}

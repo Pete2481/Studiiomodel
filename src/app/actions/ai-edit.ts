@@ -5,6 +5,8 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { getTemporaryLink } from "./storage";
+import crypto from "crypto";
+import { cleanDropboxLink } from "@/lib/utils";
 
 export type AITaskType =
   | "sky_replacement"
@@ -84,30 +86,47 @@ export async function processImageWithAI(
         });
         const provider = (tenant as any)?.storageProvider || "DROPBOX";
 
-        // If we have a File ID, use that as it's more reliable than the relative path
-        const lookupPath = dbxId || dbxPath;
-        const storageResult = await getTemporaryLink(lookupPath, tenantId, provider);
-        if (storageResult.success && storageResult.url) {
-          publicImageUrl = storageResult.url;
+        const sharedLink = urlParams.get("sharedLink");
+
+        // For shared-link Dropbox folders, ALWAYS stream full-res bytes via our signed ai-source route.
+        if (
+          provider === "DROPBOX" &&
+          sharedLink &&
+          (sharedLink.includes("dropbox.com") || sharedLink.includes("dropboxusercontent.com"))
+        ) {
+          const galleryId = galleryIdFromUrl(publicImageUrl);
+          if (!galleryId) {
+            return { success: false, error: "Could not resolve galleryId for full-res AI source." };
+          }
+
+          const host = process.env.NEXT_PUBLIC_APP_URL;
+          const secret = process.env.AI_SOURCE_SIGNING_SECRET || process.env.NEXTAUTH_SECRET || "";
+          if (!host || !secret) {
+            return { success: false, error: "AI source URL signing is not configured (NEXT_PUBLIC_APP_URL / AI_SOURCE_SIGNING_SECRET)." };
+          }
+
+          const cleanShared = cleanDropboxLink(sharedLink);
+          const exp = Math.floor(Date.now() / 1000) + 10 * 60; // 10 min
+          const payload = `${galleryId}|${exp}|${cleanShared}|${dbxPath}`;
+
+          const sig = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+          const aiSourceUrl =
+            `${host.replace(/\/$/, "")}` +
+            `/api/ai-source/dropbox?galleryId=${encodeURIComponent(galleryId)}` +
+            `&sharedLink=${encodeURIComponent(cleanShared)}` +
+            `&path=${encodeURIComponent(dbxPath)}` +
+            `&exp=${encodeURIComponent(String(exp))}` +
+            `&sig=${encodeURIComponent(sig)}`;
+
+          publicImageUrl = aiSourceUrl;
         } else {
-          // If we can't get a temp link, check for Dropbox shared link fallback
-          const sharedLink = urlParams.get("sharedLink");
-          if (sharedLink && (sharedLink.includes("dropbox.com") || sharedLink.includes("dropboxusercontent.com"))) {
-            let directUrl = sharedLink.replace("www.dropbox.com", "dl.dropboxusercontent.com").replace("dl=0", "raw=1");
-            
-            // If it's a folder link (/scl/fo/), we need to append the filename to get the specific file
-            if (directUrl.includes("/scl/fo/") && dbxPath) {
-              const fileName = dbxPath.split("/").pop();
-              if (fileName) {
-                // Remove existing query params from base URL to append filename correctly
-                const baseUrl = directUrl.split("?")[0];
-                const queryParams = directUrl.split("?")[1] || "";
-                directUrl = `${baseUrl}/${encodeURIComponent(fileName)}?${queryParams}`;
-              }
-            }
-            publicImageUrl = directUrl;
+          // Otherwise use provider temp links (Drive, or Dropbox mapped folders)
+          const lookupPath = dbxId || dbxPath;
+          const storageResult = await getTemporaryLink(lookupPath, tenantId, provider);
+          if (storageResult.success && storageResult.url) {
+            publicImageUrl = storageResult.url;
           } else {
-            return { success: false, error: `AI cannot access local images. Please ensure ${provider} is connected.` };
+            return { success: false, error: `AI cannot access the image. Please ensure ${provider} is connected.` };
           }
         }
       } else if (publicImageUrl.includes("dropbox.com") || publicImageUrl.includes("dropboxusercontent.com")) {
@@ -270,7 +289,9 @@ export async function processImageWithAI(
     }
 
     // --- HD UPSCALING STEP ---
-    const upscaleScale = taskType === "room_editor" ? 4 : 2;
+    // Always return the maximum practical resolution for "original" AI results.
+    // (Higher cost/slower, but ensures crisp zoom + sharp downloads.)
+    const upscaleScale = 4;
     console.log(`[AI_EDIT] Upscaling output to HD using nightmareai/real-esrgan (scale=${upscaleScale}) for URL length: ${outputUrl.length}`);
     try {
       const upscaleOutput: any = await replicate.run(
@@ -308,6 +329,16 @@ export async function processImageWithAI(
     }
 
     return { success: false, error: error.message || "AI processing failed" };
+  }
+}
+
+function galleryIdFromUrl(url: string): string | null {
+  try {
+    // Matches /api/dropbox/assets/{galleryId} or /api/google-drive/assets/{galleryId}
+    const m = url.match(/\/api\/(?:dropbox|google-drive)\/assets\/([^/?]+)/);
+    return m?.[1] ? String(m[1]) : null;
+  } catch {
+    return null;
   }
 }
 

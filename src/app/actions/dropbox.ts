@@ -159,6 +159,32 @@ export async function getGalleryAssets(galleryId: string, limit: number = 100, c
     let allAssets: any[] = [];
     let nextCursor: string | undefined = undefined;
 
+    const encodeCursorToken = (source: "sharedLink" | "folder", raw: string) => {
+      try {
+        const payload = Buffer.from(JSON.stringify({ v: 1, source, cursor: raw }), "utf8").toString("base64");
+        return `dbx:${payload}`;
+      } catch {
+        return raw;
+      }
+    };
+
+    const decodeCursorToken = (token?: string) => {
+      if (!token) return null;
+      if (!token.startsWith("dbx:")) return null;
+      try {
+        const json = Buffer.from(token.slice(4), "base64").toString("utf8");
+        const parsed = JSON.parse(json);
+        if (!parsed || typeof parsed !== "object") return null;
+        if (parsed.v !== 1) return null;
+        if (typeof parsed.cursor !== "string") return null;
+        const source = parsed.source === "sharedLink" || parsed.source === "folder" ? parsed.source : null;
+        if (!source) return null;
+        return { source, cursor: parsed.cursor as string };
+      } catch {
+        return null;
+      }
+    };
+
     // Helper for API calls with auto-refresh
     const dropboxFetch = async (url: string, body: any) => {
       let res = await fetch(url, {
@@ -185,6 +211,46 @@ export async function getGalleryAssets(galleryId: string, limit: number = 100, c
         }
       }
       return res;
+    };
+
+    const isImageEntry = (entry: any) => entry?.[".tag"] === "file" && !!entry?.name?.match(/\.(jpg|jpeg|png|webp)$/i);
+
+    const listAllImageIdsForCursor = async (initialEntries: any[], initialCursor?: string) => {
+      const ids = new Set<string>();
+      for (const e of initialEntries || []) {
+        if (isImageEntry(e) && e.id) ids.add(String(e.id));
+      }
+
+      let next = initialCursor;
+      let guard = 0;
+      while (next && guard < 200) {
+        guard++;
+        const res = await dropboxFetch("https://api.dropboxapi.com/2/files/list_folder/continue", { cursor: next });
+        if (!res.ok) break;
+        const page = await res.json();
+        for (const e of page.entries || []) {
+          if (isImageEntry(e) && e.id) ids.add(String(e.id));
+        }
+        next = page.has_more ? page.cursor : undefined;
+      }
+      return ids;
+    };
+
+    const pruneStaleFavorites = async (validImageIds: Set<string>) => {
+      try {
+        const ids = Array.from(validImageIds);
+        // If we can't confidently determine valid IDs, do nothing.
+        if (ids.length === 0) return;
+        await prisma.galleryFavorite.deleteMany({
+          where: {
+            galleryId,
+            tenantId,
+            imageId: { notIn: ids },
+          },
+        });
+      } catch (e) {
+        // non-blocking
+      }
     };
 
     const processEntries = (entries: any[], folderName: string, sourceLink?: string) => {
@@ -248,13 +314,17 @@ export async function getGalleryAssets(galleryId: string, limit: number = 100, c
     // If a cursor is provided, we just continue from that cursor.
     // NOTE: This assumes the cursor is for the "current" source being paginated.
     if (cursor) {
-      const response = await dropboxFetch("https://api.dropboxapi.com/2/files/list_folder/continue", { cursor });
+      const decoded = decodeCursorToken(cursor);
+      const rawCursor = decoded?.cursor || cursor;
+      const response = await dropboxFetch("https://api.dropboxapi.com/2/files/list_folder/continue", { cursor: rawCursor });
       if (response.ok) {
         const data = await response.json();
         // We need to know which folder/link this cursor belonged to.
         // For now, we assume "Production" or use metadata if we wanted to be fancy.
         allAssets = processEntries(data.entries, "Production", shareLink);
-        if (data.has_more) nextCursor = data.cursor;
+        if (data.has_more) {
+          nextCursor = shareLink ? encodeCursorToken("sharedLink", data.cursor) : data.cursor;
+        }
         // Pagination continuation isn't a full scan, so we avoid writing counts here.
         return { success: true, assets: allAssets, nextCursor };
       }
@@ -280,7 +350,7 @@ export async function getGalleryAssets(galleryId: string, limit: number = 100, c
           if (listResponse.ok) {
             const listData = await listResponse.json();
             allAssets = processEntries(listData.entries, "Production Link", shareLink);
-            if (listData.has_more) nextCursor = listData.cursor;
+            if (listData.has_more) nextCursor = encodeCursorToken("sharedLink", listData.cursor);
 
             // Auto-update gallery counts (best effort). For share links we treat the folder listing as the source of truth.
             try {
@@ -300,6 +370,15 @@ export async function getGalleryAssets(galleryId: string, limit: number = 100, c
                   }
                 });
               }
+            } catch (e) {
+              // non-blocking
+            }
+
+            // Auto-prune stale favorites: shared link folder is source of truth for existing images.
+            // We do a full cursor walk to collect image IDs and delete any favorites that point to missing files.
+            try {
+              const validIds = await listAllImageIdsForCursor(listData.entries, listData.has_more ? listData.cursor : undefined);
+              await pruneStaleFavorites(validIds);
             } catch (e) {
               // non-blocking
             }
