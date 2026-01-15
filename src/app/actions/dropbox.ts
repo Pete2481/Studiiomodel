@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { getTenantPrisma } from "@/lib/tenant-guard";
 import { prisma } from "@/lib/prisma";
 import { cleanDropboxLink } from "@/lib/utils";
+import sharp from "sharp";
 
 /**
  * Refreshes the Dropbox access token using the refresh token.
@@ -614,7 +615,52 @@ export async function saveAIResultToDropbox({
     // 1. Download the image from the AI URL
     const imageResponse = await fetch(resultUrl);
     if (!imageResponse.ok) throw new Error("Failed to download AI result");
-    const imageBlob = await imageResponse.arrayBuffer();
+    const imageArrayBuffer = await imageResponse.arrayBuffer();
+
+    // 1b. Best-effort: ensure a crisp, sizeable JPEG (aim for >= ~2MB when possible)
+    const MIN_BYTES = 2 * 1024 * 1024;
+    const MAX_LONG_EDGE = 8000;
+    const TARGET_LONG_EDGES = [5000, 6500, 8000];
+
+    const sourceBytes = Buffer.from(imageArrayBuffer);
+    const img = sharp(sourceBytes, { failOn: "none" });
+    const meta = await img.metadata();
+    const width = meta.width || 0;
+    const height = meta.height || 0;
+    const longEdge = Math.max(width, height);
+
+    const encodeJpeg = async (input: sharp.Sharp, q: number) => {
+      return await input
+        .jpeg({
+          quality: q,
+          chromaSubsampling: "4:4:4",
+          mozjpeg: true,
+          progressive: true,
+        })
+        .toBuffer();
+    };
+
+    let imageBlob = await encodeJpeg(img.clone(), 95);
+    if (imageBlob.length < MIN_BYTES) {
+      imageBlob = await encodeJpeg(img.clone(), 100);
+    }
+
+    if (imageBlob.length < MIN_BYTES && width && height && longEdge) {
+      for (const targetLongEdge of TARGET_LONG_EDGES) {
+        const effectiveTarget = Math.min(targetLongEdge, MAX_LONG_EDGE);
+        const needsUpscale = longEdge < effectiveTarget;
+        const scale = needsUpscale ? effectiveTarget / longEdge : 1;
+        const newW = Math.min(Math.round(width * scale), MAX_LONG_EDGE);
+        const newH = Math.min(Math.round(height * scale), MAX_LONG_EDGE);
+
+        const resized = img
+          .clone()
+          .resize(newW, newH, { fit: "fill", kernel: sharp.kernel.lanczos3 });
+
+        imageBlob = await encodeJpeg(resized, 100);
+        if (imageBlob.length >= MIN_BYTES) break;
+      }
+    }
 
     // 2. Determine target path
     // Original: /Production/House/Kitchen.jpg -> Target: /Production/House/Kitchen_AI_Sky.jpg
@@ -641,7 +687,7 @@ export async function saveAIResultToDropbox({
             mute: false
           })
         },
-        body: imageBlob
+        body: imageBlob as any
       });
     };
 

@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { getTenantPrisma } from "@/lib/tenant-guard";
 import { prisma } from "@/lib/prisma";
 import { google } from "googleapis";
+import sharp from "sharp";
 
 async function getGoogleDriveClient(tenantId: string) {
   const tPrisma = await getTenantPrisma(tenantId);
@@ -176,7 +177,50 @@ export async function saveAIResultToGoogleDrive({
     // 2. Download result
     const response = await fetch(resultUrl);
     if (!response.ok) throw new Error("Failed to download AI result");
-    const buffer = await response.arrayBuffer();
+    const arrayBuffer = await response.arrayBuffer();
+
+    // Best-effort: ensure a crisp, sizeable JPEG (aim for >= ~2MB when possible)
+    const MIN_BYTES = 2 * 1024 * 1024;
+    const MAX_LONG_EDGE = 8000;
+    const TARGET_LONG_EDGES = [5000, 6500, 8000];
+
+    const sourceBytes = Buffer.from(arrayBuffer);
+    const img = sharp(sourceBytes, { failOn: "none" });
+    const meta = await img.metadata();
+    const width = meta.width || 0;
+    const height = meta.height || 0;
+    const longEdge = Math.max(width, height);
+
+    const encodeJpeg = async (input: sharp.Sharp, q: number) => {
+      return await input
+        .jpeg({
+          quality: q,
+          chromaSubsampling: "4:4:4",
+          mozjpeg: true,
+          progressive: true,
+        })
+        .toBuffer();
+    };
+
+    let out = await encodeJpeg(img.clone(), 95);
+    if (out.length < MIN_BYTES) out = await encodeJpeg(img.clone(), 100);
+
+    if (out.length < MIN_BYTES && width && height && longEdge) {
+      for (const targetLongEdge of TARGET_LONG_EDGES) {
+        const effectiveTarget = Math.min(targetLongEdge, MAX_LONG_EDGE);
+        const needsUpscale = longEdge < effectiveTarget;
+        const scale = needsUpscale ? effectiveTarget / longEdge : 1;
+        const newW = Math.min(Math.round(width * scale), MAX_LONG_EDGE);
+        const newH = Math.min(Math.round(height * scale), MAX_LONG_EDGE);
+
+        const resized = img
+          .clone()
+          .resize(newW, newH, { fit: "fill", kernel: sharp.kernel.lanczos3 });
+
+        out = await encodeJpeg(resized, 100);
+        if (out.length >= MIN_BYTES) break;
+      }
+    }
 
     // 3. Determine new name
     const originalName = originalFile.data.name || "image.jpg";
@@ -196,7 +240,7 @@ export async function saveAIResultToGoogleDrive({
       },
       media: {
         mimeType: "image/jpeg",
-        body: Buffer.from(buffer),
+        body: out,
       },
     });
 
