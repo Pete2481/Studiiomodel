@@ -326,9 +326,8 @@ export async function processImageWithAI(
       }
 
       const finalUrl = await extractUrl(upscaleOutput);
-      if (typeof finalUrl === "string" && finalUrl.length > 0) {
-        const preview = finalUrl.slice(0, 100);
-        console.log(`[AI_EDIT] HD Upscale complete: ${preview}...`);
+      if (finalUrl) {
+        console.log(`[AI_EDIT] HD Upscale complete: ${finalUrl?.substring(0, 100)}...`);
         return { success: true, outputUrl: finalUrl };
       }
       return { success: false, error: "HD upscaler returned no output URL. Please try again." };
