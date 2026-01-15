@@ -48,9 +48,7 @@ export function DownloadManager({ galleryId, assets, onClose, sharedLink, client
           // If this is an external (AI) URL without a Dropbox path, proxy it through our server
           const isExternalUrl = typeof asset.url === "string" && asset.url.startsWith("http") && !asset.path;
           const downloadUrl = isExternalUrl
-            // For external (AI) URLs, "original" should be the raw bytes we got back from the AI.
-            // Avoid server-side print re-encoding here to preserve maximum sharpness/detail.
-            ? `/api/external-image?url=${encodeURIComponent(asset.url)}`
+            ? `/api/external-image?url=${encodeURIComponent(asset.url)}${resolution === "original" ? "&profile=print" : ""}`
             : `/api/dropbox/download/${galleryId}?path=${encodeURIComponent(asset.path)}&sharedLink=${encodeURIComponent(sharedLink || "")}&applyBranding=${applyBranding}`;
 
           const response = await fetch(downloadUrl);

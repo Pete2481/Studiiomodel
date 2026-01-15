@@ -34,7 +34,6 @@ export async function GET(
     const sharedLink = searchParams.get("sharedLink");
     const isSharedRequest = searchParams.get("shared") === "true";
     const size = searchParams.get("size") || "w640h480";
-    const profile = (searchParams.get("profile") || "").toLowerCase();
 
     if (isSharedRequest) {
       console.log(`[PROXY] Allowing shared request for gallery: ${galleryId}, path: ${path}`);
@@ -51,7 +50,7 @@ export async function GET(
     }
 
     // 2. Validate size
-    const validSizes = ["w32h32", "w64h64", "w128h128", "w480h320", "w640h480", "w960h640", "w1024h768", "w2048h1536"];
+    const validSizes = ["w32h32", "w64h64", "w128h128", "w640h480", "w960h640", "w1024h768", "w2048h1536"];
     const thumbnailSize = validSizes.includes(size) ? size : "w640h480";
 
     // 3. Resolve Gallery & Permissions
@@ -101,152 +100,6 @@ export async function GET(
     const tenantId = gallery.tenantId;
     const refreshToken = gallery.tenant.dropboxRefreshToken;
 
-    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-    const withRetry429 = async (fn: () => Promise<Response>, attempts: number = 4) => {
-      let last: Response | null = null;
-      for (let i = 0; i < attempts; i++) {
-        const res = await fn();
-        last = res;
-        if (res.status !== 429) return res;
-        await sleep(300 * Math.pow(2, i));
-      }
-      return last!;
-    };
-
-    // HERO PROFILE: fetch full bytes, then encode a crisp hero render.
-    // This avoids Dropbox thumbnail limitations and keeps banners sharp on desktop/retina.
-    if (profile === "hero") {
-      const MAX_LONG_EDGE = 3840;
-
-      const getSharedFile = async (token: string) => {
-        const arg: any = { url: sharedLink };
-        if (path && path !== "/" && path !== "") arg.path = path;
-        return fetch("https://content.dropboxapi.com/2/sharing/get_shared_link_file", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${token}`,
-            "Dropbox-API-Arg": toDropboxApiArg(arg),
-          },
-        });
-      };
-
-      const getFile = async (token: string) => {
-        return fetch("https://content.dropboxapi.com/2/files/download", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${token}`,
-            "Dropbox-API-Arg": toDropboxApiArg({ path }),
-          },
-        });
-      };
-
-      let fileRes = await withRetry429(() => (sharedLink ? getSharedFile(accessToken) : getFile(accessToken)));
-      if (fileRes.status === 401 && refreshToken) {
-        const refreshResponse = await fetch("https://api.dropbox.com/oauth2/token", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            grant_type: "refresh_token",
-            refresh_token: refreshToken,
-            client_id: process.env.DROPBOX_CLIENT_ID!,
-            client_secret: process.env.DROPBOX_CLIENT_SECRET!,
-          }),
-        });
-        if (refreshResponse.ok) {
-          const refreshData = await refreshResponse.json();
-          accessToken = refreshData.access_token;
-          const tPrisma = await getTenantPrisma(tenantId);
-          await tPrisma.tenant.update({
-            where: { id: tenantId },
-            data: { dropboxAccessToken: accessToken },
-          });
-          fileRes = await withRetry429(() => (sharedLink ? getSharedFile(accessToken) : getFile(accessToken)));
-        }
-      }
-
-      if (!fileRes.ok) {
-        logger.error("Dropbox hero fetch failed", null, { galleryId, status: fileRes.status });
-        return new NextResponse("Failed to fetch asset", { status: fileRes.status });
-      }
-
-      const arrayBuffer = await fileRes.arrayBuffer();
-      let buffer: any = Buffer.from(arrayBuffer);
-
-      try {
-        let sharpInstance = sharp(buffer, { failOn: "none" }).rotate();
-        const meta = await sharpInstance.metadata();
-        const w = meta.width || 0;
-        const h = meta.height || 0;
-        const longEdge = Math.max(w, h);
-        const needsResize = longEdge > 0 && longEdge > MAX_LONG_EDGE;
-
-        if (needsResize) {
-          sharpInstance = sharpInstance.resize({
-            width: w >= h ? MAX_LONG_EDGE : undefined,
-            height: h > w ? MAX_LONG_EDGE : undefined,
-            fit: "inside",
-            withoutEnlargement: true,
-            kernel: sharp.kernel.lanczos3,
-          });
-        }
-
-        // Apply Watermark if enabled
-        if (gallery.watermarkEnabled && gallery.tenant.logoUrl) {
-          let logoBuffer: Buffer | null = null;
-          const cached = logoCache.get(gallery.tenant.logoUrl);
-          if (cached && Date.now() - cached.timestamp < LOGO_CACHE_TTL) {
-            logoBuffer = cached.buffer;
-          } else {
-            const logoResponse = await fetch(gallery.tenant.logoUrl);
-            if (logoResponse.ok) {
-              logoBuffer = Buffer.from(await logoResponse.arrayBuffer());
-              logoCache.set(gallery.tenant.logoUrl, { buffer: logoBuffer, timestamp: Date.now() });
-            }
-          }
-
-          if (logoBuffer) {
-            const processedLogo = await sharp(logoBuffer)
-              .resize({ width: 600, height: 600, fit: "inside" })
-              .composite([
-                {
-                  input: Buffer.from([255, 255, 255, 128]),
-                  raw: { width: 1, height: 1, channels: 4 },
-                  tile: true,
-                  blend: "dest-in",
-                },
-              ])
-              .toBuffer();
-
-            sharpInstance = sharpInstance.composite([
-              {
-                input: processedLogo,
-                gravity: "center",
-              },
-            ]);
-          }
-        }
-
-        buffer = await sharpInstance
-          .jpeg({ quality: 94, mozjpeg: true, chromaSubsampling: "4:4:4" })
-          .toBuffer();
-
-        return new NextResponse(buffer, {
-          headers: {
-            "Content-Type": "image/jpeg",
-            "Cache-Control": "public, max-age=31536000, immutable",
-          },
-        });
-      } catch (e) {
-        // Fallback: return original bytes
-        return new NextResponse(buffer, {
-          headers: {
-            "Content-Type": fileRes.headers.get("Content-Type") || "application/octet-stream",
-            "Cache-Control": "public, max-age=31536000, immutable",
-          },
-        });
-      }
-    }
-
     // Call Dropbox
     const resource = sharedLink 
       ? { ".tag": "link", "url": sharedLink, "path": path }
@@ -267,7 +120,7 @@ export async function GET(
       });
     };
 
-    let dbResponse = await withRetry429(() => getThumbnail(accessToken));
+    let dbResponse = await getThumbnail(accessToken);
 
     if (dbResponse.status === 401 && refreshToken) {
       const refreshResponse = await fetch("https://api.dropbox.com/oauth2/token", {
@@ -292,21 +145,20 @@ export async function GET(
           data: { dropboxAccessToken: accessToken }
         });
         
-        dbResponse = await withRetry429(() => getThumbnail(accessToken));
+        dbResponse = await getThumbnail(accessToken);
       }
     }
 
     // Fallback: Dropbox can reject `get_thumbnail_v2` for some shared-link resources (notably with odd filenames).
     // In that case, download the shared file and generate a thumbnail server-side.
     if (!dbResponse.ok) {
-      const parseSize = (s: string) => {
-        const m = /^w(\d+)h(\d+)$/.exec(s);
-        if (!m) return { width: 640, height: 480 };
-        return { width: Number(m[1]), height: Number(m[2]) };
-      };
-      const { width, height } = parseSize(thumbnailSize);
-
       if (sharedLink) {
+        const parseSize = (s: string) => {
+          const m = /^w(\d+)h(\d+)$/.exec(s);
+          if (!m) return { width: 640, height: 480 };
+          return { width: Number(m[1]), height: Number(m[2]) };
+        };
+        const { width, height } = parseSize(thumbnailSize);
 
         const getSharedFile = async (token: string) => {
           const arg: any = { url: sharedLink };
@@ -320,7 +172,7 @@ export async function GET(
           });
         };
 
-        let fileRes = await withRetry429(() => getSharedFile(accessToken));
+        let fileRes = await getSharedFile(accessToken);
         if (fileRes.status === 401 && refreshToken) {
           const refreshResponse = await fetch("https://api.dropbox.com/oauth2/token", {
             method: "POST",
@@ -340,7 +192,7 @@ export async function GET(
               where: { id: tenantId },
               data: { dropboxAccessToken: accessToken },
             });
-            fileRes = await withRetry429(() => getSharedFile(accessToken));
+            fileRes = await getSharedFile(accessToken);
           }
         }
 
@@ -410,105 +262,7 @@ export async function GET(
         });
       }
 
-      // Non-shared fallback: download the file and generate a thumbnail server-side (prevents blank tiles).
-      const getFile = async (token: string) => {
-        return fetch("https://content.dropboxapi.com/2/files/download", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${token}`,
-            "Dropbox-API-Arg": toDropboxApiArg({ path }),
-          },
-        });
-      };
-
-      let fileRes = await withRetry429(() => getFile(accessToken));
-      if (fileRes.status === 401 && refreshToken) {
-        const refreshResponse = await fetch("https://api.dropbox.com/oauth2/token", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            grant_type: "refresh_token",
-            refresh_token: refreshToken,
-            client_id: process.env.DROPBOX_CLIENT_ID!,
-            client_secret: process.env.DROPBOX_CLIENT_SECRET!,
-          }),
-        });
-        if (refreshResponse.ok) {
-          const refreshData = await refreshResponse.json();
-          accessToken = refreshData.access_token;
-          const tPrisma = await getTenantPrisma(tenantId);
-          await tPrisma.tenant.update({
-            where: { id: tenantId },
-            data: { dropboxAccessToken: accessToken },
-          });
-          fileRes = await withRetry429(() => getFile(accessToken));
-        }
-      }
-
-      if (!fileRes.ok) {
-        logger.error("Dropbox non-shared fallback failed", null, {
-          galleryId,
-          status: fileRes.status,
-        });
-        return new NextResponse("Failed to fetch asset", { status: dbResponse.status });
-      }
-
-      const arrayBuffer = await fileRes.arrayBuffer();
-      let buffer: any = Buffer.from(arrayBuffer);
-      let contentType = "image/webp";
-
-      try {
-        let sharpInstance = sharp(buffer).resize({ width, height, fit: "inside" });
-
-        // Apply Watermark if enabled
-        if (gallery.watermarkEnabled && gallery.tenant.logoUrl) {
-          let logoBuffer: Buffer | null = null;
-          const cached = logoCache.get(gallery.tenant.logoUrl);
-
-          if (cached && Date.now() - cached.timestamp < LOGO_CACHE_TTL) {
-            logoBuffer = cached.buffer;
-          } else {
-            const logoResponse = await fetch(gallery.tenant.logoUrl);
-            if (logoResponse.ok) {
-              logoBuffer = Buffer.from(await logoResponse.arrayBuffer());
-              logoCache.set(gallery.tenant.logoUrl, { buffer: logoBuffer, timestamp: Date.now() });
-            }
-          }
-
-          if (logoBuffer) {
-            const processedLogo = await sharp(logoBuffer)
-              .resize({ width: 300, height: 300, fit: "inside" })
-              .composite([
-                {
-                  input: Buffer.from([255, 255, 255, 128]),
-                  raw: { width: 1, height: 1, channels: 4 },
-                  tile: true,
-                  blend: "dest-in",
-                },
-              ])
-              .toBuffer();
-
-            sharpInstance = sharpInstance.composite([
-              {
-                input: processedLogo,
-                gravity: "center",
-              },
-            ]);
-          }
-        }
-
-        buffer = await sharpInstance.webp({ quality: 80 }).toBuffer();
-      } catch (e) {
-        // If sharp fails, just return original bytes.
-        contentType = fileRes.headers.get("Content-Type") || "application/octet-stream";
-      }
-
-      return new NextResponse(buffer, {
-        headers: {
-          "Content-Type": contentType,
-          "Cache-Control": "public, max-age=31536000, immutable",
-        },
-      });
+      return new NextResponse("Failed to fetch asset", { status: dbResponse.status });
     }
 
     // 5. Optimization & Watermarking

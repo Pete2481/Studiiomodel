@@ -18,7 +18,6 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const fileId = searchParams.get("id");
     const size = searchParams.get("size"); // Capture the requested size
-    const profile = (searchParams.get("profile") || "").toLowerCase();
 
     if (!fileId) {
       return new NextResponse("File ID is required", { status: 400 });
@@ -71,35 +70,6 @@ export async function GET(
     let buffer: any = Buffer.from(response.data as ArrayBuffer);
     let contentType = response.headers["content-type"] || "image/jpeg";
 
-    // HERO PROFILE: crisp banner render for desktop/retina
-    if (profile === "hero" && contentType.startsWith("image/")) {
-      const MAX_LONG_EDGE = 3840;
-      try {
-        const img = sharp(buffer, { failOn: "none" }).rotate();
-        const meta = await img.metadata();
-        const w = meta.width || 0;
-        const h = meta.height || 0;
-        const longEdge = Math.max(w, h);
-
-        const resized =
-          longEdge > 0 && longEdge > MAX_LONG_EDGE
-            ? img.resize({
-                width: w >= h ? MAX_LONG_EDGE : undefined,
-                height: h > w ? MAX_LONG_EDGE : undefined,
-                fit: "inside",
-                withoutEnlargement: true,
-                kernel: sharp.kernel.lanczos3,
-              })
-            : img;
-
-        buffer = await resized
-          .jpeg({ quality: 94, mozjpeg: true, chromaSubsampling: "4:4:4" })
-          .toBuffer();
-        contentType = "image/jpeg";
-      } catch (sharpError) {
-        console.error("SHARP HERO ERROR:", sharpError);
-      }
-    } else
     // 5. Apply Optimization if a size is requested
     if (size && contentType.startsWith("image/")) {
       const sizeMap: Record<string, { w: number; h: number }> = {

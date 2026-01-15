@@ -144,21 +144,6 @@ export function GalleryPublicViewer({
   const getAssetKey = (a: any) => String(a?.id || a?.url);
   const isImageAsset = (a: any) => (a?.type ? a.type === "image" : true);
 
-  // Favorites should reflect storage truth as closely as possible.
-  // If a favorited image no longer exists in Dropbox, exclude it from UI counts immediately.
-  const validFavoriteIds = React.useMemo(() => {
-    const valid = new Set<string>();
-    // Only images are favoritable right now; use image asset ids only.
-    for (const a of assets || []) {
-      if (!isImageAsset(a)) continue;
-      if (a?.id) valid.add(String(a.id));
-      else if (a?.url) valid.add(String(a.url));
-    }
-    return (favorites || []).filter((id) => valid.has(String(id)));
-  }, [assets, favorites]);
-
-  const validFavoriteSet = React.useMemo(() => new Set(validFavoriteIds.map((x) => String(x))), [validFavoriteIds]);
-
   const toggleSelectImage = (item: any) => {
     const key = getAssetKey(item);
     setSelectedImageIds((prev) => {
@@ -234,7 +219,7 @@ export function GalleryPublicViewer({
   const GalleryActionButtons = () => (
     <div className="flex items-center gap-2 md:flex-nowrap flex-wrap justify-center">
       {/* Step 1: Simple Share Selection Button */}
-      {!isShared && (user?.role === "TENANT_ADMIN" || user?.role === "ADMIN" || user?.role === "AGENT") && validFavoriteIds.length > 0 && (
+      {!isShared && (user?.role === "TENANT_ADMIN" || user?.role === "ADMIN" || user?.role === "AGENT") && favorites.length > 0 && (
         <button 
           onClick={() => {
             const currentPath = window.location.pathname.replace(/\/$/, ""); // Remove trailing slash if any
@@ -246,7 +231,7 @@ export function GalleryPublicViewer({
           className="hidden md:flex h-9 px-4 rounded-full bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-rose-500/20 hover:scale-105 active:scale-95 transition-all items-center gap-2"
         >
           <Heart className="h-3 w-3 fill-current" />
-          Share Selection ({validFavoriteIds.length})
+          Share Selection ({favorites.length})
         </button>
       )}
 
@@ -385,22 +370,13 @@ export function GalleryPublicViewer({
   }, []);
 
   // Load more assets via pagination
-  const loadMoreInFlight = useRef(false);
-  const loadMoreSeq = useRef(0);
   const loadMoreAssets = async () => {
-    if (!cursor) return;
-    if (loadMoreInFlight.current) return;
-    if (isLoadingMore) return;
+    if (isLoadingMore || !cursor) return;
 
-    const mySeq = ++loadMoreSeq.current;
-    const myCursor = cursor;
-    loadMoreInFlight.current = true;
     setIsLoadingMore(true);
     try {
-      const result = await getGalleryAssets(gallery.id, 24, myCursor);
+      const result = await getGalleryAssets(gallery.id, 24, cursor);
       if (result.success) {
-        // Ignore out-of-order responses
-        if (mySeq !== loadMoreSeq.current) return;
         setAssets(prev => {
           const newAssets = result.assets || [];
           // Avoid duplicates
@@ -414,27 +390,8 @@ export function GalleryPublicViewer({
       console.error("Load more error:", err);
     } finally {
       setIsLoadingMore(false);
-      // Only clear if this is the latest request
-      if (mySeq === loadMoreSeq.current) loadMoreInFlight.current = false;
     }
   };
-
-  // Banner sizing: keep initial payload light, upgrade on desktop/retina
-  const [bannerSize, setBannerSize] = useState<"w1024h768" | "w2048h1536">("w1024h768");
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const compute = () => {
-      const dpr = window.devicePixelRatio || 1;
-      const effectiveWidth = window.innerWidth * dpr;
-      // Rough cutoff: desktop or retina screens benefit from 2048-wide.
-      setBannerSize(effectiveWidth >= 1500 ? "w2048h1536" : "w1024h768");
-    };
-
-    compute();
-    window.addEventListener("resize", compute, { passive: true } as any);
-    return () => window.removeEventListener("resize", compute as any);
-  }, []);
 
   // Helper to append shared flag and size for incognito access to locked galleries
   const getImageUrl = (url: string, size: string = "w1024h768") => {
@@ -449,8 +406,8 @@ export function GalleryPublicViewer({
       try {
         const urlObj = new URL(url, isClient ? origin : "http://localhost");
         if (isShared) urlObj.searchParams.set("shared", "true");
-        // Always ensure we have a size if provided (overwrite to allow banner upgrades)
-        if (size) urlObj.searchParams.set("size", size);
+        // Always ensure we have a size if provided
+        if (size && !urlObj.searchParams.has("size")) urlObj.searchParams.set("size", size);
         return urlObj.pathname + urlObj.search;
       } catch (e) {
         return url;
@@ -486,21 +443,6 @@ export function GalleryPublicViewer({
       return urlObj.pathname + urlObj.search;
     } catch (e) {
       return url;
-    }
-  };
-
-  const withProfile = (url: string, profile: string) => {
-    if (!url) return "";
-    const isClient = typeof window !== "undefined";
-    const origin = isClient ? window.location.origin : "";
-    try {
-      const urlObj = new URL(url, isClient ? origin : "http://localhost");
-      urlObj.searchParams.set("profile", profile);
-      return urlObj.pathname + urlObj.search;
-    } catch {
-      // Best-effort fallback if URL parsing fails
-      const joiner = url.includes("?") ? "&" : "?";
-      return `${url}${joiner}profile=${encodeURIComponent(profile)}`;
     }
   };
 
@@ -782,19 +724,19 @@ export function GalleryPublicViewer({
   };
 
   const filteredAssets = React.useMemo(() => assets.filter(a => {
-    if (isShared) return validFavoriteSet.has(String(a.id));
+    if (isShared) return favorites.includes(a.id);
     if (activeFilter === "videos") return false;
-    if (activeFilter === "favorites") return validFavoriteSet.has(String(a.id));
+    if (activeFilter === "favorites") return favorites.includes(a.id);
     return true;
-  }), [assets, activeFilter, isShared, validFavoriteSet]);
+  }), [assets, activeFilter, favorites, isShared]);
 
   const displayVideos = React.useMemo(() => videos.filter((v, idx) => {
     const videoId = v.url || idx.toString();
-    if (isShared) return validFavoriteSet.has(String(videoId));
+    if (isShared) return favorites.includes(videoId);
     if (activeFilter === "images") return false;
-    if (activeFilter === "favorites") return validFavoriteSet.has(String(videoId));
+    if (activeFilter === "favorites") return favorites.includes(videoId);
     return true;
-  }), [videos, activeFilter, isShared, validFavoriteSet]);
+  }), [videos, activeFilter, favorites, isShared]);
 
   const combinedMedia = React.useMemo(() => [
     ...displayVideos.map(v => ({ ...v, type: "video" })),
@@ -907,7 +849,7 @@ export function GalleryPublicViewer({
         const isFolder = bannerUrl?.includes("/drive/folders/") || bannerUrl?.includes("/drive/u/");
         
         if (bannerUrl && !isFolder) {
-          const optimizedBanner = withProfile(getImageUrl(bannerUrl, bannerSize), "hero");
+          const optimizedBanner = getImageUrl(bannerUrl, "w1024h768");
           const finalBannerSrc = bannerFailed ? formatDropboxUrl(bannerUrl) : optimizedBanner;
           // #region agent log
           fetch('http://127.0.0.1:7242/ingest/8ba4527e-5b8b-42ce-b005-e0cd58eb2355',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'gallery-public-viewer.tsx:571',message:'Banner Image src',data:{optimizedBanner, finalBannerSrc},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
@@ -956,8 +898,8 @@ export function GalleryPublicViewer({
           return (
             <section className="px-6 pt-6">
               <div className="max-w-[103rem] mx-auto relative h-[40vh] w-full overflow-hidden rounded-[48px] shadow-2xl shadow-slate-200">
-                  <img 
-                  src={withProfile(getImageUrl(assets[0].url, bannerSize), "hero")} 
+                <img 
+                  src={getImageUrl(assets[0].url, "w1024h768")} 
                   alt={gallery.title}
                   className="h-full w-full object-cover blur-sm opacity-50 scale-110"
                 />
@@ -988,7 +930,7 @@ export function GalleryPublicViewer({
                   active={activeFilter === "favorites"} 
                   onClick={() => setActiveFilter("favorites")} 
                   label="Favourites" 
-                  count={validFavoriteIds.length}
+                  count={favorites.length}
                   isSpecial={true}
                 />
               </div>
@@ -2315,7 +2257,6 @@ function ProgressiveImage({ src, alt, className, getImageUrl, priority, directUr
 }) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
-  const [attempt, setAttempt] = useState(0);
   const optimizedSrc = getImageUrl(src, "w480h320");
   
   // Robust fallback logic:
@@ -2340,7 +2281,6 @@ function ProgressiveImage({ src, alt, className, getImageUrl, priority, directUr
       className="relative w-full overflow-hidden bg-slate-50"
     >
       <Image 
-        key={`${finalSrc}-${attempt}`}
         src={finalSrc}
         alt={alt}
         width={1200}
@@ -2353,11 +2293,6 @@ function ProgressiveImage({ src, alt, className, getImageUrl, priority, directUr
         )}
         onLoad={() => setIsLoaded(true)}
         onError={() => {
-          // Retry once (helps with transient 429/slow thumb generation) before falling back.
-          if (attempt === 0) {
-            setAttempt(1);
-            return;
-          }
           console.error("[IMAGE] Failed to load:", finalSrc);
           setHasError(true);
         }}
