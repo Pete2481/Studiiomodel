@@ -294,37 +294,17 @@ export async function processImageWithAI(
     const upscaleScale = 4;
     console.log(`[AI_EDIT] Upscaling output to HD using nightmareai/real-esrgan (scale=${upscaleScale}) for URL length: ${outputUrl.length}`);
     try {
-      const upscaleModel =
-        "nightmareai/real-esrgan:b3ef194191d13140337468c916c2c5b96dd0cb06dffc032a022a31807f6a5ea8";
-
-      let upscaleOutput: any = null;
-      let upscaleRetries = 0;
-      const upscaleMaxRetries = 2;
-
-      while (upscaleRetries <= upscaleMaxRetries) {
-        try {
-          upscaleOutput = await replicate.run(upscaleModel, {
-            input: {
-              image: outputUrl,
-              scale: upscaleScale,
-              face_enhance: false,
-            },
-          });
-          break;
-        } catch (e: any) {
-          const status = Number(e?.status);
-          const msg = String(e?.message || "");
-          if (status === 429 && upscaleRetries < upscaleMaxRetries) {
-            const delayMs = 3000 * (upscaleRetries + 1);
-            console.log(`[AI_EDIT] Upscaler rate limited (429). Retrying in ${delayMs}ms... (Attempt ${upscaleRetries + 1})`);
-            await new Promise((r) => setTimeout(r, delayMs));
-            upscaleRetries++;
-            continue;
+      const upscaleOutput: any = await replicate.run(
+        "nightmareai/real-esrgan:b3ef194191d13140337468c916c2c5b96dd0cb06dffc032a022a31807f6a5ea8",
+        {
+          input: {
+            image: outputUrl,
+            scale: upscaleScale,
+            face_enhance: false
           }
-          throw e;
         }
-      }
-
+      );
+      
       const finalUrl = await extractUrl(upscaleOutput);
       if (finalUrl) {
         console.log(`[AI_EDIT] HD Upscale complete: ${finalUrl?.substring(0, 100)}...`);
@@ -332,21 +312,12 @@ export async function processImageWithAI(
       }
     } catch (upscaleError) {
       console.error("[AI_EDIT_UPSCALER_ERROR]:", upscaleError);
-      // Don't silently return a small/soft output. But also don't incorrectly claim billing issues.
-      const status = Number((upscaleError as any)?.status);
-      const msg = String((upscaleError as any)?.message || "");
-
-      if (status === 401) {
-        return { success: false, error: "AI is not authorized (Replicate token issue). Please refresh the Replicate API token in Vercel env vars." };
-      }
-      if (status === 402 || msg.toLowerCase().includes("payment") || msg.toLowerCase().includes("billing")) {
-        return { success: false, error: "Replicate billing is required for HD upscaling. Please confirm the Replicate API token belongs to the paid account and billing is enabled." };
-      }
-      if (status === 429 || msg.toLowerCase().includes("thrott") || msg.toLowerCase().includes("rate")) {
-        return { success: false, error: "Replicate rate limit hit during HD upscaling. Please try again in 1–2 minutes." };
-      }
-
-      return { success: false, error: "HD upscaling failed. Please try again." };
+      // Don't silently return a small/soft output. Force a retry so users always get HD.
+      return {
+        success: false,
+        error:
+          "HD upscaling failed. Please try again in a moment (or top up Replicate credits if rate-limited).",
+      };
     }
 
     return { success: true, outputUrl };
