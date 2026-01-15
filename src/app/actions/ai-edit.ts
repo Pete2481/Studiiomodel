@@ -312,8 +312,8 @@ export async function processImageWithAI(
           });
           break;
         } catch (e: any) {
-          const status = Number(e?.status);
-          const msg = String(e?.message || "");
+          const status = Number(e?.status ?? e?.response?.status ?? e?.cause?.status);
+          const msg = String(e?.message ?? e?.response?.data?.message ?? e?.cause?.message ?? "");
           if (status === 429 && upscaleRetries < upscaleMaxRetries) {
             const delayMs = 3000 * (upscaleRetries + 1);
             console.log(`[AI_EDIT] Upscaler rate limited (429). Retrying in ${delayMs}ms... (Attempt ${upscaleRetries + 1})`);
@@ -330,26 +330,32 @@ export async function processImageWithAI(
         console.log(`[AI_EDIT] HD Upscale complete: ${finalUrl?.substring(0, 100)}...`);
         return { success: true, outputUrl: finalUrl };
       }
+      return { success: false, error: "HD upscaler returned no output URL. Please try again." };
     } catch (upscaleError) {
       console.error("[AI_EDIT_UPSCALER_ERROR]:", upscaleError);
       // Don't silently return a small/soft output. But also don't incorrectly claim billing issues.
-      const status = Number((upscaleError as any)?.status);
-      const msg = String((upscaleError as any)?.message || "");
+      const e: any = upscaleError as any;
+      const status = Number(e?.status ?? e?.response?.status ?? e?.cause?.status);
+      const msg = String(e?.message ?? e?.response?.data?.message ?? e?.cause?.message ?? "");
+      const msgLower = msg.toLowerCase();
 
       if (status === 401) {
         return { success: false, error: "AI is not authorized (Replicate token issue). Please refresh the Replicate API token in Vercel env vars." };
       }
-      if (status === 402 || msg.toLowerCase().includes("payment") || msg.toLowerCase().includes("billing")) {
+      if (status === 402 || msgLower.includes("payment") || msgLower.includes("billing") || msgLower.includes("credit")) {
         return { success: false, error: "Replicate billing is required for HD upscaling. Please confirm the Replicate API token belongs to the paid account and billing is enabled." };
       }
-      if (status === 429 || msg.toLowerCase().includes("thrott") || msg.toLowerCase().includes("rate")) {
+      if (status === 429 || msgLower.includes("thrott") || msgLower.includes("rate")) {
         return { success: false, error: "Replicate rate limit hit during HD upscaling. Please try again in 1–2 minutes." };
       }
 
-      return { success: false, error: "HD upscaling failed. Please try again." };
+      // Surface the real cause to speed up debugging in production.
+      const suffix = `${status ? ` (status ${status})` : ""}${msg ? `: ${msg}` : ""}`;
+      return { success: false, error: `HD upscaling failed${suffix || ""}` };
     }
 
-    return { success: true, outputUrl };
+    // If we reached here, HD upscale didn't succeed; do not return the small output.
+    return { success: false, error: "HD upscaling failed. Please try again." };
   } catch (error: any) {
     console.error("[AI_EDIT_ERROR]:", error);
     
@@ -357,7 +363,7 @@ export async function processImageWithAI(
     if (error.message?.includes("throttled") || error.status === 429) {
       return { 
         success: false, 
-        error: "Rate limit reached. Replicate requires at least $5.00 in credit to unlock higher speeds. Please top up your Replicate account." 
+        error: "Replicate rate limit reached. Please try again in 1–2 minutes." 
       };
     }
 
