@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, startTransition } from "react";
+import React, { useState, useEffect, startTransition, useRef } from "react";
 import { Plus, Search, Filter, Image as ImageIcon, Video, MoreHorizontal, ExternalLink, Settings, Trash2, ArrowRight, Heart, Lock, ShieldCheck, ChevronDown, Loader2, Folder } from "lucide-react";
 import { cn, formatDropboxUrl, cleanDropboxLink } from "@/lib/utils";
 import { generateListingCopy, saveGalleryCopy } from "@/app/actions/listing-copy";
@@ -35,12 +35,27 @@ export function DashboardGalleries({
   const [activeCopyGallery, setActiveCopyGallery] = useState<any>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+  const [loadedCovers, setLoadedCovers] = useState<Set<string>>(new Set());
   const [refData, setRefData] = useState<{
     clients: any[];
     services: any[];
     agents: any[];
     bookings: any[];
-  } | null>(null);
+  } | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.sessionStorage.getItem("studiio:galleryRefData");
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { ts: number; data: any };
+      if (!parsed?.data) return null;
+      // 10 minute TTL
+      if (parsed?.ts && Date.now() - parsed.ts > 10 * 60 * 1000) return null;
+      return parsed.data;
+    } catch {
+      return null;
+    }
+  });
+  const refDataPromiseRef = useRef<Promise<any> | null>(null);
 
   // Helper to get optimized proxy URLs
   const getImageUrl = (url: string, galleryId: string, size: string = "w640h480") => {
@@ -91,21 +106,46 @@ export function DashboardGalleries({
     });
   }, [initialGalleries]);
 
+  const ensureRefData = async () => {
+    if (refData) return refData;
+    if (refDataPromiseRef.current) return await refDataPromiseRef.current;
+
+    refDataPromiseRef.current = (async () => {
+      const res = await getGalleryReferenceData();
+      if (res?.success && res?.data) {
+        const data = {
+          clients: res.data.clients || [],
+          services: res.data.services || [],
+          agents: res.data.agents || [],
+          bookings: res.data.bookings || [],
+        };
+        setRefData(data);
+        try {
+          if (typeof window !== "undefined") {
+            window.sessionStorage.setItem("studiio:galleryRefData", JSON.stringify({ ts: Date.now(), data }));
+          }
+        } catch {
+          // ignore cache failures
+        }
+        return data;
+      }
+      return null;
+    })().finally(() => {
+      refDataPromiseRef.current = null;
+    });
+
+    return await refDataPromiseRef.current;
+  };
+
   // Prefetch gallery reference data (clients/services/agents/bookings) in the background for instant drawer UX.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await getGalleryReferenceData();
+        // If we already have cached data, still refresh in background once per mount.
+        const data = await ensureRefData();
         if (cancelled) return;
-        if (res?.success && res?.data) {
-          setRefData({
-            clients: res.data.clients || [],
-            services: res.data.services || [],
-            agents: res.data.agents || [],
-            bookings: res.data.bookings || [],
-          });
-        }
+        if (!data) return;
       } catch {
         // best-effort prefetch; ignore errors
       }
@@ -113,7 +153,7 @@ export function DashboardGalleries({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Best-effort background refresh: update counts for visible galleries that still show 0.
   useEffect(() => {
@@ -137,6 +177,9 @@ export function DashboardGalleries({
 
   const handleCreate = () => {
     setSelectedGallery(null);
+    // Kick off prefetch immediately (so client list is ready before dropdown click)
+    // Don't block opening the drawer; we also start prefetch on hover/focus below.
+    void ensureRefData();
     setIsDrawerOpen(true);
   };
 
@@ -217,6 +260,18 @@ export function DashboardGalleries({
               content="Create a new gallery to begin uploading and delivering media to your clients."
             >
               <button 
+                onMouseEnter={() => {
+                  if (isActionLocked) return;
+                  void ensureRefData();
+                }}
+                onFocus={() => {
+                  if (isActionLocked) return;
+                  void ensureRefData();
+                }}
+                onPointerDown={() => {
+                  if (isActionLocked) return;
+                  void ensureRefData();
+                }}
                 onClick={() => {
                   if (isActionLocked) {
                     window.location.href = "/tenant/settings?tab=billing";
@@ -270,25 +325,54 @@ export function DashboardGalleries({
                   );
                 }
 
+                const hasCover = !!String(coverUrl || "").trim();
+                const coverLoaded = loadedCovers.has(String(gallery.id));
+
+                // Always render a soft placeholder so optimistic/new galleries never look blank.
+                const Placeholder = (
+                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 animate-in fade-in duration-500">
+                    <div className="flex flex-col items-center gap-2 text-slate-400">
+                      <ImageIcon className="h-10 w-10 opacity-70" />
+                      <span className="text-[10px] font-black uppercase tracking-widest opacity-80">No cover yet</span>
+                    </div>
+                  </div>
+                );
+
+                if (!hasCover) return Placeholder;
+
                 const optimizedCoverUrl = getImageUrl(coverUrl, gallery.id, "w640h480");
                 const finalSrc = failedImages.has(gallery.id) ? formattedUrl : optimizedCoverUrl;
 
                 return (
-                  <Image 
-                    src={finalSrc}
-                    alt={gallery.title} 
-                    fill
-                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
-                    className="object-cover transition-transform duration-500 group-hover:scale-110"
-                    priority={idx < 4}
-                    onError={() => {
-                      setFailedImages(prev => {
-                        const next = new Set(prev);
-                        next.add(gallery.id);
-                        return next;
-                      });
-                    }}
-                  />
+                  <>
+                    {Placeholder}
+                    <Image 
+                      src={finalSrc}
+                      alt={gallery.title} 
+                      fill
+                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
+                      className={cn(
+                        "object-cover transition-transform duration-500 group-hover:scale-110",
+                        "transition-opacity duration-700",
+                        coverLoaded ? "opacity-100" : "opacity-0"
+                      )}
+                      priority={idx < 4}
+                      onLoadingComplete={() => {
+                        setLoadedCovers((prev) => {
+                          const next = new Set(prev);
+                          next.add(String(gallery.id));
+                          return next;
+                        });
+                      }}
+                      onError={() => {
+                        setFailedImages(prev => {
+                          const next = new Set(prev);
+                          next.add(gallery.id);
+                          return next;
+                        });
+                      }}
+                    />
+                  </>
                 );
               })()}
               <div className="absolute inset-0 bg-slate-900/0 group-hover:bg-slate-900/40 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
