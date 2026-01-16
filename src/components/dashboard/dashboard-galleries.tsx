@@ -328,24 +328,26 @@ export function DashboardGalleries({
                 const hasCover = !!String(coverUrl || "").trim();
                 const coverLoaded = loadedCovers.has(String(gallery.id));
 
-                // Always render a soft placeholder so optimistic/new galleries never look blank.
-                const Placeholder = (
+                // Show a subtle loading placeholder so it never looks broken/blank.
+                const LoadingPlaceholder = (
                   <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 animate-in fade-in duration-500">
                     <div className="flex flex-col items-center gap-2 text-slate-400">
-                      <ImageIcon className="h-10 w-10 opacity-70" />
-                      <span className="text-[10px] font-black uppercase tracking-widest opacity-80">No cover yet</span>
+                      <Loader2 className="h-7 w-7 animate-spin opacity-70" />
+                      <span className="text-[10px] font-black uppercase tracking-widest opacity-80">
+                        {hasCover ? "Loading cover" : "Cover pending"}
+                      </span>
                     </div>
                   </div>
                 );
 
-                if (!hasCover) return Placeholder;
+                if (!hasCover) return LoadingPlaceholder;
 
                 const optimizedCoverUrl = getImageUrl(coverUrl, gallery.id, "w640h480");
                 const finalSrc = failedImages.has(gallery.id) ? formattedUrl : optimizedCoverUrl;
 
                 return (
                   <>
-                    {Placeholder}
+                    {!coverLoaded ? LoadingPlaceholder : null}
                     <Image 
                       src={finalSrc}
                       alt={gallery.title} 
