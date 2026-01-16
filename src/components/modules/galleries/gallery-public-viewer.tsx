@@ -40,6 +40,7 @@ import { toggleFavorite } from "@/app/actions/gallery";
 import { createEditRequest } from "@/app/actions/edit-request";
 import { unlockAiSuiteForGallery } from "@/app/actions/ai-suite";
 import { permissionService } from "@/lib/permission-service";
+import { CameraLoader } from "@/components/ui/camera-loader";
 
 // Lazy-load heavy components to reduce TBT (Total Blocking Time)
 const DrawingCanvas = dynamic(() => import("./drawing-canvas").then(m => m.DrawingCanvas), { ssr: false });
@@ -58,6 +59,21 @@ interface GalleryPublicViewerProps {
   initialAssets?: any[];
   initialCursor?: string | null;
   isShared?: boolean;
+  /** When provided, indicates why the initial SSR asset fetch returned empty. */
+  initialAssetsError?: string | null;
+  /**
+   * Optional viewer config to support the V2 gallery route without changing V1 defaults.
+   */
+  viewerConfig?: {
+    /** Page size for server pagination (cursor-based) */
+    pageSize?: number;
+    /** How many items to reveal per IntersectionObserver tick (in-memory) */
+    revealStep?: number;
+    /** Run a full refresh scan on open (V1 behavior). V2 disables to avoid blank/reorder. */
+    refreshAssetsOnOpen?: boolean;
+    /** Use progressive low->high banner fade */
+    progressiveBanner?: boolean;
+  };
 }
 
 export function GalleryPublicViewer({ 
@@ -67,8 +83,15 @@ export function GalleryPublicViewer({
   user: initialUser,
   initialAssets = [],
   initialCursor = null,
-  isShared = false
+  isShared = false,
+  initialAssetsError = null,
+  viewerConfig
 }: GalleryPublicViewerProps) {
+  const pageSize = viewerConfig?.pageSize ?? 24;
+  const revealStep = viewerConfig?.revealStep ?? 24;
+  const refreshAssetsOnOpen = viewerConfig?.refreshAssetsOnOpen ?? true;
+  const progressiveBanner = viewerConfig?.progressiveBanner ?? false;
+
   const router = useRouter();
   const [assets, setAssets] = useState<any[]>(initialAssets);
   const [cursor, setCursor] = useState<string | null>(initialCursor);
@@ -100,8 +123,12 @@ export function GalleryPublicViewer({
   const [annotationData, setAnnotationData] = useState<any>(null);
   const [bannerFailed, setBannerFailed] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
+  const [showRefreshToast, setShowRefreshToast] = useState(false);
+  const [isCheckingChanges, setIsCheckingChanges] = useState(false);
+  const signatureRef = useRef<string>("");
+  const lastChangeCheckAt = useRef<number>(0);
 
-  const [visibleCount, setVisibleCount] = useState(24);
+  const [visibleCount, setVisibleCount] = useState(pageSize);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const didRefreshAssetsOnOpen = useRef(false);
 
@@ -267,6 +294,31 @@ export function GalleryPublicViewer({
             </div>
           )}
 
+          {/* Download Favourites (V2: shown only when Favourites tab is active) */}
+          {!isShared && activeFilter === "favorites" && favorites.length > 0 && (
+            <button
+              onClick={async () => {
+                // Ensure we have the full set of images so favourites can be downloaded even if not paged in yet
+                const imgs = await ensureAllImagesLoaded();
+                const favs = imgs.filter((a: any) => favorites.includes(String(a?.id || a?.url || "")));
+                if (favs.length === 0) return;
+                setDownloadAssets(favs);
+                setIsDownloadManagerOpen(true);
+              }}
+              disabled={isSelectingAll}
+              className={cn(
+                "hidden md:flex h-9 px-4 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg transition-all items-center gap-2",
+                isSelectingAll
+                  ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
+                  : "bg-white text-slate-900 border border-slate-200 hover:scale-105 active:scale-95"
+              )}
+              title="Download favourites"
+            >
+              <Download className="h-3 w-3" />
+              Download Favourites
+            </button>
+          )}
+
           {/* Download Selected */}
           {!isShared && (
             <button
@@ -375,7 +427,7 @@ export function GalleryPublicViewer({
 
     setIsLoadingMore(true);
     try {
-      const result = await getGalleryAssets(gallery.id, 24, cursor);
+      const result = await getGalleryAssets(gallery.id, pageSize, cursor);
       if (result.success) {
         setAssets(prev => {
           const newAssets = result.assets || [];
@@ -392,6 +444,59 @@ export function GalleryPublicViewer({
       setIsLoadingMore(false);
     }
   };
+
+  const computeSignature = React.useCallback(
+    (list: any[]) =>
+      (list || [])
+        .slice(0, pageSize)
+        .map((a) => String(a?.id || a?.name || a?.path || a?.url || ""))
+        .join("|"),
+    [pageSize],
+  );
+
+  // V2: keep a stable signature for the first page and check for changes on focus (no auto-reshuffle).
+  useEffect(() => {
+    if (!progressiveBanner) return;
+    // Only update signature when we are not currently prompting a refresh.
+    if (!showRefreshToast) signatureRef.current = computeSignature(assets);
+  }, [assets, progressiveBanner, computeSignature, showRefreshToast]);
+
+  const checkForChanges = React.useCallback(async () => {
+    if (!progressiveBanner) return;
+    const now = Date.now();
+    if (now - lastChangeCheckAt.current < 5000) return; // simple throttle
+    lastChangeCheckAt.current = now;
+
+    setIsCheckingChanges(true);
+    try {
+      const res = await fetch(`/api/gallery/${gallery.id}/changes?limit=${pageSize}`, { cache: "no-store" });
+      const data = await res.json();
+      if (!data?.success) return;
+      const nextSig = String(data.signature || "");
+      if (nextSig && signatureRef.current && nextSig !== signatureRef.current) {
+        setShowRefreshToast(true);
+      }
+    } catch {
+      // non-blocking
+    } finally {
+      setIsCheckingChanges(false);
+    }
+  }, [gallery.id, pageSize, progressiveBanner]);
+
+  useEffect(() => {
+    if (!progressiveBanner) return;
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        checkForChanges();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", onVisibility);
+    };
+  }, [checkForChanges, progressiveBanner]);
 
   // Helper to append shared flag and size for incognito access to locked galleries
   const getImageUrl = (url: string, size: string = "w1024h768") => {
@@ -508,7 +613,7 @@ export function GalleryPublicViewer({
       async function loadInitial() {
         setIsLoading(true);
         try {
-          const result = await getGalleryAssets(gallery.id, 24);
+          const result = await getGalleryAssets(gallery.id, pageSize);
           if (result.success) {
             setAssets(result.assets || []);
             setCursor(result.nextCursor || null);
@@ -526,6 +631,7 @@ export function GalleryPublicViewer({
   // Refresh assets on open to detect newly-added photos in Dropbox/Drive after gallery creation.
   // This does a FULL refresh (pages through all items) so the gallery matches the source folder.
   useEffect(() => {
+    if (!refreshAssetsOnOpen) return;
     if (didRefreshAssetsOnOpen.current) return;
     didRefreshAssetsOnOpen.current = true;
 
@@ -750,7 +856,7 @@ export function GalleryPublicViewer({
         if (entries[0].isIntersecting) {
           // 1. If we have more in memory than visible, show more
           if (combinedMedia.length > visibleCount) {
-            setVisibleCount((prev) => Math.min(prev + 24, combinedMedia.length));
+            setVisibleCount((prev) => Math.min(prev + revealStep, combinedMedia.length));
           } 
           // 2. If we've shown everything in memory and have a cursor, fetch from server
           else if (cursor && !isLoadingMore) {
@@ -849,23 +955,44 @@ export function GalleryPublicViewer({
         const isFolder = bannerUrl?.includes("/drive/folders/") || bannerUrl?.includes("/drive/u/");
         
         if (bannerUrl && !isFolder) {
-          const optimizedBanner = getImageUrl(bannerUrl, "w1024h768");
-          const finalBannerSrc = bannerFailed ? formatDropboxUrl(bannerUrl) : optimizedBanner;
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/8ba4527e-5b8b-42ce-b005-e0cd58eb2355',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'gallery-public-viewer.tsx:571',message:'Banner Image src',data:{optimizedBanner, finalBannerSrc},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-          // #endregion
+          const lowSrc = getImageUrl(bannerUrl, "w640h480");
+          const highSrc = getImageUrl(bannerUrl, "w2048h1536");
+          const fallbackSrc = formatDropboxUrl(bannerUrl);
           return (
             <section className="px-6 pt-6">
               <div className="max-w-[103rem] mx-auto relative h-[60vh] w-full overflow-hidden rounded-[48px] shadow-2xl shadow-slate-200 bg-slate-100">
-                <Image 
-                  src={finalBannerSrc} 
-                  alt={gallery.title}
-                  fill
-                  priority
-                  className="object-cover"
-                  sizes="(max-width: 1280px) 100vw, 1280px"
-                  onError={() => setBannerFailed(true)}
-                />
+                {/* Progressive banner (V2) */}
+                {progressiveBanner ? (
+                  <>
+                    <Image
+                      src={bannerFailed ? fallbackSrc : lowSrc}
+                      alt={gallery.title}
+                      fill
+                      priority
+                      className="object-cover"
+                      sizes="(max-width: 1280px) 100vw, 1280px"
+                      onError={() => setBannerFailed(true)}
+                    />
+                    {/* High-res layer crossfades in after it loads */}
+                    {!bannerFailed && (
+                      <HighResBannerLayer
+                        src={highSrc}
+                        alt={gallery.title}
+                        onError={() => setBannerFailed(true)}
+                      />
+                    )}
+                  </>
+                ) : (
+                  <Image
+                    src={bannerFailed ? fallbackSrc : getImageUrl(bannerUrl, "w1024h768")}
+                    alt={gallery.title}
+                    fill
+                    priority
+                    className="object-cover"
+                    sizes="(max-width: 1280px) 100vw, 1280px"
+                    onError={() => setBannerFailed(true)}
+                  />
+                )}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent z-10" />
                 <div className="absolute bottom-12 left-12 text-white space-y-1 z-20">
                   <h2 className="text-4xl font-bold tracking-tight">{gallery.title}</h2>
@@ -919,6 +1046,19 @@ export function GalleryPublicViewer({
       {/* Main Content */}
       <main className="flex-1 bg-white">
         <div className="max-w-[103rem] mx-auto px-6 py-12">
+          {/* V2: initial preparing overlay (only if we don't have initial assets yet) */}
+          {progressiveBanner && isLoading && assets.length === 0 && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-white/80 backdrop-blur-md">
+              <div className="bg-white rounded-[40px] shadow-2xl border border-slate-100 p-10 w-full max-w-md text-center">
+                <CameraLoader size="lg" className="text-primary mx-auto mb-6" />
+                <h3 className="text-xl font-black text-slate-900 tracking-tight">Preparing your gallery</h3>
+                <p className="text-sm font-medium text-slate-400 mt-2">
+                  We’re syncing your production assets now. This usually takes a moment.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Sub Header / Filters */}
           {!isShared && (
             <div className="flex flex-col md:flex-row items-center justify-between mb-12 gap-6">
@@ -1156,10 +1296,21 @@ export function GalleryPublicViewer({
                 ))}
               </div>
               
-              {/* Load More Trigger */}
-              {combinedMedia.length > visibleCount && (
-                <div ref={loadMoreRef} className="h-20 flex items-center justify-center">
-                  <Loader2 className="h-6 w-6 animate-spin text-slate-200" />
+              {/* Load More Trigger (show when we either have more to reveal OR more to fetch) */}
+              {(combinedMedia.length > visibleCount || !!cursor || isLoadingMore) && (
+                <div ref={loadMoreRef} className="min-h-20 py-8 flex items-center justify-center">
+                  {isLoadingMore && progressiveBanner ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 lg:gap-5 w-full">
+                      {Array.from({ length: revealStep }).map((_, i) => (
+                        <div
+                          key={i}
+                          className="aspect-[3/2] rounded-[24px] bg-slate-50 animate-pulse border border-slate-100"
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <Loader2 className="h-6 w-6 animate-spin text-slate-200" />
+                  )}
                 </div>
               )}
             </>
@@ -1180,12 +1331,55 @@ export function GalleryPublicViewer({
           {!isLoading && activeFilter !== "favorites" && assets.length === 0 && (
             <div className="py-32 text-center rounded-[48px] border-2 border-dashed border-slate-100 bg-slate-50/30">
               <ImageIcon className="h-12 w-12 text-slate-200 mx-auto mb-4" />
-              <p className="text-sm font-bold text-slate-400">Your production assets haven't finished syncing yet.</p>
+              <p className="text-sm font-bold text-slate-400">
+                {process.env.NODE_ENV !== "production" && initialAssetsError
+                  ? initialAssetsError
+                  : "Your production assets haven't finished syncing yet."}
+              </p>
               <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mt-2">Check back in a few moments</p>
             </div>
           )}
         </div>
       </main>
+
+      {/* V2: Refresh Available Toast (on open + tab focus checks) */}
+      {progressiveBanner && showRefreshToast && (
+        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[160] animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className="bg-slate-900/95 backdrop-blur-xl text-white px-5 py-4 rounded-[22px] shadow-2xl flex items-center gap-4 border border-white/10">
+            <div className="space-y-0.5">
+              <p className="text-[10px] font-black uppercase tracking-widest text-white/50">Gallery updated</p>
+              <p className="text-sm font-bold tracking-tight">New or removed photos detected.</p>
+            </div>
+            <button
+              onClick={async () => {
+                setShowRefreshToast(false);
+                setIsLoading(true);
+                try {
+                  const result = await getGalleryAssets(gallery.id, pageSize);
+                  if (result?.success) {
+                    setAssets(result.assets || []);
+                    setCursor(result.nextCursor || null);
+                    setVisibleCount(pageSize);
+                    signatureRef.current = computeSignature(result.assets || []);
+                  }
+                } finally {
+                  setIsLoading(false);
+                }
+              }}
+              className="h-10 px-4 rounded-full bg-white text-slate-900 text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-colors"
+            >
+              Refresh
+            </button>
+            <button
+              onClick={() => setShowRefreshToast(false)}
+              className="h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 transition-colors flex items-center justify-center"
+              title="Dismiss"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Lightbox / Asset Viewer */}
       {selectedAsset && (
@@ -2216,6 +2410,30 @@ export function GalleryPublicViewer({
         />
       )}
     </div>
+  );
+}
+
+function HighResBannerLayer({
+  src,
+  alt,
+  onError,
+}: {
+  src: string;
+  alt: string;
+  onError: () => void;
+}) {
+  const [loaded, setLoaded] = useState(false);
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      fill
+      priority={false}
+      className={cn("object-cover transition-opacity duration-700", loaded ? "opacity-100" : "opacity-0")}
+      sizes="(max-width: 1280px) 100vw, 1280px"
+      onLoad={() => setLoaded(true)}
+      onError={onError}
+    />
   );
 }
 

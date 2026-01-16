@@ -50,8 +50,19 @@ export async function GET(
     }
 
     // 2. Validate size
+    // Dropbox thumbnail sizes are a fixed set. We allow callers to request "larger" sizes,
+    // but we clamp to our maximum supported size to avoid unexpected fallbacks to tiny thumbs.
     const validSizes = ["w32h32", "w64h64", "w128h128", "w640h480", "w960h640", "w1024h768", "w2048h1536"];
-    const thumbnailSize = validSizes.includes(size) ? size : "w640h480";
+    const maxSize = "w2048h1536";
+    let thumbnailSize = validSizes.includes(size) ? size : "w640h480";
+    if (!validSizes.includes(size)) {
+      const m = /^w(\d+)h(\d+)$/.exec(size);
+      if (m) {
+        const w = Number(m[1]);
+        const h = Number(m[2]);
+        if (w >= 2048 || h >= 1536) thumbnailSize = maxSize;
+      }
+    }
 
     // 3. Resolve Gallery & Permissions
     const gallery = await prisma.gallery.findFirst({

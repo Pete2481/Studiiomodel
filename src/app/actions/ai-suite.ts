@@ -429,7 +429,7 @@ export async function runAiSuiteRoomEditor(args: {
     estimatedUsdDelta: 0.35,
   });
 
-  return { success: true as const, outputUrl: result.outputUrl, aiSuite: nextAiSuite };
+  return { success: true as const, outputUrl: String(result.outputUrl), aiSuite: nextAiSuite };
 }
 
 

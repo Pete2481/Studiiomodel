@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { getTenantPrisma } from "@/lib/tenant-guard";
 import { prisma } from "@/lib/prisma";
 import { cleanDropboxLink } from "@/lib/utils";
+import path from "path";
 
 /**
  * Refreshes the Dropbox access token using the refresh token.
@@ -159,6 +160,15 @@ export async function getGalleryAssets(galleryId: string, limit: number = 100, c
     let allAssets: any[] = [];
     let nextCursor: string | undefined = undefined;
 
+    const sortEntriesByNameAsc = (entries: any[]) => {
+      return [...(entries || [])].sort((a: any, b: any) =>
+        String(a?.name || "").localeCompare(String(b?.name || ""), undefined, {
+          numeric: true,
+          sensitivity: "base",
+        }),
+      );
+    };
+
     // Helper for API calls with auto-refresh
     const dropboxFetch = async (url: string, body: any) => {
       let res = await fetch(url, {
@@ -253,7 +263,7 @@ export async function getGalleryAssets(galleryId: string, limit: number = 100, c
         const data = await response.json();
         // We need to know which folder/link this cursor belonged to.
         // For now, we assume "Production" or use metadata if we wanted to be fancy.
-        allAssets = processEntries(data.entries, "Production", shareLink);
+        allAssets = processEntries(sortEntriesByNameAsc(data.entries), "Production", shareLink);
         if (data.has_more) nextCursor = data.cursor;
         // Pagination continuation isn't a full scan, so we avoid writing counts here.
         return { success: true, assets: allAssets, nextCursor };
@@ -279,7 +289,7 @@ export async function getGalleryAssets(galleryId: string, limit: number = 100, c
 
           if (listResponse.ok) {
             const listData = await listResponse.json();
-            allAssets = processEntries(listData.entries, "Production Link", shareLink);
+            allAssets = processEntries(sortEntriesByNameAsc(listData.entries), "Production Link", shareLink);
             if (listData.has_more) nextCursor = listData.cursor;
 
             // Auto-update gallery counts (best effort). For share links we treat the folder listing as the source of truth.
@@ -356,7 +366,7 @@ export async function getGalleryAssets(galleryId: string, limit: number = 100, c
 
         if (response.ok) {
           const data = await response.json();
-          const folderAssets = processEntries(data.entries, folder.name);
+          const folderAssets = processEntries(sortEntriesByNameAsc(data.entries), folder.name);
           allAssets = [...allAssets, ...folderAssets];
           if (data.has_more) nextCursor = data.cursor;
         }
@@ -592,6 +602,169 @@ export async function saveAIResultToDropbox({
   } catch (error: any) {
     console.error("SAVE AI RESULT ERROR:", error);
     return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Saves a single AI result back to Dropbox next to the original file.
+ * - Same folder as original
+ * - Filename: BaseName-AI.jpg
+ * - Never overwrite (Dropbox autorename enabled)
+ */
+export async function saveAIResultSiblingToDropbox({
+  tenantId,
+  galleryId,
+  resultUrl,
+  originalPath,
+  originalName,
+}: {
+  tenantId: string;
+  galleryId?: string;
+  resultUrl: string;
+  originalPath: string;
+  originalName: string;
+}) {
+  try {
+    const session = await auth();
+    if (!session) return { success: false, error: "Unauthorized" };
+
+    const sessionTenantId = (session.user as any)?.tenantId;
+    const role = (session.user as any)?.role;
+    const isAdminLike = role === "ADMIN" || role === "TENANT_ADMIN" || role === "TEAM_MEMBER";
+    if (!isAdminLike || (sessionTenantId && sessionTenantId !== tenantId)) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    const tPrisma = await getTenantPrisma(tenantId);
+    const tenant = await tPrisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { dropboxAccessToken: true, dropboxRefreshToken: true },
+    });
+    if (!tenant?.dropboxAccessToken) throw new Error("Dropbox not connected");
+
+    // Basic allowlist for safety (match external-image route hosts)
+    const parsed = new URL(resultUrl);
+    const ALLOWLIST_HOSTS = new Set(["replicate.delivery", "pbxt.replicate.delivery"]);
+    if (process.env.NODE_ENV !== "production") {
+      // Dev-only: allow local debug endpoints for E2E tests.
+      ALLOWLIST_HOSTS.add("localhost");
+      ALLOWLIST_HOSTS.add("127.0.0.1");
+    }
+    if (!ALLOWLIST_HOSTS.has(parsed.hostname)) {
+      return { success: false, error: "Host not allowed" };
+    }
+
+    const upstream = await fetch(parsed.toString(), { cache: "no-store" });
+    if (!upstream.ok) return { success: false, error: "Failed to download AI result" };
+    const bytes = await upstream.arrayBuffer();
+
+    const baseName = String(originalName || "")
+      .replace(/\.[^.]+$/, "")
+      .replace(/-AI$/i, "");
+
+    // Resolve target directory:
+    // - Prefer the original file's directory
+    // - If the original path is a "share-link relative" path like "/DSC0001.jpg",
+    //   try to resolve a real folder path from gallery metadata (imageFolders or dropboxLink).
+    let resolvedDir = path.posix.dirname(originalPath || "/");
+    resolvedDir = resolvedDir === "." ? "/" : resolvedDir;
+
+    if ((resolvedDir === "/" || resolvedDir === "") && galleryId) {
+      try {
+        const gallery = await prisma.gallery.findUnique({
+          where: { id: galleryId },
+          select: { metadata: true },
+        });
+        const meta: any = (gallery as any)?.metadata || {};
+
+        const mappedFolderPath = meta?.imageFolders?.[0]?.path;
+        if (typeof mappedFolderPath === "string" && mappedFolderPath.startsWith("/")) {
+          resolvedDir = mappedFolderPath;
+        } else if (typeof meta?.dropboxLink === "string" && meta.dropboxLink.trim()) {
+          const metaRes = await fetch("https://api.dropboxapi.com/2/sharing/get_shared_link_metadata", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${tenant.dropboxAccessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ url: meta.dropboxLink }),
+          });
+          if (metaRes.ok) {
+            const sharedMeta: any = await metaRes.json().catch(() => null);
+            const p = sharedMeta?.path_lower || sharedMeta?.path_display;
+            if (typeof p === "string" && p.startsWith("/")) {
+              resolvedDir = sharedMeta?.[".tag"] === "folder" ? p : path.posix.dirname(p);
+            }
+          }
+        }
+      } catch (e) {
+        // non-blocking, fall back to "/"
+      }
+    }
+
+    const targetPath = path.posix.join(resolvedDir || "/", `${baseName}-AI.jpg`);
+
+    let accessToken = tenant.dropboxAccessToken;
+    const uploadFile = async (token: string) => {
+      return fetch("https://content.dropboxapi.com/2/files/upload", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/octet-stream",
+          "Dropbox-API-Arg": JSON.stringify({
+            path: targetPath,
+            mode: "add",
+            autorename: true,
+            mute: false,
+            strict_conflict: true,
+          }),
+        },
+        body: bytes,
+      });
+    };
+
+    let response = await uploadFile(accessToken);
+    if (response.status === 401 && tenant.dropboxRefreshToken) {
+      const newToken = await refreshDropboxAccessToken(tenantId, tenant.dropboxRefreshToken);
+      if (newToken) {
+        accessToken = newToken;
+        response = await uploadFile(accessToken);
+      }
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      // Try to surface a friendlier error for common Dropbox OAuth scope issues.
+      try {
+        const parsedErr: any = JSON.parse(errorText);
+        const tag = parsedErr?.error?.[".tag"];
+        const requiredScope = parsedErr?.error?.required_scope;
+        if (tag === "missing_scope") {
+          return {
+            success: false,
+            code: "MISSING_SCOPE" as const,
+            requiredScope: String(requiredScope || ""),
+            error:
+              `Dropbox permission missing (${String(requiredScope || "unknown")}). ` +
+              "Please disconnect and reconnect Dropbox to grant the new permission.",
+          };
+        }
+      } catch {
+        // ignore JSON parse errors
+      }
+
+      return { success: false, error: `Failed to save to Dropbox: ${errorText}` };
+    }
+
+    const data = await response.json().catch(() => null);
+    return {
+      success: true,
+      path: (data as any)?.path_display || (data as any)?.path_lower || targetPath,
+      name: (data as any)?.name || `${baseName}-AI.jpg`,
+    };
+  } catch (error: any) {
+    console.error("SAVE AI SIBLING ERROR:", error);
+    return { success: false, error: error.message || "Failed to save to Dropbox" };
   }
 }
 

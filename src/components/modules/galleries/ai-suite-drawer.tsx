@@ -464,13 +464,24 @@ export function AISuiteDrawer({
 
       {isDownloadOpen && resultUrl && (
         <DownloadManager
-          galleryId={dbxPath || "ai"}
+          galleryId={galleryId}
           assets={[
             {
               name: `AI-${assetName}`,
               url: resultUrl,
             },
           ]}
+          aiSaveToDropbox={
+            tenantId && dbxPath && assetName && resultUrl
+              ? {
+                  tenantId,
+                  galleryId,
+                  originalPath: dbxPath,
+                  originalName: assetName,
+                  resultUrl,
+                }
+              : null
+          }
           onClose={() => setIsDownloadOpen(false)}
         />
       )}

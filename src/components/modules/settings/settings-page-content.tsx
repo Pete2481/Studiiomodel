@@ -404,7 +404,7 @@ export function SettingsPageContent({ tenant, user, teamMember }: SettingsPageCo
                     <div className="space-y-4">
                       <div className="flex items-center gap-3 p-2 bg-white/10 rounded-2xl border border-white/10 group hover:border-primary/30 transition-all">
                         <div className="flex-1 px-4 font-mono text-[10px] text-white/60 truncate">
-                          {typeof window !== 'undefined' ? `${window.location.origin}/api/calendar/feed/${teamMember.calendarSecret}` : `.../api/calendar/feed/${teamMember.calendarSecret}`}
+                          {`/api/calendar/feed/${teamMember.calendarSecret}`}
                         </div>
                         <button 
                           onClick={() => {
@@ -419,7 +419,7 @@ export function SettingsPageContent({ tenant, user, teamMember }: SettingsPageCo
                         </button>
                       </div>
                       <a 
-                        href={`webcal://${typeof window !== "undefined" ? window.location.host : ""}/api/calendar/feed/${teamMember.calendarSecret}`}
+                        href={typeof window !== "undefined" ? `webcal://${window.location.host}/api/calendar/feed/${teamMember.calendarSecret}` : "#"}
                         className="w-full h-12 bg-primary hover:opacity-90 text-white rounded-2xl flex items-center justify-center gap-3 text-xs font-black uppercase tracking-widest transition-all active:scale-95"
                       >
                         <Plus className="h-4 w-4" />

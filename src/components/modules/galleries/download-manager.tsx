@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Download, Loader2, CheckCircle2, X, AlertCircle, HardDrive, LayoutGrid, Smartphone, Monitor, ChevronRight } from "lucide-react";
+import { Download, Loader2, CheckCircle2, X, AlertCircle, HardDrive, LayoutGrid, Smartphone, Monitor, ChevronRight, CloudUpload } from "lucide-react";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
 import { cn } from "@/lib/utils";
+import { saveAIResultSiblingToDropbox } from "@/app/actions/dropbox";
 
 interface DownloadManagerProps {
   galleryId: string;
@@ -15,16 +16,69 @@ interface DownloadManagerProps {
     url: string;
     settings: any;
   } | null;
+  /**
+   * When provided, show a V2-only "Save to Dropbox" toggle for single AI result downloads.
+   * Saving always uses the original AI result bytes (not resized).
+   */
+  aiSaveToDropbox?: {
+    tenantId: string;
+    galleryId?: string;
+    originalPath: string;
+    originalName: string;
+    resultUrl: string;
+  } | null;
 }
 
 type DownloadResolution = 'original' | 'web' | 'social';
 
-export function DownloadManager({ galleryId, assets, onClose, sharedLink, clientBranding }: DownloadManagerProps) {
+export function DownloadManager({ galleryId, assets, onClose, sharedLink, clientBranding, aiSaveToDropbox }: DownloadManagerProps) {
   const [status, setStatus] = useState<'idle' | 'processing' | 'zipping' | 'complete' | 'error'>('idle');
   const [progress, setProgress] = useState(0);
   const [currentFile, setCurrentFile] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [applyBranding, setApplyBranding] = useState(false);
+  const [saveToDropbox, setSaveToDropbox] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savePath, setSavePath] = useState<string | null>(null);
+  const [saveReconnectUrl, setSaveReconnectUrl] = useState<string | null>(null);
+
+  const runSaveToDropbox = React.useCallback(async () => {
+    if (!saveToDropbox || !aiSaveToDropbox || assets.length !== 1) return null;
+    if (saveStatus === "saving" || saveStatus === "saved") return null;
+
+    setSaveStatus("saving");
+    setSaveError(null);
+    setSavePath(null);
+    setSaveReconnectUrl(null);
+
+    try {
+      const res: any = await saveAIResultSiblingToDropbox({
+        tenantId: aiSaveToDropbox.tenantId,
+        galleryId: aiSaveToDropbox.galleryId,
+        resultUrl: aiSaveToDropbox.resultUrl,
+        originalPath: aiSaveToDropbox.originalPath,
+        originalName: aiSaveToDropbox.originalName,
+      });
+
+      if (res?.success) {
+        setSaveStatus("saved");
+        setSavePath(String(res?.path || res?.name || ""));
+        return res;
+      }
+
+      setSaveStatus("error");
+      setSaveError(String(res?.error || "Save failed"));
+      if (String(res?.code || "") === "MISSING_SCOPE") {
+        setSaveReconnectUrl("/api/auth/dropbox");
+      }
+      return res;
+    } catch (e: any) {
+      setSaveStatus("error");
+      setSaveError(String(e?.message || "Save failed"));
+      return null;
+    }
+  }, [aiSaveToDropbox, assets.length, saveStatus, saveToDropbox]);
 
   const startDownload = async (resolution: DownloadResolution) => {
     setStatus('processing');
@@ -35,6 +89,12 @@ export function DownloadManager({ galleryId, assets, onClose, sharedLink, client
     const folder = zip.folder(`studiio-${resolution}-assets`);
 
     try {
+      // Optional: Save AI result back to Dropbox (single AI only), without blocking download.
+      if (saveToDropbox && aiSaveToDropbox && assets.length === 1) {
+        // fire-and-forget
+        void runSaveToDropbox();
+      }
+
       for (let i = 0; i < assets.length; i++) {
         const asset = assets[i];
         setCurrentFile(asset.name);
@@ -113,7 +173,9 @@ export function DownloadManager({ galleryId, assets, onClose, sharedLink, client
         canvas.toBlob((b) => resolve(b!), "image/jpeg", 0.85);
       };
       img.onerror = reject;
-      img.src = URL.createObjectURL(blob);
+      const objUrl = URL.createObjectURL(blob);
+      img.src = objUrl;
+      img.onloadend = () => URL.revokeObjectURL(objUrl);
     });
   };
 
@@ -169,6 +231,85 @@ export function DownloadManager({ galleryId, assets, onClose, sharedLink, client
                     )} />
                   </div>
                 </div>
+              )}
+
+              {/* Save to Dropbox Toggle (single AI result only) */}
+              {!!aiSaveToDropbox && assets.length === 1 && (
+                <div
+                  className="p-5 rounded-[24px] bg-sky-50/50 border border-sky-100 flex items-center justify-between group cursor-pointer"
+                  onClick={() => setSaveToDropbox(!saveToDropbox)}
+                >
+                  <div className="flex items-center gap-4">
+                    <div
+                      className={cn(
+                        "h-10 w-10 rounded-xl flex items-center justify-center transition-colors",
+                        saveToDropbox ? "bg-sky-500 text-white" : "bg-white text-slate-400 border border-slate-100",
+                      )}
+                    >
+                      <CloudUpload className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-black text-sky-600 uppercase tracking-widest">Save to Dropbox</p>
+                      <p className="text-xs font-bold text-slate-900">
+                        Save AI result back into the folder (Original only)
+                      </p>
+                      <p className="text-[10px] font-bold text-slate-400 mt-1">
+                        {saveStatus === "saved"
+                          ? (savePath ? `Saved ✓ (${savePath})` : "Saved ✓")
+                          : saveStatus === "saving"
+                            ? "Saving…"
+                            : saveStatus === "error"
+                              ? (saveError ? `Save failed: ${saveError}` : "Save failed (download will still work)")
+                              : "Optional"}
+                      </p>
+                      {saveReconnectUrl && (
+                        <a
+                          href={saveReconnectUrl}
+                          className="inline-block mt-2 text-[10px] font-black text-sky-700 uppercase tracking-widest hover:underline"
+                        >
+                          Reconnect Dropbox to enable saving
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                  <div
+                    className={cn(
+                      "w-10 h-5 rounded-full transition-colors relative shrink-0",
+                      saveToDropbox ? "bg-sky-500" : "bg-slate-200",
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        "absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform",
+                        saveToDropbox ? "translate-x-5" : "translate-x-0",
+                      )}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Save Only button (single AI result + toggle enabled) */}
+              {!!aiSaveToDropbox && assets.length === 1 && saveToDropbox && (
+                <button
+                  onClick={async () => {
+                    await runSaveToDropbox();
+                  }}
+                  disabled={saveStatus === "saving" || saveStatus === "saved"}
+                  className={cn(
+                    "w-full h-12 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all active:scale-[0.99] border",
+                    saveStatus === "saved"
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200 cursor-default"
+                      : saveStatus === "saving"
+                        ? "bg-slate-50 text-slate-400 border-slate-200 cursor-wait"
+                        : "bg-sky-600 text-white border-sky-600 hover:bg-sky-700",
+                  )}
+                >
+                  {saveStatus === "saved"
+                    ? "Saved to Dropbox"
+                    : saveStatus === "saving"
+                      ? "Saving to Dropbox…"
+                      : "Save Only to Dropbox (no download)"}
+                </button>
               )}
 
               <div className="grid grid-cols-1 gap-3">

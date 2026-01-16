@@ -8,6 +8,8 @@ import { Suspense, cache } from "react";
 import { Loader2, Camera, ImageIcon } from "lucide-react";
 import { Metadata } from "next";
 import Image from "next/image";
+import { NEXT_PUBLIC_GALLERY_V2_ENABLED } from "@/lib/env";
+import { PublicGalleryV2, generatePublicGalleryV2Metadata, V2_PAGE_SIZE } from "./_public-gallery-v2";
 
 // Enable ISR / Caching with 1 hour revalidation for public galleries
 export const revalidate = 3600;
@@ -92,53 +94,11 @@ export async function generateMetadata({
   params: Promise<{ galleryId: string }> 
 }): Promise<Metadata> {
   const { galleryId } = await params;
-  const gallery = await getGalleryShell(galleryId);
-
-  if (!gallery) return { title: "Gallery Not Found" };
-
-  const title = gallery.title;
-  const description = `Production Gallery by ${gallery.tenant.name}`;
-  
-  // Construct the optimized banner URL for preloading
-  const bannerUrl = gallery.bannerImageUrl || "";
-  const isGoogleDrive = bannerUrl.includes("drive.google.com");
-  const gDriveMatch = bannerUrl.match(/\/d\/([^/]+)/) || bannerUrl.match(/[?&]id=([^&]+)/);
-  const gDriveId = gDriveMatch?.[1];
-
-  const optimizedBannerUrl = bannerUrl 
-    ? (isGoogleDrive && gDriveId
-        ? `/api/google-drive/assets/${galleryId}?id=${gDriveId}&size=w1024h768&shared=true`
-        : `/api/dropbox/assets/${galleryId}?path=/&sharedLink=${encodeURIComponent(cleanDropboxLink(bannerUrl))}&size=w1024h768&shared=true`)
-    : null;
-
-  return {
-    title,
-    description,
-    openGraph: {
-      title,
-      description,
-      images: optimizedBannerUrl ? [{ url: optimizedBannerUrl }] : [],
-      type: 'website',
-    },
-    twitter: {
-      card: 'summary_large_image',
-      title,
-      description,
-      images: optimizedBannerUrl ? [optimizedBannerUrl] : [],
-    },
-    // Preload the LCP image to drop LCP time significantly
-    alternates: {
-      canonical: `/gallery/${galleryId}`,
-    },
-    other: optimizedBannerUrl ? {
-      "rel": "preload",
-      "as": "image",
-      "href": optimizedBannerUrl
-    } : {}
-  };
+  // Use the shared V2 metadata generator for consistency (works for both V2 and V1 fallback).
+  return generatePublicGalleryV2Metadata({ galleryId, canonicalPath: `/gallery/${galleryId}` });
 }
 
-export default async function PublicGalleryPage({
+async function PublicGalleryPageV1({
   params
 }: {
   params: Promise<{ galleryId: string }>
@@ -183,6 +143,21 @@ export default async function PublicGalleryPage({
       </Suspense>
     </div>
   );
+}
+
+export default async function PublicGalleryPage({
+  params,
+}: {
+  params: Promise<{ galleryId: string }>;
+}) {
+  const { galleryId } = await params;
+
+  // Default route now uses V2 (local-first). Keep a kill-switch fallback to V1 if needed.
+  if (!NEXT_PUBLIC_GALLERY_V2_ENABLED) {
+    return PublicGalleryPageV1({ params: Promise.resolve({ galleryId }) });
+  }
+
+  return PublicGalleryV2({ galleryId, pageSize: V2_PAGE_SIZE });
 }
 
 /**
@@ -278,6 +253,7 @@ async function GalleryDataWrapper({
   const assetsResult = await getGalleryAssets(galleryId, 24);
   const initialAssets = assetsResult.success ? assetsResult.assets : [];
   const initialCursor = assetsResult.success ? assetsResult.nextCursor : null;
+  const initialAssetsError = assetsResult.success ? null : (assetsResult as any)?.error || "Failed to load assets";
 
   // Serialize edit tags (handling Decimal)
   const serializedEditTags = gallery.tenant.editTags.map(tag => ({
@@ -330,6 +306,7 @@ async function GalleryDataWrapper({
       editTags={serializedEditTags}
       initialAssets={initialAssets}
       initialCursor={initialCursor}
+      initialAssetsError={initialAssetsError}
     />
   );
 }

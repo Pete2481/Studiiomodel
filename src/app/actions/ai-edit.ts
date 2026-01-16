@@ -119,6 +119,9 @@ export async function processImageWithAI(
       }
     }
 
+    // Ensure we only ever pass plain strings to callers (Client Components cannot receive URL objects).
+    publicImageUrl = typeof publicImageUrl === "string" ? publicImageUrl : String(publicImageUrl);
+
     let model: any;
     let input: any;
 
@@ -287,15 +290,15 @@ export async function processImageWithAI(
       const finalUrl = await extractUrl(upscaleOutput);
       if (finalUrl) {
         console.log(`[AI_EDIT] HD Upscale complete: ${finalUrl?.substring(0, 100)}...`);
-        return { success: true, outputUrl: finalUrl };
+        return { success: true, outputUrl: String(finalUrl) };
       }
     } catch (upscaleError) {
       console.error("[AI_EDIT_UPSCALER_ERROR]:", upscaleError);
       // Fallback to original output if upscaler fails
-      return { success: true, outputUrl };
+      return { success: true, outputUrl: String(outputUrl) };
     }
 
-    return { success: true, outputUrl };
+    return { success: true, outputUrl: String(outputUrl) };
   } catch (error: any) {
     console.error("[AI_EDIT_ERROR]:", error);
     
