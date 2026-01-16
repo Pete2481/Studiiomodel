@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
-import { getTenantPrisma } from "@/lib/tenant-guard";
+import { getTenantPrisma, getSessionTenantId } from "@/lib/tenant-guard";
 import { formatDropboxUrl } from "@/lib/utils";
 import { prisma } from "@/lib/prisma";
 import { Suspense } from "react";
@@ -51,14 +51,16 @@ function GalleriesSkeleton() {
 }
 
 async function GalleriesDataWrapper({ sessionUser, isGlobal, page }: { sessionUser: any, isGlobal: boolean, page: number }) {
-  const limit = 8;
+  const limit = 25;
   const skip = (page - 1) * limit;
   const tPrisma = (isGlobal && sessionUser.isMasterAdmin ? prisma : await getTenantPrisma()) as any;
   const { role, clientId } = sessionUser;
+  const tenantId = isGlobal ? "global" : await getSessionTenantId();
 
   const user = {
     name: sessionUser.name || "User",
     role: sessionUser.role || "CLIENT",
+    tenantId: tenantId ? String(tenantId) : null,
     clientId: sessionUser.clientId || null,
     agentId: sessionUser.agentId || null,
     initials: sessionUser.name?.split(' ').map((n: string) => n[0]).join('') || "U",
@@ -76,63 +78,37 @@ async function GalleriesDataWrapper({ sessionUser, isGlobal, page }: { sessionUs
     }
   }
 
-  const [dbGalleries, totalCount, dbClients, dbBookings, dbAgents, dbServices] = await Promise.all([
+  const [dbGalleries, totalCount] = await Promise.all([
     tPrisma.gallery.findMany({
       where: galleryWhere, orderBy: { createdAt: 'desc' }, skip, take: limit,
       include: {
         client: { select: { id: true, name: true, businessName: true } },
         property: { select: { id: true, name: true } },
         media: { select: { thumbnailUrl: true, url: true }, take: 1 },
-        services: { include: { service: true } },
-        favorites: { select: { id: true } },
-        invoices: { select: { id: true, status: true, number: true, tenantId: true } },
-        booking: { include: { assignments: { include: { teamMember: { select: { displayName: true } } } } } }
+        agent: { select: { name: true } },
+        services: { select: { serviceId: true } },
+        _count: { select: { favorites: true } },
+        invoices: { select: { id: true, status: true, number: true, tenantId: true }, orderBy: { createdAt: "desc" }, take: 1 },
+        booking: { include: { assignments: { include: { teamMember: { select: { displayName: true } } } } } },
       }
     }),
     tPrisma.gallery.count({ where: galleryWhere }),
-    tPrisma.client.findMany({ 
-      where: !canViewAll && clientId ? { id: clientId, deletedAt: null } : { deletedAt: null }, 
-      select: { id: true, name: true, businessName: true, avatarUrl: true, settings: true } 
-    }),
-    tPrisma.booking.findMany({ 
-      where: !canViewAll && clientId ? { clientId, deletedAt: null } : { deletedAt: null },
-      select: { id: true, title: true, clientId: true, property: { select: { name: true } }, services: { include: { service: true } } } 
-    }),
-    tPrisma.agent.findMany({ 
-      where: !canViewAll && clientId ? { clientId, deletedAt: null } : { deletedAt: null },
-      select: { id: true, name: true, clientId: true, avatarUrl: true } 
-    }),
-    tPrisma.service.findMany({ where: { deletedAt: null }, select: { id: true, name: true, price: true, icon: true } })
   ]);
 
   const galleries = dbGalleries.map((g: any) => ({
     id: String(g.id), title: String(g.title), clientId: g.clientId ? String(g.clientId) : "", bookingId: g.bookingId ? String(g.bookingId) : undefined, agentId: g.agentId ? String(g.agentId) : undefined,
+    agentName: g.agent?.name ? String(g.agent.name) : null,
     otcName: (g as any).otcName || null,
     otcEmail: (g as any).otcEmail || null,
     otcPhone: (g as any).otcPhone || null,
     otcNotes: (g as any).otcNotes || null,
-    property: String(g.property?.name || g.title), client: String(g.client?.businessName || g.client?.name || (g as any).otcName || "One-Time Client"), status: String(g.status), isLocked: (g as any).isLocked, watermarkEnabled: (g as any).watermarkEnabled, bannerImageUrl: g.bannerImageUrl, metadata: g.metadata, serviceIds: g.services.map((s: any) => s.service.id), mediaCount: Number((g.metadata as any)?.imageCount || 0), videoCount: (g.metadata as any)?.videoLinks?.length || 0, favoriteCount: g.favorites.length, photographers: g.booking?.assignments?.map((a: any) => a.teamMember.displayName).join(", ") || "No team assigned", invoice: g.invoices[0] || null, createdAt: g.createdAt,
+    property: String(g.property?.name || g.title), client: String(g.client?.businessName || g.client?.name || (g as any).otcName || "One-Time Client"), status: String(g.status), isLocked: (g as any).isLocked, watermarkEnabled: (g as any).watermarkEnabled, bannerImageUrl: g.bannerImageUrl, metadata: g.metadata, serviceIds: (g.services || []).map((s: any) => String(s.serviceId)), mediaCount: Number((g.metadata as any)?.imageCount || 0), videoCount: (g.metadata as any)?.videoLinks?.length || 0, favoriteCount: Number(g?._count?.favorites || 0), photographers: g.booking?.assignments?.map((a: any) => a.teamMember.displayName).join(", ") || "No team assigned", invoice: g.invoices?.[0] || null, createdAt: g.createdAt,
     cover: formatDropboxUrl(g.bannerImageUrl || String(g.media[0]?.thumbnailUrl || g.media[0]?.url || "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80"))
-  }));
-
-  const bookingsData = dbBookings.map((b: any) => ({
-    id: String(b.id), title: String(b.title), clientId: String(b.clientId), property: b.property,
-    services: b.services.map((s: any) => ({ ...s, service: { ...s.service, price: Number(s.service.price) } }))
   }));
 
   return (
     <GalleryPageContent 
       galleries={galleries}
-      clients={dbClients.map((c: any) => ({
-        id: String(c.id),
-        name: String(c.name),
-        businessName: String(c.businessName || ""),
-        avatarUrl: c.avatarUrl ? String(c.avatarUrl) : null,
-        disabledServices: (c.settings as any)?.disabledServices || []
-      }))}
-      bookings={bookingsData}
-      agents={dbAgents}
-      services={dbServices.map((s: any) => ({ id: String(s.id), name: String(s.name), price: Number(s.price), icon: s.icon }))}
       user={user}
       pagination={{ total: totalCount, page, limit }}
     />

@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useState, useEffect, startTransition } from "react";
+import React, { useState, useEffect, startTransition, useRef } from "react";
 import NextImage from "next/image";
 import { Bell, DollarSign, Plus, Search, Filter, Image as ImageIcon, Video, MoreHorizontal, ExternalLink, Settings, Trash2, Heart, List as ListIcon, LayoutGrid, Mail, Copy, CheckCircle2, Clock, Check, Loader2, Lock, ShieldCheck, ChevronDown, Sparkles } from "lucide-react";
 import { cn, formatDropboxUrl } from "@/lib/utils";
 import { GalleryDrawer } from "./gallery-drawer";
 import { AIListingModal } from "./ai-listing-modal";
 import { GalleryStatusDropdown } from "./gallery-status-dropdown";
-import { deleteGallery, notifyGalleryClient, refreshGalleryCounts, updateGalleryStatus } from "@/app/actions/gallery";
+import { deleteGallery, notifyGalleryClient, refreshGalleryCounts, updateGalleryStatus, getGalleryReferenceData } from "@/app/actions/gallery";
 import { createInvoiceFromGallery } from "@/app/actions/invoice";
 import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
@@ -18,10 +18,10 @@ import { InvoicePreviewModal } from "../invoices/invoice-preview-modal";
 
 interface GalleryPageContentProps {
   galleries: any[];
-  clients: any[];
-  bookings: any[];
-  agents: any[];
-  services: any[];
+  clients?: any[];
+  bookings?: any[];
+  agents?: any[];
+  services?: any[];
   user: any;
   pagination: {
     total: number;
@@ -33,8 +33,8 @@ interface GalleryPageContentProps {
 
 export function GalleryPageContent({ 
   galleries: initialGalleries, 
-  clients, 
-  bookings, 
+  clients,
+  bookings,
   agents,
   services,
   user,
@@ -54,6 +54,71 @@ export function GalleryPageContent({
   const [isCreatingInvoice, setIsCreatingInvoice] = useState<string | null>(null);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [refData, setRefData] = useState<{
+    clients: any[];
+    services: any[];
+    agents: any[];
+    bookings: any[];
+  } | null>(() => {
+    if (typeof window === "undefined") return null;
+    const tenantKey = String((user as any)?.tenantId || "");
+    if (!tenantKey) return null;
+    try {
+      const raw = window.sessionStorage.getItem(`studiio:galleryRefData:${tenantKey}`);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { ts: number; data: any };
+      if (!parsed?.data) return null;
+      // 10 minute TTL
+      if (parsed?.ts && Date.now() - parsed.ts > 10 * 60 * 1000) return null;
+      return parsed.data;
+    } catch {
+      return null;
+    }
+  });
+  const refDataPromiseRef = useRef<Promise<any> | null>(null);
+
+  const ensureRefData = async () => {
+    if (refData) return refData;
+    if (refDataPromiseRef.current) return await refDataPromiseRef.current;
+
+    refDataPromiseRef.current = (async () => {
+      const res = await getGalleryReferenceData();
+      if (res?.success && res?.data) {
+        const data = {
+          clients: res.data.clients || [],
+          services: res.data.services || [],
+          agents: res.data.agents || [],
+          bookings: res.data.bookings || [],
+        };
+        setRefData(data);
+        const tenantKey = String((user as any)?.tenantId || "");
+        if (tenantKey) {
+          try {
+            if (typeof window !== "undefined") {
+              window.sessionStorage.setItem(
+                `studiio:galleryRefData:${tenantKey}`,
+                JSON.stringify({ ts: Date.now(), data }),
+              );
+            }
+          } catch {
+            // ignore cache failures
+          }
+        }
+        return data;
+      }
+      return null;
+    })().finally(() => {
+      refDataPromiseRef.current = null;
+    });
+
+    return await refDataPromiseRef.current;
+  };
+
+  // Background prefetch for instant drawer UX (does not block page render)
+  useEffect(() => {
+    void ensureRefData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Sync state with props when router.refresh() is called
   useEffect(() => {
@@ -120,6 +185,7 @@ export function GalleryPageContent({
       window.location.href = "/tenant/settings?tab=billing";
       return;
     }
+    void ensureRefData();
     setSelectedGallery(null);
     setIsDrawerOpen(true);
   };
@@ -129,6 +195,7 @@ export function GalleryPageContent({
       alert("Permission Denied: You cannot edit galleries.");
       return;
     }
+    void ensureRefData();
     setSelectedGallery(gallery);
     setIsDrawerOpen(true);
   };
@@ -194,6 +261,11 @@ export function GalleryPageContent({
     g.property.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const agentsForLookup = (refData?.agents || agents || []) as any[];
+  const clientsForDrawer = (refData?.clients || clients || []) as any[];
+  const servicesForDrawer = (refData?.services || services || []) as any[];
+  const bookingsForDrawer = (refData?.bookings || bookings || []) as any[];
+
   return (
     <div className="flex flex-col gap-8">
       {/* Filter Bar */}
@@ -238,6 +310,18 @@ export function GalleryPageContent({
 
         {user.role !== "CLIENT" && (
           <button 
+            onMouseEnter={() => {
+              if (isActionLocked) return;
+              void ensureRefData();
+            }}
+            onFocus={() => {
+              if (isActionLocked) return;
+              void ensureRefData();
+            }}
+            onPointerDown={() => {
+              if (isActionLocked) return;
+              void ensureRefData();
+            }}
             onClick={handleCreate}
             className={cn(
               "ui-button-primary flex items-center gap-2",
@@ -446,7 +530,7 @@ export function GalleryPageContent({
                         <p className="text-sm font-bold text-slate-900">{gallery.client}</p>
                         {gallery.agentId && (
                           <p className="text-[10px] font-black text-primary uppercase tracking-widest">
-                            {agents.find(a => a.id === gallery.agentId)?.name || "Lead Agent"}
+                            {gallery.agentName || agentsForLookup.find(a => a.id === gallery.agentId)?.name || "Lead Agent"}
                           </p>
                         )}
                       </div>
@@ -670,10 +754,10 @@ export function GalleryPageContent({
         onClose={() => setIsDrawerOpen(false)}
         initialGallery={selectedGallery}
         onRefresh={() => startTransition(() => router.refresh())}
-        prefetchedClients={clients}
-        prefetchedServices={services}
-        prefetchedAgents={agents}
-        prefetchedBookings={bookings}
+        prefetchedClients={clientsForDrawer}
+        prefetchedServices={servicesForDrawer}
+        prefetchedAgents={agentsForLookup}
+        prefetchedBookings={bookingsForDrawer}
         onOptimisticCreate={(temp) => {
           setGalleries((prev: any[]) => [temp, ...(prev || [])]);
         }}
