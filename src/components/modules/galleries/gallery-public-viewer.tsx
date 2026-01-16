@@ -956,7 +956,7 @@ export function GalleryPublicViewer({
         
         if (bannerUrl && !isFolder) {
           const lowSrc = getImageUrl(bannerUrl, "w640h480");
-          const highSrc = getImageUrl(bannerUrl, "w2048h1536");
+          const highSrc = getImageUrl(bannerUrl, "w2560h1440");
           const fallbackSrc = formatDropboxUrl(bannerUrl);
           return (
             <section className="px-6 pt-6">
