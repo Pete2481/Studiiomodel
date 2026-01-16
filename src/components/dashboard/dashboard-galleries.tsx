@@ -357,10 +357,7 @@ export function DashboardGalleries({
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         initialGallery={selectedGallery}
-        onRefresh={() => {
-          // Use a hard refresh to ensure the dashboard renders the new data instantly
-          window.location.reload();
-        }}
+        onRefresh={() => router.refresh()}
       />
 
       {isCopyModalOpen && activeCopyGallery && (

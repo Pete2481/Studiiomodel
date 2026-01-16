@@ -42,14 +42,36 @@ interface GalleryDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   initialGallery?: any;
-  onRefresh: () => void;
+  /**
+   * Used for non-optimistic flows (e.g. updating an existing gallery).
+   * For create, prefer the optimistic callbacks below.
+   */
+  onRefresh?: () => void;
+
+  /** Prefetched reference data (clients/services/agents/bookings) to avoid “Loading…” spinners on open. */
+  prefetchedClients?: any[];
+  prefetchedServices?: any[];
+  prefetchedAgents?: any[];
+  prefetchedBookings?: any[];
+
+  /** Optimistic create lifecycle (close instantly, insert card, then reconcile in background). */
+  onOptimisticCreate?: (tempGallery: any) => void;
+  onOptimisticResolve?: (tempId: string, result: any) => void;
+  onOptimisticFail?: (tempId: string, error: string) => void;
 }
 
 export function GalleryDrawer({ 
   isOpen, 
   onClose, 
   initialGallery,
-  onRefresh 
+  onRefresh,
+  prefetchedClients,
+  prefetchedServices,
+  prefetchedAgents,
+  prefetchedBookings,
+  onOptimisticCreate,
+  onOptimisticResolve,
+  onOptimisticFail,
 }: GalleryDrawerProps) {
   const [activeSection, setActiveTab] = useState<"setup" | "assets">("setup");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -72,9 +94,28 @@ export function GalleryDrawer({
   const [localAgents, setLocalAgents] = useState<any[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
 
-  // On-demand reference data fetching
+  // Prefer prefetched reference data (instant), then fall back to on-demand fetch.
   useEffect(() => {
-    if (isOpen && localClients.length === 0 && !isLoadingRefData) {
+    if (!isOpen) return;
+    if (localClients.length > 0 || localServices.length > 0 || localAgents.length > 0 || bookings.length > 0) return;
+
+    const hasPrefetched =
+      (prefetchedClients && prefetchedClients.length > 0) ||
+      (prefetchedServices && prefetchedServices.length > 0) ||
+      (prefetchedAgents && prefetchedAgents.length > 0) ||
+      (prefetchedBookings && prefetchedBookings.length > 0);
+
+    if (hasPrefetched) {
+      if (prefetchedClients?.length) setLocalClients(prefetchedClients);
+      if (prefetchedServices?.length) setLocalServices(prefetchedServices);
+      if (prefetchedAgents?.length) setLocalAgents(prefetchedAgents);
+      if (prefetchedBookings?.length) setBookings(prefetchedBookings);
+    }
+  }, [isOpen, prefetchedClients, prefetchedServices, prefetchedAgents, prefetchedBookings, localClients.length, localServices.length, localAgents.length, bookings.length]);
+
+  useEffect(() => {
+    const hasPrefetched = !!(prefetchedClients && prefetchedClients.length > 0);
+    if (isOpen && localClients.length === 0 && !isLoadingRefData && !hasPrefetched) {
       const fetchRefData = async () => {
         setIsLoadingRefData(true);
         try {
@@ -93,7 +134,7 @@ export function GalleryDrawer({
       };
       fetchRefData();
     }
-  }, [isOpen, localClients.length, isLoadingRefData]);
+  }, [isOpen, localClients.length, isLoadingRefData, prefetchedClients]);
 
   const IconMap: Record<string, any> = {
     CAMERA: Camera,
@@ -238,26 +279,86 @@ export function GalleryDrawer({
     if (formData.clientMode === "otc" && !String(formData.otcName || "").trim()) return alert("Please enter an OTC name");
     if (!formData.title) return alert("Please enter a gallery title");
 
+    const payload = {
+      ...formData,
+      clientId: formData.clientMode === "otc" ? "" : formData.clientId,
+      isLocked: formData.isLocked,
+      watermarkEnabled: formData.watermarkEnabled,
+      agentId: formData.agentId,
+      notifyClient: formData.notifyClient,
+      bannerImageUrl: formData.bannerImageUrl,
+      serviceIds: formData.serviceIds,
+      metadata: {
+        dropboxLink: formData.dropboxLink,
+        imageFolders: formData.imageFolders,
+        videoLinks: formData.videoLinks,
+        settings: formData.settings
+      }
+    };
+
+    // Optimistic create path (instant close + background save)
+    const isCreate = !formData.id;
+    const canOptimistic = isCreate && typeof onOptimisticCreate === "function" && typeof onOptimisticResolve === "function";
+    if (canOptimistic) {
+      const tempId = `temp:${Date.now()}`;
+      const clientLabel =
+        formData.clientMode === "otc"
+          ? String(formData.otcName || "OTC")
+          : (localClients.find((c: any) => String(c.id) === String(formData.clientId))?.businessName ||
+              localClients.find((c: any) => String(c.id) === String(formData.clientId))?.name ||
+              "Client");
+
+      onOptimisticCreate({
+        id: tempId,
+        title: String(formData.title || "New Gallery"),
+        property: String(formData.title || "TBC"),
+        client: String(clientLabel),
+        status: String(formData.status || "DRAFT"),
+        isLocked: !!formData.isLocked,
+        watermarkEnabled: !!formData.watermarkEnabled,
+        notifyClient: !!formData.notifyClient,
+        mediaCount: 0,
+        videoCount: 0,
+        favoriteCount: 0,
+        photographers: "The Team",
+        cover: String(formData.bannerImageUrl || ""),
+        bannerImageUrl: String(formData.bannerImageUrl || ""),
+        metadata: {
+          dropboxLink: String(formData.dropboxLink || ""),
+          imageFolders: formData.imageFolders || [],
+          videoLinks: formData.videoLinks || [],
+          settings: formData.settings || {},
+        },
+        __optimistic: true,
+        createdAt: new Date().toISOString(),
+      });
+
+      onClose(); // close instantly
+
+      (async () => {
+        try {
+          const result = await upsertGallery(payload);
+          if (result?.success) {
+            onOptimisticResolve(tempId, result);
+          } else {
+            const msg = String(result?.error || "Failed to save gallery");
+            if (onOptimisticFail) onOptimisticFail(tempId, msg);
+          }
+        } catch (err: any) {
+          const msg = String(err?.message || "Failed to save gallery");
+          if (onOptimisticFail) onOptimisticFail(tempId, msg);
+        }
+      })();
+
+      return;
+    }
+
+    // Non-optimistic path (updates / fallback)
     setIsSubmitting(true);
     try {
-      const result = await upsertGallery({
-        ...formData,
-        clientId: formData.clientMode === "otc" ? "" : formData.clientId,
-        isLocked: formData.isLocked,
-        watermarkEnabled: formData.watermarkEnabled,
-        agentId: formData.agentId,
-        notifyClient: formData.notifyClient,
-        bannerImageUrl: formData.bannerImageUrl,
-        serviceIds: formData.serviceIds,
-        metadata: {
-          dropboxLink: formData.dropboxLink,
-          imageFolders: formData.imageFolders,
-          videoLinks: formData.videoLinks,
-          settings: formData.settings
-        }
-      });
+      const result = await upsertGallery(payload);
       if (result.success) {
-        onRefresh();
+        onRefresh?.();
         onClose();
       } else {
         alert(result.error);

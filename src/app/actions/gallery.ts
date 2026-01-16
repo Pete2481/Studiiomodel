@@ -31,7 +31,20 @@ export async function upsertGallery(data: any) {
     revalidatePath("/tenant/galleries");
     revalidatePath("/");
     
-    return { success: true, galleryId: gallery.id };
+    return {
+      success: true,
+      galleryId: String(gallery.id),
+      gallerySummary: {
+        id: String(gallery.id),
+        title: String((gallery as any)?.title || ""),
+        status: String((gallery as any)?.status || ""),
+        clientId: (gallery as any)?.clientId ? String((gallery as any).clientId) : null,
+        propertyId: (gallery as any)?.propertyId ? String((gallery as any).propertyId) : null,
+        isLocked: Boolean((gallery as any)?.isLocked),
+        watermarkEnabled: Boolean((gallery as any)?.watermarkEnabled),
+        createdAt: (gallery as any)?.createdAt ? String((gallery as any).createdAt) : null,
+      },
+    };
   } catch (error: any) {
     console.error("UPSERT GALLERY ERROR:", error);
     return { success: false, error: error.message || "Failed to save gallery" };

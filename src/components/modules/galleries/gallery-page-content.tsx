@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, startTransition } from "react";
 import NextImage from "next/image";
 import { Bell, DollarSign, Plus, Search, Filter, Image as ImageIcon, Video, MoreHorizontal, ExternalLink, Settings, Trash2, Heart, List as ListIcon, LayoutGrid, Mail, Copy, CheckCircle2, Clock, Check, Loader2, Lock, ShieldCheck, ChevronDown, Sparkles } from "lucide-react";
 import { cn, formatDropboxUrl } from "@/lib/utils";
@@ -669,7 +669,26 @@ export function GalleryPageContent({
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         initialGallery={selectedGallery}
-        onRefresh={() => window.location.reload()}
+        onRefresh={() => startTransition(() => router.refresh())}
+        prefetchedClients={clients}
+        prefetchedServices={services}
+        prefetchedAgents={agents}
+        prefetchedBookings={bookings}
+        onOptimisticCreate={(temp) => {
+          setGalleries((prev: any[]) => [temp, ...(prev || [])]);
+        }}
+        onOptimisticResolve={(tempId, result) => {
+          const realId = String(result?.galleryId || "");
+          if (!realId) return;
+          setGalleries((prev: any[]) =>
+            (prev || []).map((g: any) => (String(g.id) === String(tempId) ? { ...g, id: realId, __optimistic: false } : g)),
+          );
+          startTransition(() => router.refresh());
+        }}
+        onOptimisticFail={(tempId, err) => {
+          setGalleries((prev: any[]) => (prev || []).filter((g: any) => String(g.id) !== String(tempId)));
+          alert(err || "Failed to save gallery");
+        }}
       />
 
       <InvoicePreviewModal 
