@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, startTransition } from "react";
 import { Plus, Search, Filter, Image as ImageIcon, Video, MoreHorizontal, ExternalLink, Settings, Trash2, ArrowRight, Heart, Lock, ShieldCheck, ChevronDown, Loader2, Folder } from "lucide-react";
 import { cn, formatDropboxUrl, cleanDropboxLink } from "@/lib/utils";
 import { generateListingCopy, saveGalleryCopy } from "@/app/actions/listing-copy";
@@ -8,7 +8,7 @@ import { Sparkles, FileText } from "lucide-react";
 import { AIListingModal } from "../modules/galleries/ai-listing-modal";
 import { GalleryDrawer } from "../modules/galleries/gallery-drawer";
 import { GalleryStatusDropdown } from "../modules/galleries/gallery-status-dropdown";
-import { deleteGallery, notifyGalleryClient, refreshGalleryCounts, updateGalleryStatus } from "@/app/actions/gallery";
+import { deleteGallery, notifyGalleryClient, refreshGalleryCounts, getGalleryReferenceData } from "@/app/actions/gallery";
 import Link from "next/link";
 import { Hint } from "@/components/ui";
 import { Bell } from "lucide-react";
@@ -35,6 +35,12 @@ export function DashboardGalleries({
   const [activeCopyGallery, setActiveCopyGallery] = useState<any>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+  const [refData, setRefData] = useState<{
+    clients: any[];
+    services: any[];
+    agents: any[];
+    bookings: any[];
+  } | null>(null);
 
   // Helper to get optimized proxy URLs
   const getImageUrl = (url: string, galleryId: string, size: string = "w640h480") => {
@@ -73,6 +79,42 @@ export function DashboardGalleries({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [openMenuId]);
 
+  // Keep local list in sync with server-refreshed props (router.refresh()) while preserving any optimistic temp cards.
+  useEffect(() => {
+    setGalleries((prev: any[]) => {
+      const optimistic = (prev || []).filter((g: any) => String(g?.id || "").startsWith("temp:") || g?.__optimistic);
+      const next = Array.isArray(initialGalleries) ? initialGalleries : [];
+      if (optimistic.length === 0) return next;
+      const nextIds = new Set(next.map((g: any) => String(g?.id)));
+      const keepOptimistic = optimistic.filter((g: any) => !nextIds.has(String(g?.id)));
+      return [...keepOptimistic, ...next];
+    });
+  }, [initialGalleries]);
+
+  // Prefetch gallery reference data (clients/services/agents/bookings) in the background for instant drawer UX.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await getGalleryReferenceData();
+        if (cancelled) return;
+        if (res?.success && res?.data) {
+          setRefData({
+            clients: res.data.clients || [],
+            services: res.data.services || [],
+            agents: res.data.agents || [],
+            bookings: res.data.bookings || [],
+          });
+        }
+      } catch {
+        // best-effort prefetch; ignore errors
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Best-effort background refresh: update counts for visible galleries that still show 0.
   useEffect(() => {
     const candidates = (galleries || [])
@@ -84,7 +126,7 @@ export function DashboardGalleries({
     const t = window.setTimeout(async () => {
       try {
         const res = await refreshGalleryCounts(candidates);
-        if (res?.success) router.refresh();
+        if (res?.success) startTransition(() => router.refresh());
       } catch (e) {
         // non-blocking
       }
@@ -119,6 +161,33 @@ export function DashboardGalleries({
         setGalleries(galleries.filter(g => g.id !== id));
       }
     }
+  };
+
+  const handleOptimisticCreate = (tempGallery: any) => {
+    setGalleries((prev: any[]) => [tempGallery, ...(prev || [])]);
+  };
+
+  const handleOptimisticResolve = (tempId: string, result: any) => {
+    const summary = result?.gallerySummary;
+    const finalId = String(result?.galleryId || summary?.id || "");
+    setGalleries((prev: any[]) =>
+      (prev || []).map((g: any) => {
+        if (String(g?.id) !== String(tempId)) return g;
+        const merged = {
+          ...g,
+          ...(summary || {}),
+          id: finalId || g.id,
+          __optimistic: false,
+        };
+        return merged;
+      })
+    );
+    startTransition(() => router.refresh());
+  };
+
+  const handleOptimisticFail = (tempId: string, error: string) => {
+    setGalleries((prev: any[]) => (prev || []).filter((g: any) => String(g?.id) !== String(tempId)));
+    alert(error || "Failed to save gallery");
   };
 
   const filteredGalleries = galleries.filter(g => 
@@ -357,7 +426,14 @@ export function DashboardGalleries({
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         initialGallery={selectedGallery}
-        onRefresh={() => router.refresh()}
+        onRefresh={() => startTransition(() => router.refresh())}
+        prefetchedClients={refData?.clients || []}
+        prefetchedServices={refData?.services || []}
+        prefetchedAgents={refData?.agents || []}
+        prefetchedBookings={refData?.bookings || []}
+        onOptimisticCreate={handleOptimisticCreate}
+        onOptimisticResolve={handleOptimisticResolve}
+        onOptimisticFail={handleOptimisticFail}
       />
 
       {isCopyModalOpen && activeCopyGallery && (
