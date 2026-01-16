@@ -11,6 +11,7 @@ interface GalleryPublicViewerV2Props {
   initialAssets?: any[];
   initialCursor?: string | null;
   isShared?: boolean;
+  initialAssetsError?: string | null;
 }
 
 export function GalleryPublicViewerV2(props: GalleryPublicViewerV2Props) {

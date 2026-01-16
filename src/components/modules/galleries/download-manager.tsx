@@ -153,10 +153,23 @@ export function DownloadManager({ galleryId, assets, onClose, sharedLink, client
   const resizeImage = (blob: Blob, maxWidth: number): Promise<Blob> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
+      const objUrl = URL.createObjectURL(blob);
+
+      const cleanup = () => {
+        try {
+          URL.revokeObjectURL(objUrl);
+        } catch {
+          // ignore
+        }
+      };
+
       img.onload = () => {
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
-        if (!ctx) return reject("Canvas context error");
+        if (!ctx) {
+          cleanup();
+          return reject("Canvas context error");
+        }
 
         let width = img.width;
         let height = img.height;
@@ -170,12 +183,23 @@ export function DownloadManager({ galleryId, assets, onClose, sharedLink, client
         canvas.height = height;
         ctx.drawImage(img, 0, 0, width, height);
 
-        canvas.toBlob((b) => resolve(b!), "image/jpeg", 0.85);
+        canvas.toBlob(
+          (b) => {
+            cleanup();
+            if (!b) return reject("Failed to encode image");
+            resolve(b);
+          },
+          "image/jpeg",
+          0.85,
+        );
       };
-      img.onerror = reject;
-      const objUrl = URL.createObjectURL(blob);
+
+      img.onerror = () => {
+        cleanup();
+        reject("Failed to load image for resize");
+      };
+
       img.src = objUrl;
-      img.onloadend = () => URL.revokeObjectURL(objUrl);
     });
   };
 
