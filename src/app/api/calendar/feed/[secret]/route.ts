@@ -11,11 +11,11 @@ export async function GET(
   const [tenant, member] = await Promise.all([
     prisma.tenant.findUnique({
       where: { calendarSecret: secret },
-      select: { id: true, name: true }
+      select: { id: true, name: true, timezone: true }
     }),
     prisma.teamMember.findUnique({
       where: { calendarSecret: secret },
-      include: { tenant: { select: { id: true, name: true } } }
+      include: { tenant: { select: { id: true, name: true, timezone: true } } }
     })
   ]);
 
@@ -72,7 +72,7 @@ export async function GET(
     "VERSION:2.0",
     "PRODID:-//Studiio//Calendar Feed//EN",
     `X-WR-CALNAME:${calName}`,
-    "X-WR-TIMEZONE:Australia/Sydney",
+    `X-WR-TIMEZONE:${String((activeTenant as any)?.timezone || "Australia/Sydney")}`,
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH"
   ];

@@ -161,6 +161,7 @@ function DashboardShellContent({
 
   const pathname = usePathname();
   const router = useRouter();
+  const isCalendarV2FullWidth = pathname?.startsWith("/tenant/calendar");
   const [mounted, setMounted] = useState(false);
   const [copied, setCopied] = useState(false);
   const [counts, setCounts] = useState<{ bookings?: number, galleries?: number, edits?: number }>(navCounts || {});
@@ -630,7 +631,12 @@ function DashboardShellContent({
           </div>
         </header>
 
-        <div className="px-4 md:px-10 py-6 md:py-10 max-w-[1600px] mx-auto w-full overflow-x-hidden">
+        <div
+          className={cn(
+            "py-6 md:py-10 w-full overflow-x-hidden",
+            isCalendarV2FullWidth ? "px-0 max-w-none mx-0" : "px-4 md:px-10 max-w-[1600px] mx-auto"
+          )}
+        >
           {memoizedChildren}
         </div>
 

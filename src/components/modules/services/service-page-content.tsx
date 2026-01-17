@@ -9,22 +9,14 @@ import {
   MoreVertical, 
   Upload, 
   Copy,
-  Camera, 
-  Zap, 
-  Video, 
-  FileText, 
-  Wrench,
   Sun, 
-  Box, 
-  Edit3, 
-  User,
-  Plane,
   Moon,
   Trash2,
   Edit2,
   Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getServiceIconComponent, getServiceIconStyle, normalizeServiceIconKey } from "@/lib/service-icons";
 import { ServiceDrawer } from "./service-drawer";
 import { upsertService, deleteService, importServicesCsv, toggleServiceFavorite, duplicateService, getClientServiceFavorites, toggleClientServiceFavorite } from "@/app/actions/service";
 import { useSearchParams, usePathname } from "next/navigation";
@@ -33,30 +25,6 @@ interface ServicePageContentProps {
   initialServices: any[];
   isActionLocked?: boolean;
 }
-
-const IconMap: Record<string, any> = {
-  CAMERA: Camera,
-  DRONE: Plane,
-  VIDEO: Video,
-  FILETEXT: FileText,
-  SERVICE: Wrench,
-  SUNSET: Sun,
-  PACKAGE: Box,
-  "EDIT PEN": Edit3,
-  PERSON: User
-};
-
-const IconColorMap: Record<string, { bg: string; text: string; ring: string }> = {
-  CAMERA: { bg: "bg-emerald-50", text: "text-emerald-600", ring: "ring-emerald-200" },
-  DRONE: { bg: "bg-sky-50", text: "text-sky-600", ring: "ring-sky-200" },
-  VIDEO: { bg: "bg-violet-50", text: "text-violet-600", ring: "ring-violet-200" },
-  FILETEXT: { bg: "bg-amber-50", text: "text-amber-600", ring: "ring-amber-200" },
-  SERVICE: { bg: "bg-teal-50", text: "text-teal-700", ring: "ring-teal-200" },
-  SUNSET: { bg: "bg-orange-50", text: "text-orange-600", ring: "ring-orange-200" },
-  PACKAGE: { bg: "bg-indigo-50", text: "text-indigo-600", ring: "ring-indigo-200" },
-  "EDIT PEN": { bg: "bg-lime-50", text: "text-lime-700", ring: "ring-lime-200" },
-  PERSON: { bg: "bg-rose-50", text: "text-rose-600", ring: "ring-rose-200" },
-};
 
 export function ServicePageContent({ 
   initialServices,
@@ -249,9 +217,9 @@ export function ServicePageContent({
       {/* List */}
       <div className="space-y-3">
         {filteredServices.map((service) => {
-          const iconKey = String(service.icon || "CAMERA").toUpperCase();
-          const Icon = IconMap[iconKey] || Camera;
-          const iconStyle = IconColorMap[iconKey] || IconColorMap.CAMERA;
+          const iconKey = normalizeServiceIconKey(service.icon);
+          const Icon = getServiceIconComponent(iconKey);
+          const iconStyle = getServiceIconStyle(iconKey);
           return (
             <div 
               key={service.id} 
@@ -454,9 +422,9 @@ export function ClientServicePageContent({ initialServices }: { initialServices:
 
       <div className="space-y-3">
         {filtered.map((service) => {
-          const iconKey = String(service.icon || "CAMERA").toUpperCase();
-          const Icon = IconMap[iconKey] || Camera;
-          const iconStyle = IconColorMap[iconKey] || IconColorMap.CAMERA;
+          const iconKey = normalizeServiceIconKey(service.icon);
+          const Icon = getServiceIconComponent(iconKey);
+          const iconStyle = getServiceIconStyle(iconKey);
           const isFav = favoriteIds.has(String(service.id));
           return (
             <div

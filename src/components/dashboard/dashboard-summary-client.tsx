@@ -95,21 +95,9 @@ export function DashboardSummaryClient({
   user: any;
 }) {
   const cacheKey = useMemo(() => `studiio:dashboardSummary:${tenantId}`, [tenantId]);
-  const [data, setData] = useState<DashboardSummaryPayload | null>(() => {
-    if (typeof window === "undefined") return null;
-    try {
-      const raw = window.sessionStorage.getItem(cacheKey);
-      if (!raw) return null;
-      const parsed = JSON.parse(raw) as { ts: number; data: DashboardSummaryPayload };
-      if (!parsed?.data) return null;
-      // 3 minute TTL (fast but safe)
-      if (parsed?.ts && Date.now() - parsed.ts > 3 * 60 * 1000) return null;
-      return parsed.data;
-    } catch {
-      return null;
-    }
-  });
-  const [loading, setLoading] = useState<boolean>(() => !data);
+  // IMPORTANT: do not read sessionStorage during initial render (causes hydration mismatch).
+  const [data, setData] = useState<DashboardSummaryPayload | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
   const inFlight = useRef<Promise<void> | null>(null);
 
   const refresh = async () => {
@@ -134,6 +122,22 @@ export function DashboardSummaryClient({
     })();
     return await inFlight.current;
   };
+
+  // Hydrate from cache after mount (safe, avoids SSR/CSR mismatch).
+  useEffect(() => {
+    try {
+      const raw = window.sessionStorage.getItem(cacheKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { ts: number; data: DashboardSummaryPayload };
+      if (!parsed?.data) return;
+      // 3 minute TTL (fast but safe)
+      if (parsed?.ts && Date.now() - parsed.ts > 3 * 60 * 1000) return;
+      setData(parsed.data);
+      setLoading(false);
+    } catch {
+      // ignore cache failures
+    }
+  }, [cacheKey]);
 
   // Background load on mount
   useEffect(() => {

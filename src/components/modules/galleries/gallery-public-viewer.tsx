@@ -32,7 +32,8 @@ import {
   Zap,
   FileText,
   MapPin,
-  BoxSelect
+  BoxSelect,
+  Film
 } from "lucide-react";
 import { cn, formatDropboxUrl, cleanDropboxLink } from "@/lib/utils";
 import { getGalleryAssets } from "@/app/actions/storage";
@@ -49,6 +50,7 @@ const DownloadManager = dynamic(() => import("./download-manager").then(m => m.D
 const VideoEditor = dynamic(() => import("./video-editor").then(m => m.VideoEditor), { ssr: false });
 const ShareModal = dynamic(() => import("./share-modal").then(m => m.ShareModal), { ssr: false });
 const AISuiteDrawer = dynamic(() => import("./ai-suite-drawer").then(m => m.AISuiteDrawer), { ssr: false });
+const AISocialVideoPicker = dynamic(() => import("./ai-social-video-picker").then(m => m.AISocialVideoPicker), { ssr: false });
 const ProAnnotationCanvas = dynamic(() => import("./pro-annotation-canvas").then(m => m.ProAnnotationCanvas), { ssr: false });
 
 interface GalleryPublicViewerProps {
@@ -121,6 +123,10 @@ export function GalleryPublicViewer({
   const [isChoiceModalOpen, setIsChoiceModalOpen] = useState(false);
   const [isAnnotationOpen, setIsAnnotationOpen] = useState(false);
   const [annotationData, setAnnotationData] = useState<any>(null);
+  const [isAiSocialVideoOpen, setIsAiSocialVideoOpen] = useState(false);
+  const [aiSocialVideoError, setAiSocialVideoError] = useState<string | null>(null);
+  const [isAiSocialVideoGenerating, setIsAiSocialVideoGenerating] = useState(false);
+  const [postUnlockAction, setPostUnlockAction] = useState<null | "ai_social_video">(null);
   const [bannerFailed, setBannerFailed] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
   const [showRefreshToast, setShowRefreshToast] = useState(false);
@@ -146,6 +152,7 @@ export function GalleryPublicViewer({
   const [aiSuiteState, setAiSuiteState] = useState<any>(() => (gallery.metadata as any)?.aiSuite || { unlocked: false, remainingEdits: 0 });
   const aiSuiteUnlocked = !!aiSuiteState?.unlocked;
   const aiSuiteRemainingEdits = typeof aiSuiteState?.remainingEdits === "number" ? aiSuiteState.remainingEdits : 0;
+  const aiSuiteRemainingVideos = typeof aiSuiteState?.remainingVideos === "number" ? aiSuiteState.remainingVideos : 0;
   // NOTE: This flag now represents whether PAID AI unlocks are enabled for the tenant.
   // Free trial packs can still be used even when this is false.
   const tenantAiSuiteEnabled = (() => {
@@ -170,6 +177,18 @@ export function GalleryPublicViewer({
 
   const getAssetKey = (a: any) => String(a?.id || a?.url);
   const isImageAsset = (a: any) => (a?.type ? a.type === "image" : true);
+
+  const openAiSocialVideo = () => {
+    // Gate behind AI Suite unlock + separate quota
+    if (!aiSuiteUnlocked || aiSuiteRemainingVideos <= 0) {
+      setAiSuiteTermsAccepted(false);
+      setPostUnlockAction("ai_social_video");
+      setIsAiSuiteUnlockOpen(true);
+      return;
+    }
+    setAiSocialVideoError(null);
+    setIsAiSocialVideoOpen(true);
+  };
 
   const toggleSelectImage = (item: any) => {
     const key = getAssetKey(item);
@@ -1596,6 +1615,101 @@ export function GalleryPublicViewer({
             />
           )}
 
+          {isAiSocialVideoOpen && (
+            <AISocialVideoPicker
+              isOpen={isAiSocialVideoOpen}
+              onClose={() => {
+                setIsAiSocialVideoOpen(false);
+                setAiSocialVideoError(null);
+              }}
+              images={assets.filter((a) => isImageAsset(a))}
+              getThumbUrl={(url: string) => getImageUrl(url, "w480h320")}
+              isGenerating={isAiSocialVideoGenerating}
+              error={aiSocialVideoError}
+              onGenerate={async (ordered: any[], opts: { durationSeconds: 5 | 10 }) => {
+                setAiSocialVideoError(null);
+                setIsAiSocialVideoGenerating(true);
+                try {
+                  const res = await fetch("/api/ai/social-video/start", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      galleryId: gallery.id,
+                      durationSeconds: opts?.durationSeconds,
+                      orderedAssets: ordered.map((a: any) => ({
+                        id: a?.id || null,
+                        name: a?.name || null,
+                        url: a?.url,
+                        path: a?.path || null,
+                      })),
+                    }),
+                  });
+                  const data = await res.json().catch(() => null);
+                  if (!res.ok || !data?.success) {
+                    const code = String(data?.code || data?.error || "");
+                    if (code === "AI_SUITE_LOCKED" || code === "AI_SUITE_LIMIT" || code === "AI_SUITE_VIDEO_LIMIT") {
+                      setPostUnlockAction("ai_social_video");
+                      setAiSuiteTermsAccepted(false);
+                      setIsAiSuiteUnlockOpen(true);
+                      setIsAiSocialVideoOpen(false);
+                      return;
+                    }
+                    setAiSocialVideoError(String(data?.error || "Failed to start video generation."));
+                    return;
+                  }
+
+                  if (data?.aiSuite) {
+                    setAiSuiteState((prev: any) => ({ ...(prev || {}), ...(data.aiSuite || {}) }));
+                  }
+
+                  const predictionId = String(data.predictionId || "");
+                  if (!predictionId) {
+                    setAiSocialVideoError("Failed to start video generation (missing prediction id).");
+                    return;
+                  }
+
+                  // Poll for completion
+                  const pollUntilDone = async () => {
+                    const startedAt = Date.now();
+                    while (Date.now() - startedAt < 5 * 60_000) {
+                      await new Promise((r) => setTimeout(r, 2000));
+                      const pr = await fetch(
+                        `/api/ai/social-video/poll/${encodeURIComponent(predictionId)}?galleryId=${encodeURIComponent(gallery.id)}`,
+                        { cache: "no-store" }
+                      );
+                      const pd = await pr.json().catch(() => null);
+                      if (!pr.ok || !pd?.success) {
+                        setAiSocialVideoError(String(pd?.error || "Video generation failed."));
+                        return null;
+                      }
+                      if (pd.status === "succeeded" && pd.videoUrl) return String(pd.videoUrl);
+                      if (pd.status === "failed" || pd.status === "canceled") {
+                        setAiSocialVideoError(String(pd?.error || "Video generation failed."));
+                        return null;
+                      }
+                    }
+                    setAiSocialVideoError("Timed out waiting for video. Please try again.");
+                    return null;
+                  };
+
+                  const videoUrl = await pollUntilDone();
+                  if (!videoUrl) return;
+
+                  // Optimistically add to local state (server also persists)
+                  setVideos((prev) => [
+                    ...(Array.isArray(prev) ? prev : []),
+                    { url: videoUrl, title: "AI Social Video", createdAt: new Date().toISOString(), kind: "AI_SOCIAL" },
+                  ]);
+                  setIsAiSocialVideoOpen(false);
+                } catch (e: any) {
+                  setAiSocialVideoError(e?.message || "Failed to generate video.");
+                } finally {
+                  setIsAiSocialVideoGenerating(false);
+                }
+              }}
+            />
+          )}
+
           {isAiSuiteUnlockOpen && (
             <div className="fixed inset-0 z-[250] flex items-center justify-center p-6">
               <div
@@ -1695,6 +1809,11 @@ export function GalleryPublicViewer({
                         if (res.success) {
                           setAiSuiteState(res.aiSuite);
                           setIsAiSuiteUnlockOpen(false);
+                          if (postUnlockAction === "ai_social_video") {
+                            setPostUnlockAction(null);
+                            // Let the modal close before opening the picker
+                            setTimeout(() => openAiSocialVideo(), 50);
+                          }
                         } else {
                           if (res.error === "AI_DISABLED") {
                             setAiSuiteUnlockError(
@@ -2254,7 +2373,7 @@ export function GalleryPublicViewer({
           onClick={() => setIsChoiceModalOpen(false)}
         >
           <div 
-            className="w-full max-w-4xl bg-white rounded-[48px] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in duration-500"
+            className="w-full max-w-6xl bg-white rounded-[48px] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in duration-500"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -2272,7 +2391,7 @@ export function GalleryPublicViewer({
             </div>
 
             {/* Grid of Choices */}
-            <div className="p-8 grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="p-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
               {/* Professional Studio Edit (PREMIUM) */}
               <button 
                 onClick={() => {
@@ -2319,6 +2438,29 @@ export function GalleryPublicViewer({
                   </div>
                   <p className="text-xs font-medium text-slate-400 leading-relaxed">
                     Instant automated AI enhancements.
+                  </p>
+                </div>
+              </button>
+
+              {/* AI Social Video (PREMIUM) */}
+              <button
+                onClick={() => {
+                  setIsChoiceModalOpen(false);
+                  openAiSocialVideo();
+                }}
+                className="group p-8 rounded-[32px] border-2 border-slate-100 bg-white hover:border-slate-900/30 hover:bg-slate-900/[0.02] transition-all flex flex-col items-center text-center gap-6"
+              >
+                <span className="text-[10px] font-black uppercase tracking-widest text-rose-500">PREMIUM</span>
+                <div className="h-16 w-16 rounded-2xl bg-slate-900/10 text-slate-900 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Film className="h-8 w-8" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-center gap-2">
+                    <p className="text-sm font-black text-slate-900 uppercase tracking-widest">AI Social Video</p>
+                    <span className="px-2 py-0.5 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest rounded-md">COST</span>
+                  </div>
+                  <p className="text-xs font-medium text-slate-400 leading-relaxed">
+                    Turn 3–5 photos into a short moving video (vertical).
                   </p>
                 </div>
               </button>

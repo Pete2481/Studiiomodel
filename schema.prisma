@@ -187,6 +187,7 @@ model Client {
   slug                 String
   name                 String             // Contact Name
   businessName         String?            // Agency / Company Name
+  // NOTE: Client calendar subscription secret is stored in settings.calendarSecret (JSON) to avoid schema migrations.
   primaryContactUserId String?
   email                String?
   phone                String?

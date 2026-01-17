@@ -4,12 +4,17 @@
 import { auth } from "@/auth";
 import { getIdealSunTime as getIdealSunTimeService, calculateTravelTime as calculateTravelTimeService } from "@/server/services/logistics.service";
 
-export async function getIdealSunTime(address: string, date: Date, type: "SUNRISE" | "DUSK"): Promise<{ success: true; time: Date; label: string } | { success: false; error: string }> {
+export async function getIdealSunTime(
+  address: string,
+  date: Date,
+  type: "SUNRISE" | "DUSK",
+  timeZone?: string
+): Promise<{ success: true; time: Date; label: string } | { success: false; error: string }> {
   try {
     const session = await auth();
     if (!session) return { success: false, error: "Unauthorized" };
 
-    const result = await getIdealSunTimeService(address, date, type);
+    const result = await getIdealSunTimeService(address, date, type, timeZone);
     if (!result) return { success: false, error: "Failed to calculate sun time" };
 
     return { success: true, time: result.time, label: result.label };

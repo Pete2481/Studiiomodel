@@ -8,20 +8,23 @@ interface CalendarSubscriptionModalProps {
   isOpen: boolean;
   onClose: () => void;
   secret: string | null;
+  kind?: "default" | "client";
 }
 
 export function CalendarSubscriptionModal({
   isOpen,
   onClose,
   secret,
+  kind = "default",
 }: CalendarSubscriptionModalProps) {
   const [copied, setCopied] = useState(false);
 
   if (!isOpen) return null;
 
   // Construct the full absolute URL
+  const path = kind === "client" ? `/api/calendar/feed/client/${secret || ""}` : `/api/calendar/feed/${secret || ""}`;
   const feedUrl = secret 
-    ? `${typeof window !== "undefined" ? window.location.origin : ""}/api/calendar/feed/${secret}`
+    ? `${typeof window !== "undefined" ? window.location.origin : ""}${path}`
     : "";
 
   const handleCopy = () => {
@@ -121,7 +124,7 @@ export function CalendarSubscriptionModal({
               <Shield className="h-4 w-4 text-amber-600" />
             </div>
             <p className="text-[10px] font-medium text-amber-800 leading-normal">
-              <span className="font-black uppercase tracking-tighter mr-1">Security Note:</span> This link contains a unique key for your studio. Do not share it publicly as it allows anyone with the link to view your confirmed schedule.
+              <span className="font-black uppercase tracking-tighter mr-1">Security Note:</span> This link contains a unique key. Do not share it publicly as it allows anyone with the link to view this calendar feed.
             </p>
           </div>
         </div>

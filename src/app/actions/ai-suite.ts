@@ -11,6 +11,7 @@ import crypto from "crypto";
 type AiSuiteMeta = {
   unlocked?: boolean;
   remainingEdits?: number;
+  remainingVideos?: number;
   unlockBlockId?: string;
   lastUnlockedAt?: string;
   unlockType?: "trial" | "paid";
@@ -27,6 +28,11 @@ type AiSuiteGlobalLimits = {
   minPackEdits: number;
   maxPackEdits: number;
   forcePackEdits: number | null;
+
+  defaultPackVideos: number;
+  minPackVideos: number;
+  maxPackVideos: number;
+  forcePackVideos: number | null;
 };
 
 function clampInt(n: any, min: number, max: number) {
@@ -43,7 +49,17 @@ async function getAiSuiteGlobalLimits(): Promise<AiSuiteGlobalLimits> {
     create: {
       id: "aiSuite",
       welcomeEmailSubject: "AI_SUITE_CONFIG",
-      welcomeEmailBlocks: { defaultPackEdits: 15, minPackEdits: 5, maxPackEdits: 50, forcePackEdits: null } as any,
+      welcomeEmailBlocks: {
+        defaultPackEdits: 15,
+        minPackEdits: 5,
+        maxPackEdits: 50,
+        forcePackEdits: null,
+        // New: AI Social Video quota per unlock pack
+        defaultPackVideos: 3,
+        minPackVideos: 1,
+        maxPackVideos: 20,
+        forcePackVideos: null,
+      } as any,
     },
     select: { welcomeEmailBlocks: true },
   });
@@ -57,7 +73,24 @@ async function getAiSuiteGlobalLimits(): Promise<AiSuiteGlobalLimits> {
       ? null
       : clampInt(raw.forcePackEdits, minPackEdits, maxPackEdits);
 
-  return { defaultPackEdits, minPackEdits, maxPackEdits, forcePackEdits };
+  const minPackVideos = clampInt(raw.minPackVideos ?? 1, 1, 999);
+  const maxPackVideos = clampInt(raw.maxPackVideos ?? 20, 1, 999);
+  const defaultPackVideos = clampInt(raw.defaultPackVideos ?? 3, minPackVideos, maxPackVideos);
+  const forcePackVideos =
+    raw.forcePackVideos === null || raw.forcePackVideos === undefined
+      ? null
+      : clampInt(raw.forcePackVideos, minPackVideos, maxPackVideos);
+
+  return {
+    defaultPackEdits,
+    minPackEdits,
+    maxPackEdits,
+    forcePackEdits,
+    defaultPackVideos,
+    minPackVideos,
+    maxPackVideos,
+    forcePackVideos,
+  };
 }
 
 async function resolvePackEditsForTenant(tenantId: string, tenantSettings: any) {
@@ -76,6 +109,24 @@ async function resolvePackEditsForTenant(tenantId: string, tenantSettings: any) 
         : global.defaultPackEdits;
 
   return { packEdits, global, tenantOverride };
+}
+
+async function resolvePackVideosForTenant(tenantId: string, tenantSettings: any) {
+  const global = await getAiSuiteGlobalLimits();
+  const tenantOverrideRaw = (tenantSettings as any)?.aiSuite?.packVideosOverride;
+  const tenantOverride =
+    tenantOverrideRaw === null || tenantOverrideRaw === undefined
+      ? null
+      : clampInt(tenantOverrideRaw, global.minPackVideos, global.maxPackVideos);
+
+  const packVideos =
+    global.forcePackVideos !== null
+      ? global.forcePackVideos
+      : tenantOverride !== null
+        ? tenantOverride
+        : global.defaultPackVideos;
+
+  return { packVideos, global, tenantOverride };
 }
 
 async function getTenantAiSuiteSettings(tenantId: string): Promise<TenantAiSuiteSettings> {
@@ -140,6 +191,7 @@ function readAiSuiteMeta(metadata: any): AiSuiteMeta {
   return {
     unlocked: !!raw.unlocked,
     remainingEdits: typeof raw.remainingEdits === "number" ? raw.remainingEdits : undefined,
+    remainingVideos: typeof raw.remainingVideos === "number" ? raw.remainingVideos : undefined,
     unlockBlockId: typeof raw.unlockBlockId === "string" ? raw.unlockBlockId : undefined,
     lastUnlockedAt: typeof raw.lastUnlockedAt === "string" ? raw.lastUnlockedAt : undefined,
     unlockType,
@@ -151,6 +203,7 @@ function writeAiSuiteMeta(metadata: any, next: AiSuiteMeta) {
   (safe as any).aiSuite = {
     unlocked: !!next.unlocked,
     remainingEdits: next.remainingEdits ?? 0,
+    remainingVideos: next.remainingVideos ?? 0,
     unlockBlockId: next.unlockBlockId || null,
     lastUnlockedAt: next.lastUnlockedAt || null,
     unlockType: next.unlockType || null,
@@ -255,12 +308,18 @@ export async function unlockAiSuiteForGallery(galleryId: string) {
 
   const tenantAi = await getTenantAiSuiteSettings(gallery.tenantId);
   const { packEdits } = await resolvePackEditsForTenant(gallery.tenantId, tenantAi.settings);
+  const { packVideos } = await resolvePackVideosForTenant(gallery.tenantId, tenantAi.settings);
 
   const current = readAiSuiteMeta(gallery.metadata);
 
   // If already unlocked and still has quota, don't create a new block (prevents double-charge).
   // But do ensure the unlock EditRequest exists (in case a prior attempt failed silently).
-  if (current.unlocked && (current.remainingEdits ?? 0) > 0 && current.unlockBlockId) {
+  if (
+    current.unlocked &&
+    (current.remainingEdits ?? 0) > 0 &&
+    (current.remainingVideos ?? 0) > 0 &&
+    current.unlockBlockId
+  ) {
     try {
       const tenantAi = await getTenantAiSuiteSettings(gallery.tenantId);
       const { packEdits } = await resolvePackEditsForTenant(gallery.tenantId, tenantAi.settings);
@@ -296,6 +355,7 @@ export async function unlockAiSuiteForGallery(galleryId: string) {
   const next: AiSuiteMeta = {
     unlocked: true,
     remainingEdits: packEdits,
+    remainingVideos: packVideos,
     unlockBlockId,
     lastUnlockedAt: new Date().toISOString(),
     unlockType: canUseFreePack ? "trial" : "paid",

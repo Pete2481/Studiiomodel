@@ -29,6 +29,7 @@ function toCalendarBooking(b: any) {
     endAt: e,
     status,
     propertyStatus: b.propertyStatus || "",
+    metadata: (b.metadata && typeof b.metadata === "object") ? b.metadata : {},
     clientId: b.clientId ? String(b.clientId) : null,
     agentId: b.agentId ? String(b.agentId) : null,
     client: !b.client ? null : { name: String(b.client.name || ""), businessName: String(b.client.businessName || "") },
@@ -51,6 +52,9 @@ export async function upsertBooking(data: any) {
     const tenantId = session?.user?.tenantId as string | undefined;
     if (!session || !tenantId) return { success: false, error: "Unauthorized" };
 
+    const sessionUser = session.user as any;
+    const role = String(sessionUser?.role || "");
+
     // PERMISSION CHECK
     if (!permissionService.can(session.user, "viewBookings")) {
       return { success: false, error: "Permission Denied: Cannot manage bookings." };
@@ -60,14 +64,57 @@ export async function upsertBooking(data: any) {
     await enforceSubscription(tenantId);
 
     const startAt = data.startAt ? new Date(data.startAt) : new Date(`${data.date}T${data.startTime}:00`);
-    const endAt = data.endAt ? new Date(data.endAt) : new Date(startAt.getTime() + (parseFloat(data.duration || "1") * 60 * 60 * 1000));
+    const endAtRaw = data.endAt ? new Date(data.endAt) : new Date(startAt.getTime() + (parseFloat(data.duration || "1") * 60 * 60 * 1000));
 
-    if (isNaN(startAt.getTime()) || isNaN(endAt.getTime())) {
+    if (isNaN(startAt.getTime()) || isNaN(endAtRaw.getTime())) {
       return { success: false, error: "Invalid start or end date format." };
     }
 
+    // CLIENT portal guards: tenant-only features and fixed-duration behavior.
+    let safeData = { ...data };
+    let endAt = endAtRaw;
+    if (role === "CLIENT") {
+      // No block outs from client portal.
+      const requestedStatus = String(safeData.status || "REQUESTED").toUpperCase();
+      if (requestedStatus === "BLOCKED" || requestedStatus === "BLOCKOUT") {
+        return { success: false, error: "Clients cannot create block outs." };
+      }
+
+      // No OTC from client portal.
+      safeData.clientMode = "existing";
+      safeData.otcName = undefined;
+      safeData.otcEmail = undefined;
+      safeData.otcPhone = undefined;
+      safeData.otcNotes = undefined;
+
+      // Force the clientId to their own (cannot select another client).
+      if (!sessionUser.clientId) return { success: false, error: "Missing client context." };
+      safeData.clientId = String(sessionUser.clientId);
+
+      // Validate agent/contact (must belong to this client if set).
+      if (safeData.agentId) {
+        const tPrisma = await getTenantPrisma();
+        const agent = await (tPrisma as any).agent.findUnique({
+          where: { id: String(safeData.agentId) },
+          select: { id: true, clientId: true },
+        });
+        if (!agent || String(agent.clientId) !== String(sessionUser.clientId)) {
+          return { success: false, error: "Invalid contact selected." };
+        }
+      }
+
+      // Force status to REQUESTED (client cannot approve/decline/cancel here).
+      safeData.status = "REQUESTED";
+
+      // Client duration is fixed to 60 minutes.
+      endAt = new Date(startAt.getTime() + 60 * 60 * 1000);
+
+      // Client cannot assign team members.
+      safeData.teamMemberIds = [];
+    }
+
     const booking = await bookingService.upsertBooking(tenantId, {
-      ...data,
+      ...safeData,
       startAt,
       endAt
     });

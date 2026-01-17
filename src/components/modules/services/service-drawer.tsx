@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { X, Camera, Zap, Video, FileText, Wrench, ChevronDown, Sun, Box, Edit3, User, Plane, Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getServiceIconStyle } from "@/lib/service-icons";
 
 interface ServiceDrawerProps {
   isOpen: boolean;
@@ -22,18 +23,6 @@ const ICON_OPTIONS = [
   { name: "EDIT PEN", icon: Edit3 },
   { name: "PERSON", icon: User },
 ];
-
-const IconColorMap: Record<string, { bg: string; text: string; ring: string }> = {
-  CAMERA: { bg: "bg-emerald-50", text: "text-emerald-600", ring: "ring-emerald-200" },
-  DRONE: { bg: "bg-sky-50", text: "text-sky-600", ring: "ring-sky-200" },
-  VIDEO: { bg: "bg-violet-50", text: "text-violet-600", ring: "ring-violet-200" },
-  FILETEXT: { bg: "bg-amber-50", text: "text-amber-600", ring: "ring-amber-200" },
-  SERVICE: { bg: "bg-teal-50", text: "text-teal-700", ring: "ring-teal-200" },
-  SUNSET: { bg: "bg-orange-50", text: "text-orange-600", ring: "ring-orange-200" },
-  PACKAGE: { bg: "bg-indigo-50", text: "text-indigo-600", ring: "ring-indigo-200" },
-  "EDIT PEN": { bg: "bg-lime-50", text: "text-lime-700", ring: "ring-lime-200" },
-  PERSON: { bg: "bg-rose-50", text: "text-rose-600", ring: "ring-rose-200" },
-};
 
 export function ServiceDrawer({ isOpen, onClose, service, onSave }: ServiceDrawerProps) {
   const [formData, setFormData] = useState({
@@ -195,7 +184,7 @@ export function ServiceDrawer({ isOpen, onClose, service, onSave }: ServiceDrawe
               <div className="grid grid-cols-5 gap-3">
                 {ICON_OPTIONS.map((opt) => (
                   (() => {
-                    const iconStyle = IconColorMap[opt.name] || IconColorMap.CAMERA;
+                    const iconStyle = getServiceIconStyle(opt.name);
                     const isActive = formData.icon === opt.name;
                     return (
                   <button

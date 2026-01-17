@@ -171,9 +171,15 @@ export function CalendarView({
       // Placeholders are NEVER masked - they are public availability
       const isMasked = !b.isPlaceholder && isClientOrRestrictedAgent && 
                       (user.role === "CLIENT" ? b.clientId !== user.clientId : b.agentId !== user.agentId) &&
-                      status !== 'BLOCKED'; // Block outs are not masked, they are public info
+                      status !== 'BLOCKED';
 
-      const title = b.isPlaceholder ? `${b.slotType || 'PRODUCTION'} SLOT` : (isMasked ? "LIMITED AVAILABILITY" : b.title);
+      // Time blocks: tenant/team see internal title; client/agent see generic.
+      const isBlocked = status === "BLOCKED";
+      const blockedTitle = (user?.role === "CLIENT" || user?.role === "AGENT") ? "TIME BLOCK OUT" : (b.title || "TIME BLOCK OUT");
+
+      const title = b.isPlaceholder
+        ? `${b.slotType || 'PRODUCTION'} SLOT`
+        : (isMasked ? "LIMITED AVAILABILITY" : (isBlocked ? blockedTitle : b.title));
 
       events.push({
         id: String(b.id || `temp-${b.startAt}-${b.title}`),
@@ -443,7 +449,9 @@ export function CalendarView({
             const isBlocked = status === 'BLOCKED';
             const config = getStatusConfig(status, isMasked);
             const assignments = eventInfo.event.extendedProps.assignments || [];
-            const leadMember = assignments[0]?.teamMember;
+            const teamMembers = (assignments || [])
+              .map((a: any) => a?.teamMember)
+              .filter(Boolean);
             
             const isStatic = isMasked || (user?.role === "CLIENT" && (isPlaceholder || isBlocked));
 
@@ -474,16 +482,39 @@ export function CalendarView({
                   </div>
                 )}
 
-                {/* Team Member Avatar Overlay - Only if not masked or placeholder or blocked */}
-                {!isMasked && !isPlaceholder && !isBlocked && leadMember?.avatarUrl && (
-                  <div className="absolute -top-2 -right-2 z-[20]">
-                    <div className="h-9 w-9 rounded-xl border-2 border-white shadow-xl overflow-hidden bg-slate-100 ring-1 ring-slate-100/50">
-                      <img 
-                        src={leadMember.avatarUrl} 
-                        alt={leadMember.displayName}
-                        className="h-full w-full object-cover"
-                      />
-                    </div>
+                {/* Team Member Avatar Stack - Only if not masked or placeholder or blocked */}
+                {!isMasked && !isPlaceholder && !isBlocked && teamMembers.length > 0 && (
+                  <div className="absolute -top-2 -right-2 z-[20] flex items-center">
+                    {teamMembers.slice(0, 3).map((m: any, idx: number) => (
+                      <div
+                        key={m.id || m.displayName || idx}
+                        className="h-9 w-9 rounded-xl border-2 border-white shadow-xl overflow-hidden bg-slate-100 ring-1 ring-slate-100/50"
+                        style={{ marginLeft: idx === 0 ? 0 : -10 }}
+                        title={m.displayName || ""}
+                      >
+                        {m.avatarUrl ? (
+                          <img
+                            src={m.avatarUrl}
+                            alt={m.displayName || "Team member"}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="h-full w-full flex items-center justify-center text-[10px] font-black text-slate-500 bg-slate-100">
+                            {(m.displayName || "T").charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+
+                    {teamMembers.length > 3 && (
+                      <div
+                        className="h-9 w-9 rounded-xl border-2 border-white shadow-xl bg-slate-900 text-white flex items-center justify-center text-[10px] font-black ring-1 ring-slate-100/50"
+                        style={{ marginLeft: -10 }}
+                        title={`${teamMembers.length - 3} more`}
+                      >
+                        +{teamMembers.length - 3}
+                      </div>
+                    )}
                   </div>
                 )}
 

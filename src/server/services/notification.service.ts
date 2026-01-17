@@ -4,6 +4,21 @@ import { prisma } from "@/lib/prisma";
 import { format } from "date-fns";
 import { formatDropboxUrl } from "@/lib/utils";
 
+export type BookingNotificationType =
+  | "NEW_BOOKING"
+  | "BOOKING_APPROVED"
+  | "BOOKING_UPDATED"
+  | "BOOKING_CANCELLED"
+  | "BOOKING_CHANGE_REQUESTED";
+
+type BookingEmailPreview = {
+  bookingId: string;
+  type: BookingNotificationType;
+  subject: string;
+  html: string;
+  to: string[];
+};
+
 export class NotificationService {
   private static instance: NotificationService;
 
@@ -140,6 +155,182 @@ export class NotificationService {
       out = out.replaceAll(tag, val);
     });
     return out;
+  }
+
+  private formatInTenantTz(iso: string, timeZone: string, opts: Intl.DateTimeFormatOptions) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return new Intl.DateTimeFormat("en-AU", { timeZone, ...opts }).format(d);
+  }
+
+  private resolveBookingRecipients(booking: any) {
+    const emails: string[] = [];
+    const add = (e?: string | null) => {
+      const v = String(e || "").trim();
+      if (!v) return;
+      if (!emails.includes(v)) emails.push(v);
+    };
+
+    // Tenant
+    add(booking?.tenant?.contactEmail);
+
+    // Client (or OTC)
+    add(booking?.client?.email);
+    add(booking?.otcEmail);
+
+    // Agent (if different)
+    if (booking?.agent?.email && booking.agent.email !== booking?.client?.email) add(booking.agent.email);
+
+    // Team members assigned
+    for (const a of booking?.assignments || []) {
+      add(a?.teamMember?.email);
+    }
+
+    return emails;
+  }
+
+  private async getBookingForEmail(bookingId: string) {
+    return await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        tenant: true,
+        client: true,
+        property: true,
+        agent: true,
+        services: { include: { service: true } },
+        assignments: { include: { teamMember: true } },
+      },
+    });
+  }
+
+  async buildBookingEmail(params: { bookingId: string; type: BookingNotificationType }): Promise<BookingEmailPreview | null> {
+    const { bookingId, type } = params;
+    const booking = await this.getBookingForEmail(bookingId);
+    if (!booking) return null;
+
+    const tz = String(booking.timezone || booking.tenant?.timezone || "Australia/Sydney");
+    const date = this.formatInTenantTz(booking.startAt.toISOString(), tz, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+    const startTime = this.formatInTenantTz(booking.startAt.toISOString(), tz, { hour: "numeric", minute: "2-digit", hour12: true });
+    const endTime = this.formatInTenantTz(booking.endAt.toISOString(), tz, { hour: "numeric", minute: "2-digit", hour12: true });
+    const when = `${date} • ${String(startTime).toUpperCase()} — ${String(endTime).toUpperCase()}`;
+    const location = booking.property?.name || booking.title;
+    const clientName = booking.client?.businessName || booking.client?.name || booking.otcName || "Client";
+    const services = (booking.services || []).map((s: any) => s?.service?.name).filter(Boolean).join(", ") || "TBC";
+    const team = (booking.assignments || []).map((a: any) => a?.teamMember?.displayName).filter(Boolean).join(", ") || "Unassigned";
+    const agentName = booking.agent?.name || "PENDING";
+    const status = String(booking.status || "REQUESTED").toUpperCase();
+
+    const titleMap: Record<BookingNotificationType, string> = {
+      NEW_BOOKING: "New Booking",
+      BOOKING_APPROVED: "Booking Approved",
+      BOOKING_UPDATED: "Booking Updated",
+      BOOKING_CANCELLED: "Booking Cancelled",
+      BOOKING_CHANGE_REQUESTED: "Change Requested",
+    };
+
+    const subjectMap: Record<BookingNotificationType, string> = {
+      NEW_BOOKING: `New Booking: ${location}`,
+      BOOKING_APPROVED: `Approved: ${location}`,
+      BOOKING_UPDATED: `Updated: ${location}`,
+      BOOKING_CANCELLED: `Cancelled: ${location}`,
+      BOOKING_CHANGE_REQUESTED: `Change Requested: ${location}`,
+    };
+
+    const messageMap: Record<BookingNotificationType, string> = {
+      NEW_BOOKING: `A new appointment has been created for <strong>${location}</strong>.`,
+      BOOKING_APPROVED: `This booking has been <strong>approved</strong>.`,
+      BOOKING_UPDATED: `This booking has been <strong>updated</strong>.`,
+      BOOKING_CANCELLED: `This booking has been <strong>cancelled</strong>.`,
+      BOOKING_CHANGE_REQUESTED: `A <strong>change request</strong> has been made for this booking.`,
+    };
+
+    const googleCalUrl = this.generateCalendarUrl(booking);
+    const appleCalUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/calendar/${booking.id}`;
+
+    const html = this.getBaseTemplate(
+      `
+      <h1>${titleMap[type]}</h1>
+      <p style="color: #64748b; font-size: 16px; margin-top: 8px;">${messageMap[type]}</p>
+      
+      <div class="divider"></div>
+
+      <div class="details-grid">
+        <div class="detail-item">
+          <span class="detail-label">When</span>
+          <span class="detail-value">${when}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Location</span>
+          <span class="detail-value">${location}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Client</span>
+          <span class="detail-value">${clientName}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Agent</span>
+          <span class="detail-value">${agentName}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Team</span>
+          <span class="detail-value">${team}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Services</span>
+          <span class="detail-value">${services}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Access</span>
+          <span class="detail-value">${booking.propertyStatus || "TBC"}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Status</span>
+          <span class="detail-value">${status}</span>
+        </div>
+        ${
+          booking.clientNotes
+            ? `<div class="detail-item"><span class="detail-label">Client Notes</span><span class="detail-value">${booking.clientNotes}</span></div>`
+            : ""
+        }
+        ${
+          booking.internalNotes
+            ? `<div class="detail-item"><span class="detail-label">Internal Notes</span><span class="detail-value">${booking.internalNotes}</span></div>`
+            : ""
+        }
+      </div>
+
+      <div class="divider"></div>
+
+      <div style="text-align: center; space-y: 12px;">
+        <a href="${googleCalUrl}" style="font-size: 12px; font-weight: 700; color: ${booking.tenant.brandColor || "#10b981"}; text-decoration: none; border: 2px solid ${booking.tenant.brandColor || "#10b981"}; padding: 10px 20px; border-radius: 10px; display: inline-block; margin: 0 8px 12px 8px;">+ Add to Google Calendar</a>
+        <a href="${appleCalUrl}" style="font-size: 12px; font-weight: 700; color: #ef4444; text-decoration: none; border: 2px solid #ef4444; padding: 10px 20px; border-radius: 10px; display: inline-block; margin: 0 8px 12px 8px;">+ Add to Apple Calendar</a>
+      </div>
+    `,
+      booking.tenant,
+      titleMap[type]
+    );
+
+    const to = this.resolveBookingRecipients(booking);
+    return { bookingId: String(booking.id), type, subject: subjectMap[type], html, to };
+  }
+
+  async sendBookingEmail(params: { bookingId: string; type: BookingNotificationType; toOverride?: string[] }) {
+    const preview = await this.buildBookingEmail({ bookingId: params.bookingId, type: params.type });
+    if (!preview) return { success: false, error: "Booking not found" };
+    const to = Array.isArray(params.toOverride) && params.toOverride.length ? params.toOverride : preview.to;
+    if (!to.length) return { success: false, error: "No recipients" };
+
+    await emailService.sendEmail({
+      tenantId: (await prisma.booking.findUnique({ where: { id: params.bookingId }, select: { tenantId: true } }))?.tenantId || "MASTER",
+      to,
+      subject: preview.subject,
+      html: preview.html,
+      headers: {
+        "X-Entity-Ref-ID": `booking-${preview.type}-${preview.bookingId}`,
+      },
+    });
+
+    return { success: true, to, subject: preview.subject };
   }
 
   /**

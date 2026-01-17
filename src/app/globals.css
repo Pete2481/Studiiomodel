@@ -94,14 +94,56 @@ body {
 }
 
 .fc .fc-timegrid-slot-lane {
-  background-color: transparent !important;
+  /* Allow our alternating hour shading to show through */
+  background-color: transparent;
+}
+
+/* Alternating hour banding (every other hour) for readability.
+   Assumes default 30min slots => 2 rows per hour => shade every other *pair* of rows. */
+.fc .fc-timegrid-slots tr:nth-child(4n + 3) td.fc-timegrid-slot-lane,
+.fc .fc-timegrid-slots tr:nth-child(4n + 4) td.fc-timegrid-slot-lane {
+  background-color: rgba(148, 163, 184, 0.12) !important; /* very light slate */
+}
+
+/* Also tint the time-axis cells so the band spans the full width */
+.fc .fc-timegrid-slots tr:nth-child(4n + 3) td.fc-timegrid-slot-label,
+.fc .fc-timegrid-slots tr:nth-child(4n + 4) td.fc-timegrid-slot-label,
+.fc .fc-timegrid-slots tr:nth-child(4n + 3) td.fc-timegrid-axis,
+.fc .fc-timegrid-slots tr:nth-child(4n + 4) td.fc-timegrid-axis {
+  background-color: rgba(148, 163, 184, 0.12) !important;
+}
+
+/* Stronger gridlines across the entire calendar (easier to read) */
+.fc-theme-standard td,
+.fc-theme-standard th {
+  border-color: #d1d5db !important; /* slate/gray-300 */
+}
+
+.fc .fc-scrollgrid,
+.fc .fc-scrollgrid-section,
+.fc .fc-scrollgrid-section-body,
+.fc .fc-scrollgrid-section-header {
+  border-color: #d1d5db !important;
+}
+
+.fc .fc-timegrid-slot,
+.fc .fc-timegrid-slot-lane,
+.fc .fc-timegrid-axis,
+.fc .fc-timegrid-col {
+  border-color: #d1d5db !important;
 }
 
 /* Background events (available holes) */
 .fc .fc-bg-event {
   opacity: 1 !important;
   background-color: #ffffff !important;
-  z-index: 1 !important;
+  /* Keep availability "holes" below gridlines for readability */
+  z-index: 0 !important;
+}
+
+/* Let hour banding show through the "available" background holes */
+.fc .fc-bg-event.available-hole {
+  background-color: rgba(255, 255, 255, 0.55) !important;
 }
 
 /* Background events (available holes) */
@@ -153,8 +195,38 @@ body {
   @apply h-[39px] border-slate-100 !important;
 }
 
+.fc .fc-timegrid-slot,
+.fc .fc-timegrid-slot-minor {
+  /* Explicit horizontal row lines across the schedule grid */
+  border-bottom: 1px solid #d1d5db !important; /* gray-300 */
+}
+
+.fc .fc-timegrid-slot-label,
+.fc .fc-timegrid-axis {
+  border-bottom: 1px solid #d1d5db !important;
+}
+
+/* FullCalendar time grid uses "lane" cells for the actual schedule area — ensure they also show horizontal lines */
+.fc .fc-timegrid-slot-lane,
+.fc .fc-timegrid-slot-lane-frame {
+  border-bottom: 1px solid #d1d5db !important;
+}
+
+.fc .fc-timegrid-slot-lane,
+.fc .fc-timegrid-slot-lane-frame,
+.fc .fc-timegrid-slot,
+.fc .fc-timegrid-slot-minor {
+  /* More reliable than borders (table border-collapse can hide borders). */
+  box-shadow: inset 0 -1px 0 #d1d5db !important;
+}
+
+.fc .fc-timegrid-axis,
 .fc .fc-timegrid-slot-label {
-  @apply text-[10px] font-bold uppercase tracking-widest text-slate-400 border-none !important;
+  box-shadow: inset 0 -1px 0 #d1d5db !important;
+}
+
+.fc .fc-timegrid-slot-label {
+  @apply text-[10px] font-bold uppercase tracking-widest text-slate-400 !important;
 }
 
 .fc .fc-timegrid-axis-cushion, .fc .fc-timegrid-slot-label-cushion {

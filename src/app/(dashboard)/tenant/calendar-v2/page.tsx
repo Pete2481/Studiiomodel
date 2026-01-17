@@ -9,25 +9,20 @@ import { randomUUID } from "crypto";
 
 export const dynamic = "force-dynamic";
 
-export default async function CalendarPage(props: {
-  searchParams: Promise<{ global?: string }>
-}) {
+export default async function CalendarV2Page(props: { searchParams: Promise<{ global?: string }> }) {
   const session = await auth();
   const searchParams = await props.searchParams;
   const isGlobal = searchParams.global === "true";
 
-  if (!session) {
-    redirect("/login");
-  }
-
+  if (!session) redirect("/login");
   const sessionUser = session.user as any;
 
   return (
     <div className="space-y-12">
-      <ShellSettings 
-        title="Booking calendar" 
+      <ShellSettings
+        title="Calendar V2 (local)"
       />
-      
+
       <Suspense fallback={<CalendarSkeleton />}>
         <CalendarV2DataWrapper sessionUser={sessionUser} isGlobal={isGlobal} />
       </Suspense>
@@ -50,7 +45,7 @@ function CalendarSkeleton() {
   );
 }
 
-async function CalendarV2DataWrapper({ sessionUser, isGlobal }: { sessionUser: any, isGlobal: boolean }) {
+async function CalendarV2DataWrapper({ sessionUser, isGlobal }: { sessionUser: any; isGlobal: boolean }) {
   const tPrisma = (isGlobal && sessionUser.isMasterAdmin ? prisma : await getTenantPrisma()) as any;
 
   const user = {
@@ -94,12 +89,12 @@ async function CalendarV2DataWrapper({ sessionUser, isGlobal }: { sessionUser: a
       : null,
   ]);
 
-  let calendarSecret =
+  const calendarSecret =
     sessionUser.role === "TENANT_ADMIN" || sessionUser.role === "ADMIN"
       ? ((tenant as any)?.calendarSecret || currentMember?.calendarSecret || null)
-      : (currentMember?.calendarSecret || (tenant as any)?.calendarSecret || null);
+      : currentMember?.calendarSecret || (tenant as any)?.calendarSecret || null;
 
-  // Client portal: use a CLIENT-specific secret so the feed includes only that agency's bookings.
+  let effectiveCalendarSecret = calendarSecret;
   if (String(sessionUser.role || "") === "CLIENT" && sessionUser.clientId) {
     const c = await tPrisma.client.findUnique({
       where: { id: String(sessionUser.clientId) },
@@ -107,20 +102,24 @@ async function CalendarV2DataWrapper({ sessionUser, isGlobal }: { sessionUser: a
     });
     const existing = (c?.settings as any)?.calendarSecret ? String((c.settings as any).calendarSecret) : "";
     if (existing) {
-      calendarSecret = existing;
+      effectiveCalendarSecret = existing;
     } else {
       const newSecret = randomUUID();
       await tPrisma.client.update({
         where: { id: String(sessionUser.clientId) },
         data: { settings: { ...((c?.settings as any) || {}), calendarSecret: newSecret } },
       });
-      calendarSecret = newSecret;
+      effectiveCalendarSecret = newSecret;
     }
   }
 
-  const customStatuses = (tenant as any)?.bookingStatuses || (tenant as any)?.settings?.bookingStatuses || [
-    "Tenanted Property", "Owner Occupied", "Empty (Keys at office)"
-  ];
+  const customStatuses =
+    (tenant as any)?.bookingStatuses ||
+    (tenant as any)?.settings?.bookingStatuses || [
+      "Tenanted Property",
+      "Owner Occupied",
+      "Empty (Keys at office)",
+    ];
 
   return (
     <BookingsCalendarV2PageContent
@@ -130,14 +129,16 @@ async function CalendarV2DataWrapper({ sessionUser, isGlobal }: { sessionUser: a
       tenantLon={tenantGeoProperty?.longitude != null ? Number(tenantGeoProperty.longitude) : null}
       customStatuses={customStatuses}
       businessHours={(tenant as any)?.businessHours || null}
-      calendarSecret={calendarSecret}
+      calendarSecret={effectiveCalendarSecret}
       aiLogisticsEnabled={(tenant as any)?.aiLogisticsEnabled || false}
       slotSettings={{
         sunriseSlotTime: (tenant as any)?.sunriseSlotTime || "06:00",
         duskSlotTime: (tenant as any)?.duskSlotTime || "18:30",
         sunriseSlotsPerDay: (tenant as any)?.sunriseSlotsPerDay || 1,
-        duskSlotsPerDay: (tenant as any)?.duskSlotsPerDay || 1
+        duskSlotsPerDay: (tenant as any)?.duskSlotsPerDay || 1,
       }}
     />
   );
 }
+
+

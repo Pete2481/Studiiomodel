@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useId, useMemo, useRef, useState, useCallback, useEffect } from "react";
 import Cropper from "react-easy-crop";
-import { X, Check, Smartphone, Monitor, Square, ChevronRight, Share2, Download, Loader2, Sun, Contrast, Droplets, ThermometerSun, Sliders, Crop as CropIcon, Image as ImageIcon } from "lucide-react";
+import { X, Check, Smartphone, Monitor, Square, ChevronRight, Share2, Download, Loader2, Sun, Contrast, Droplets, ThermometerSun, Sliders, Crop as CropIcon, Image as ImageIcon, Palette, SunMedium } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SocialCropperProps {
@@ -22,12 +22,15 @@ const PRESETS = [
 
 const ADJUSTMENTS = [
   { id: "exposure", label: "Exposure", icon: Sun, min: 50, max: 150, defaultValue: 100, unit: "%" },
+  { id: "luminance", label: "Luminance", icon: SunMedium, min: 50, max: 150, defaultValue: 100, unit: "%" },
   { id: "contrast", label: "Contrast", icon: Contrast, min: 50, max: 150, defaultValue: 100, unit: "%" },
   { id: "saturation", label: "Saturation", icon: Droplets, min: 0, max: 200, defaultValue: 100, unit: "%" },
   { id: "warmth", label: "Warmth", icon: ThermometerSun, min: -50, max: 50, defaultValue: 0, unit: "" },
+  { id: "hue", label: "Hue", icon: Palette, min: 0, max: 360, defaultValue: 0, unit: "°" },
 ];
 
 export function SocialCropper({ imageUrl, imageName, onClose, onSave }: SocialCropperProps) {
+  const filterId = useId().replace(/:/g, "_");
   const [activeTab, setActiveTab] = useState<"crop" | "adjust">("crop");
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -39,19 +42,100 @@ export function SocialCropper({ imageUrl, imageName, onClose, onSave }: SocialCr
   // Color Adjustments State
   const [adjustValues, setAdjustValues] = useState<Record<string, number>>({
     exposure: 100,
+    luminance: 100,
     contrast: 100,
     saturation: 100,
     warmth: 0,
+    hue: 0,
   });
+  const [luminanceTargetHex, setLuminanceTargetHex] = useState<string>("#ffffff");
   const [activeAdjId, setActiveAdjId] = useState(ADJUSTMENTS[0].id);
 
   const onCropComplete = useCallback((_croppedArea: any, croppedAreaPixels: any) => {
     setCroppedAreaPixels(croppedAreaPixels);
   }, []);
 
+  const hueColorHex = useMemo(() => {
+    const hue = Number(adjustValues.hue || 0);
+    const h = ((hue % 360) + 360) % 360;
+    // HSL( h, 100%, 50% ) -> hex
+    const s = 1;
+    const l = 0.5;
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    const m = l - c / 2;
+    let r = 0, g = 0, b = 0;
+    if (h < 60) [r, g, b] = [c, x, 0];
+    else if (h < 120) [r, g, b] = [x, c, 0];
+    else if (h < 180) [r, g, b] = [0, c, x];
+    else if (h < 240) [r, g, b] = [0, x, c];
+    else if (h < 300) [r, g, b] = [x, 0, c];
+    else [r, g, b] = [c, 0, x];
+    const to255 = (v: number) => Math.round((v + m) * 255);
+    const toHex = (v: number) => to255(v).toString(16).padStart(2, "0");
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+  }, [adjustValues.hue]);
+
+  const setHueFromHex = (hex: string) => {
+    // Parse #RRGGBB -> hue (0..360)
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex || "");
+    if (!m) return;
+    const int = parseInt(m[1], 16);
+    const r = ((int >> 16) & 255) / 255;
+    const g = ((int >> 8) & 255) / 255;
+    const b = (int & 255) / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const d = max - min;
+    let h = 0;
+    if (d === 0) h = 0;
+    else if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h = Math.round(h * 60);
+    if (h < 0) h += 360;
+    setAdjustValues((prev) => ({ ...prev, hue: h }));
+  };
+
+  const luminanceTargetRgb = useMemo(() => {
+    const m = /^#?([0-9a-f]{6})$/i.exec(luminanceTargetHex || "");
+    if (!m) return { r: 255, g: 255, b: 255 };
+    const int = parseInt(m[1], 16);
+    return {
+      r: (int >> 16) & 255,
+      g: (int >> 8) & 255,
+      b: int & 255,
+    };
+  }, [luminanceTargetHex]);
+
+  const buildAlphaTable = (target01: number, tolerance01: number) => {
+    const tol = Math.max(0.00001, tolerance01);
+    const arr: string[] = [];
+    for (let i = 0; i < 256; i++) {
+      const v = i / 255;
+      const w = Math.max(0, Math.min(1, 1 - Math.abs(v - target01) / tol));
+      arr.push(w.toFixed(4));
+    }
+    return arr.join(" ");
+  };
+
+  // Targeted luminance: create a mask based on RGB proximity to the chosen target color.
+  // This is used in preview via an SVG filter (so crop math stays correct) and in export via canvas pixels.
+  const luminanceTables = useMemo(() => {
+    const tol = 0.18; // ~46/255 per-channel tolerance (feels forgiving)
+    return {
+      r: buildAlphaTable(luminanceTargetRgb.r / 255, tol),
+      g: buildAlphaTable(luminanceTargetRgb.g / 255, tol),
+      b: buildAlphaTable(luminanceTargetRgb.b / 255, tol),
+    };
+  }, [luminanceTargetRgb, luminanceTargetHex]);
+
   const getFilterString = () => {
-    const { exposure, contrast, saturation, warmth } = adjustValues;
-    return `brightness(${exposure}%) contrast(${contrast}%) saturate(${saturation}%) sepia(${warmth > 0 ? warmth : 0}%) hue-rotate(${warmth < 0 ? warmth : 0}deg)`;
+    const { exposure, luminance, contrast, saturation, warmth, hue } = adjustValues;
+    const warmthHue = warmth < 0 ? warmth : 0;
+    const hueDeg = Number(hue || 0) + Number(warmthHue || 0);
+    // Note: luminance is applied selectively via SVG filter + export pixel pass (not global brightness).
+    return `brightness(${exposure}%) contrast(${contrast}%) saturate(${saturation}%) sepia(${warmth > 0 ? warmth : 0}%) hue-rotate(${hueDeg}deg) url(#${filterId})`;
   };
 
   const generateCroppedImage = async (mode: 'download' | 'share') => {
@@ -84,7 +168,12 @@ export function SocialCropper({ imageUrl, imageName, onClose, onSave }: SocialCr
       }
 
       // Apply Filters to Canvas
-      ctx.filter = getFilterString();
+      // Apply global filters via canvas filter first (doesn't support targeted luminance mask).
+      // Keep targeted luminance for a pixel pass afterward.
+      const { exposure, contrast, saturation, warmth, hue } = adjustValues;
+      const warmthHue = warmth < 0 ? warmth : 0;
+      const hueDeg = Number(hue || 0) + Number(warmthHue || 0);
+      ctx.filter = `brightness(${exposure}%) contrast(${contrast}%) saturate(${saturation}%) sepia(${warmth > 0 ? warmth : 0}%) hue-rotate(${hueDeg}deg)`;
 
       if (isNoCrop) {
         ctx.drawImage(image, 0, 0);
@@ -100,6 +189,35 @@ export function SocialCropper({ imageUrl, imageName, onClose, onSave }: SocialCr
           croppedAreaPixels.width,
           croppedAreaPixels.height
         );
+      }
+
+      // Targeted luminance pixel pass (brighten/darken only near chosen target color)
+      const lumFactor = Number(adjustValues.luminance || 100) / 100;
+      const hasTargetedLum = Math.abs(lumFactor - 1) > 0.001;
+      if (hasTargetedLum) {
+        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imgData.data;
+        const tol = 46; // per-channel tolerance in 0..255 (should match preview-ish)
+        const tr = luminanceTargetRgb.r;
+        const tg = luminanceTargetRgb.g;
+        const tb = luminanceTargetRgb.b;
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          const wr = Math.max(0, 1 - Math.abs(r - tr) / tol);
+          const wg = Math.max(0, 1 - Math.abs(g - tg) / tol);
+          const wb = Math.max(0, 1 - Math.abs(b - tb) / tol);
+          const w = wr * wg * wb;
+          if (w <= 0) continue;
+          const nr = Math.max(0, Math.min(255, r * lumFactor));
+          const ng = Math.max(0, Math.min(255, g * lumFactor));
+          const nb = Math.max(0, Math.min(255, b * lumFactor));
+          data[i] = Math.round(r * (1 - w) + nr * w);
+          data[i + 1] = Math.round(g * (1 - w) + ng * w);
+          data[i + 2] = Math.round(b * (1 - w) + nb * w);
+        }
+        ctx.putImageData(imgData, 0, 0);
       }
 
       const blob: Blob = await new Promise((resolve) => canvas.toBlob((b) => resolve(b!), "image/jpeg", 0.95));
@@ -139,6 +257,66 @@ export function SocialCropper({ imageUrl, imageName, onClose, onSave }: SocialCr
 
   return (
     <div className="absolute inset-0 z-[100] flex flex-col bg-slate-950/95 backdrop-blur-md animate-in fade-in duration-500">
+      {/* SVG filter for targeted luminance (preview) */}
+      <svg width="0" height="0" aria-hidden="true" className="absolute">
+        <filter id={filterId} colorInterpolationFilters="sRGB">
+          {/* Build per-channel alpha masks based on proximity to target RGB */}
+          <feColorMatrix
+            in="SourceGraphic"
+            type="matrix"
+            values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1 0 0 0 0"
+            result="rAlpha"
+          />
+          <feComponentTransfer in="rAlpha" result="maskR">
+            <feFuncA type="table" tableValues={luminanceTables.r} />
+          </feComponentTransfer>
+
+          <feColorMatrix
+            in="SourceGraphic"
+            type="matrix"
+            values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 1 0 0 0"
+            result="gAlpha"
+          />
+          <feComponentTransfer in="gAlpha" result="maskG">
+            <feFuncA type="table" tableValues={luminanceTables.g} />
+          </feComponentTransfer>
+
+          <feColorMatrix
+            in="SourceGraphic"
+            type="matrix"
+            values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 1 0 0"
+            result="bAlpha"
+          />
+          <feComponentTransfer in="bAlpha" result="maskB">
+            <feFuncA type="table" tableValues={luminanceTables.b} />
+          </feComponentTransfer>
+
+          <feComposite in="maskR" in2="maskG" operator="arithmetic" k1="1" k2="0" k3="0" k4="0" result="maskRG" />
+          <feComposite in="maskRG" in2="maskB" operator="arithmetic" k1="1" k2="0" k3="0" k4="0" result="maskRGB" />
+
+          {/* Brightened/darkened version */}
+          <feComponentTransfer in="SourceGraphic" result="bright">
+            <feFuncR type="linear" slope={String(Number(adjustValues.luminance || 100) / 100)} />
+            <feFuncG type="linear" slope={String(Number(adjustValues.luminance || 100) / 100)} />
+            <feFuncB type="linear" slope={String(Number(adjustValues.luminance || 100) / 100)} />
+          </feComponentTransfer>
+
+          {/* Original * (1-mask) */}
+          <feComponentTransfer in="maskRGB" result="invMask">
+            <feFuncA type="linear" slope="-1" intercept="1" />
+          </feComponentTransfer>
+          <feComposite in="SourceGraphic" in2="invMask" operator="in" result="origPart" />
+
+          {/* Bright * mask */}
+          <feComposite in="bright" in2="maskRGB" operator="in" result="brightPart" />
+
+          {/* origPart + brightPart */}
+          <feComposite in="origPart" in2="brightPart" operator="arithmetic" k1="0" k2="1" k3="1" k4="0" result="out" />
+
+          <feColorMatrix in="out" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" />
+        </filter>
+      </svg>
+
       {/* Header */}
       <div className="flex items-center justify-between p-6 shrink-0 border-b border-white/5">
         <div className="flex items-center gap-4">
@@ -280,12 +458,13 @@ export function SocialCropper({ imageUrl, imageName, onClose, onSave }: SocialCr
                             {currentVal}{adj.unit}
                           </p>
                         </div>
-                        {isActive && isChanged && (
+                        {isChanged && (
                           <span 
                             role="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               setAdjustValues(prev => ({ ...prev, [adj.id]: adj.defaultValue }));
+                              if (adj.id === "luminance") setLuminanceTargetHex("#ffffff");
                             }}
                             className="text-[8px] font-black uppercase tracking-widest text-white/40 hover:text-white cursor-pointer"
                           >
@@ -358,6 +537,45 @@ export function SocialCropper({ imageUrl, imageName, onClose, onSave }: SocialCr
                     {adjustValues[activeAdjId]}{ADJUSTMENTS.find(a => a.id === activeAdjId)?.unit}
                   </span>
                 </div>
+
+                {/* Hue picker + slider */}
+                {activeAdjId === "hue" && (
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="color"
+                        value={hueColorHex}
+                        onChange={(e) => setHueFromHex(e.target.value)}
+                        className="h-10 w-10 rounded-xl border border-white/10 bg-white/5 p-0 overflow-hidden cursor-pointer"
+                        aria-label="Hue color picker"
+                      />
+                      <p className="text-[9px] font-black text-white/40 uppercase tracking-widest">Pick hue</p>
+                    </div>
+                    <p className="text-[9px] font-black text-white/40 uppercase tracking-widest">
+                      {Math.round(adjustValues.hue)}°
+                    </p>
+                  </div>
+                )}
+
+                {/* Luminance swatch + slider */}
+                {activeAdjId === "luminance" && (
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="color"
+                        value={luminanceTargetHex}
+                        onChange={(e) => setLuminanceTargetHex(e.target.value)}
+                        className="h-10 w-10 rounded-xl border border-white/10 bg-white/5 p-0 overflow-hidden cursor-pointer"
+                        aria-label="Luminance target color picker"
+                      />
+                      <p className="text-[9px] font-black text-white/40 uppercase tracking-widest">Pick color</p>
+                    </div>
+                    <p className="text-[9px] font-black text-white/40 uppercase tracking-widest">
+                      {Math.round(adjustValues.luminance)}%
+                    </p>
+                  </div>
+                )}
+
                 <input
                   type="range"
                   value={adjustValues[activeAdjId]}

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getTenantPrisma } from "@/lib/tenant-guard";
 
-// Range-based calendar bookings fetch (fast initial load + background prefetch)
+// Range-based calendar bookings fetch (LITE payload for fast card rendering)
 export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -22,8 +22,7 @@ export async function GET(req: Request) {
   const tPrisma = (await getTenantPrisma()) as any;
   const canViewAll = sessionUser.role === "TENANT_ADMIN" || sessionUser.role === "ADMIN";
 
-  // Fetch only what the calendar needs for rendering (details are opened via drawer).
-  // IMPORTANT: Use overlap logic so events that span into the range still show (parity with old 120-day fetch).
+  // IMPORTANT: Use overlap logic so events that span into the range still show.
   const dbBookings = await tPrisma.booking.findMany({
     where: {
       deletedAt: null,
@@ -37,15 +36,13 @@ export async function GET(req: Request) {
       endAt: true,
       status: true,
       propertyStatus: true,
+      metadata: true,
       clientId: true,
       agentId: true,
       isPlaceholder: true,
       slotType: true,
-      internalNotes: true,
-      clientNotes: true,
       client: { select: { id: true, name: true, businessName: true } },
       property: { select: { id: true, name: true } },
-      services: { select: { serviceId: true, service: { select: { name: true } } } },
       assignments: { select: { teamMemberId: true, teamMember: { select: { id: true, displayName: true, avatarUrl: true } } } },
     },
   });
@@ -58,7 +55,7 @@ export async function GET(req: Request) {
       const e = b.endAt instanceof Date && !isNaN(b.endAt.getTime()) ? b.endAt.toISOString() : null;
       if (!s || !e) return null;
 
-      // Ownership check (same as calendar page)
+      // Ownership check (same as full endpoint)
       let isOwned = canViewAll;
       if (!isOwned) {
         if (role === "CLIENT" && b.clientId === clientId) isOwned = true;
@@ -66,7 +63,7 @@ export async function GET(req: Request) {
         else if (teamMemberId && (b.assignments || []).some((a: any) => a.teamMemberId === teamMemberId)) isOwned = true;
       }
 
-      // Mask restricted bookings as LIMITED AVAILABILITY
+      // Mask restricted bookings as LIMITED AVAILABILITY (lite payload)
       if (!isOwned && !b.isPlaceholder) {
         return {
           id: String(b.id),
@@ -75,16 +72,12 @@ export async function GET(req: Request) {
           endAt: e,
           status: "blocked" as any,
           propertyStatus: "",
-          clientId: null,
-          agentId: null,
           client: null,
           property: { name: "RESTRICTED" },
-          internalNotes: "",
-          clientNotes: "",
           isPlaceholder: false,
           slotType: null,
-          services: [],
-          assignments: [],
+          teamAvatars: [] as string[],
+          teamCount: 0,
         };
       }
 
@@ -93,6 +86,15 @@ export async function GET(req: Request) {
       const isClientOrAgent = role === "CLIENT" || role === "AGENT";
       const isBlocked = String(b.status || "").toUpperCase() === "BLOCKED";
 
+      const members = (b.assignments || [])
+        .map((a: any) => a?.teamMember)
+        .filter(Boolean);
+
+      const teamAvatars = members
+        .map((m: any) => m?.avatarUrl)
+        .filter(Boolean)
+        .slice(0, 3);
+
       return {
         id: String(b.id),
         title: isClientOrAgent && isBlocked ? "TIME BLOCK OUT" : String(b.title || (b.isPlaceholder ? `${b.slotType} SLOT` : "Booking")),
@@ -100,19 +102,13 @@ export async function GET(req: Request) {
         endAt: e,
         status: status as any,
         propertyStatus: b.propertyStatus || "",
-        clientId: b.clientId ? String(b.clientId) : null,
-        agentId: b.agentId ? String(b.agentId) : null,
         client: !b.client ? null : { name: String(b.client.name || ""), businessName: String(b.client.businessName || "") },
         property: isClientOrAgent && isBlocked ? { name: "UNAVAILABLE" } : (!b.property ? { name: "TBC" } : { name: String(b.property.name || "TBC") }),
-        internalNotes: isClientOrAgent && isBlocked ? "" : String(b.internalNotes || ""),
-        clientNotes: isClientOrAgent && isBlocked ? "" : String(b.clientNotes || ""),
         isPlaceholder: !!b.isPlaceholder,
         slotType: (b as any).slotType || null,
-        services: (b.services || []).map((s: any) => ({ serviceId: String(s.serviceId), name: String(s.service?.name || "Unknown Service") })),
-        assignments: (b.assignments || []).map((a: any) => ({
-          teamMemberId: String(a.teamMemberId),
-          teamMember: { displayName: String(a.teamMember?.displayName || "To assign"), avatarUrl: a.teamMember?.avatarUrl || null },
-        })),
+        isDraft: !!((b.metadata as any)?.draft),
+        teamAvatars,
+        teamCount: members.length,
       };
     })
     .filter(Boolean);

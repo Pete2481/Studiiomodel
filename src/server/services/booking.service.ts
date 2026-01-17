@@ -21,6 +21,11 @@ export class BookingService {
    */
   async upsertBooking(tenantId: string, data: any) {
     const tPrisma = await getTenantPrisma(tenantId);
+    const tenantTzRow = await tPrisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { timezone: true },
+    });
+    const tenantTimezone = String(tenantTzRow?.timezone || "Australia/Sydney");
     
     const { 
       id, 
@@ -38,12 +43,15 @@ export class BookingService {
       teamMemberIds = [],
       agentId,
       notes,
+      clientNotes,
       propertyStatus,
       slotType,
+      metadata,
       repeat = "none" 
     } = data;
 
     const isBlocked = status === 'BLOCKED' || status === 'blocked';
+    const isDraft = !!(metadata && typeof metadata === "object" && (metadata as any).draft);
 
     // Hard Switch: AI Logistics parked for now
     const isAiEnabled = false;
@@ -200,7 +208,8 @@ export class BookingService {
     }
 
     // OTC validation: allow bookings without a Client record, but require an OTC name.
-    if (!isBlocked && !clientId && !(otcName && String(otcName).trim())) {
+    // Exception: DRAFT bookings (created by Calendar V2 on click) can be created without client/otc details.
+    if (!isDraft && !isBlocked && !clientId && !(otcName && String(otcName).trim())) {
       throw new Error("OTC name is required when no client is selected.");
     }
 
@@ -228,12 +237,13 @@ export class BookingService {
       status: isBlocked ? BookingStatus.BLOCKED : (status.toUpperCase() as BookingStatus),
       startAt,
       endAt: finalEndAt,
+      clientNotes: clientNotes || "",
       internalNotes: notes || "",
       propertyStatus: propertyStatus || "",
       isPlaceholder: false,
       slotType: slotType || null,
-      metadata: {},
-      timezone: "Australia/Sydney",
+      metadata: (metadata && typeof metadata === "object") ? metadata : {},
+      timezone: tenantTimezone,
       otcName: !isBlocked && !clientId && otcName ? String(otcName) : null,
       otcEmail: !isBlocked && !clientId && otcEmail ? String(otcEmail) : null,
       otcPhone: !isBlocked && !clientId && otcPhone ? String(otcPhone) : null,
@@ -378,30 +388,9 @@ export class BookingService {
       }
     }
 
-    // 2. Handle Notifications
-    if (!isBlocked) {
-      try {
-        const fire = (p: Promise<any>) => {
-          void p.catch((e) => console.error("NOTIFICATION ERROR (non-blocking):", e));
-        };
-        if (!id) {
-          fire(notificationService.sendNewBookingNotification(booking.id));
-          if (status === "APPROVED") {
-            fire(notificationService.sendBookingConfirmationToClient(booking.id));
-            for (const tid of teamMemberIds) {
-              fire(notificationService.sendBookingAssignmentNotification(booking.id, tid));
-            }
-          }
-        } else if (status === "APPROVED") {
-          fire(notificationService.sendBookingConfirmationToClient(booking.id));
-          for (const tid of teamMemberIds) {
-            fire(notificationService.sendBookingAssignmentNotification(booking.id, tid));
-          }
-        }
-      } catch (notifError) {
-        console.error("NOTIFICATION ERROR (non-blocking):", notifError);
-      }
-    }
+    // 2. Booking email notifications are now triggered explicitly via the
+    //    /api/tenant/calendar/notifications/* endpoints (preview + send) so the UI
+    //    can show a draft email and allow Send/Cancel.
 
     return booking;
   }

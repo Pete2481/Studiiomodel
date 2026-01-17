@@ -41,21 +41,23 @@ export function DashboardGalleries({
     services: any[];
     agents: any[];
     bookings: any[];
-  } | null>(() => {
-    if (typeof window === "undefined") return null;
+  } | null>(null);
+  const refDataPromiseRef = useRef<Promise<any> | null>(null);
+
+  // Hydrate cached reference data after mount (avoid hydration mismatch).
+  useEffect(() => {
     try {
       const raw = window.sessionStorage.getItem("studiio:galleryRefData");
-      if (!raw) return null;
+      if (!raw) return;
       const parsed = JSON.parse(raw) as { ts: number; data: any };
-      if (!parsed?.data) return null;
+      if (!parsed?.data) return;
       // 10 minute TTL
-      if (parsed?.ts && Date.now() - parsed.ts > 10 * 60 * 1000) return null;
-      return parsed.data;
+      if (parsed?.ts && Date.now() - parsed.ts > 10 * 60 * 1000) return;
+      setRefData(parsed.data);
     } catch {
-      return null;
+      // ignore cache failures
     }
-  });
-  const refDataPromiseRef = useRef<Promise<any> | null>(null);
+  }, []);
 
   // Helper to get optimized proxy URLs
   const getImageUrl = (url: string, galleryId: string, size: string = "w640h480") => {
