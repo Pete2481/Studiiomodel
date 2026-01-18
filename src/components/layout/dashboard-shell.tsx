@@ -162,18 +162,9 @@ function DashboardShellContent({
   const pathname = usePathname();
   const router = useRouter();
   const isCalendarV2FullWidth = pathname?.startsWith("/tenant/calendar");
-  // IMPORTANT: avoid hydration mismatches by computing hostname only after mount.
-  const [isLocalHost, setIsLocalHost] = useState(false);
-  useEffect(() => {
-    try {
-      setIsLocalHost(window.location.hostname === "localhost");
-    } catch {
-      setIsLocalHost(false);
-    }
-  }, []);
-
-  const isDashboardHomeFullWidthLocal = isLocalHost && pathname === "/";
-  const isTenantGalleriesFullWidthLocal = isLocalHost && pathname?.startsWith("/tenant/galleries");
+  // Full-width layout rollout (now live): dashboard home + galleries.
+  const isDashboardHomeFullWidth = pathname === "/";
+  const isTenantGalleriesFullWidth = pathname?.startsWith("/tenant/galleries");
   const [mounted, setMounted] = useState(false);
   const [copied, setCopied] = useState(false);
   const [counts, setCounts] = useState<{ bookings?: number, galleries?: number, edits?: number }>(navCounts || {});
@@ -648,7 +639,7 @@ function DashboardShellContent({
             "py-6 md:py-10 w-full overflow-x-hidden",
             isCalendarV2FullWidth
               ? "px-0 max-w-none mx-0"
-              : (isDashboardHomeFullWidthLocal || isTenantGalleriesFullWidthLocal)
+              : (isDashboardHomeFullWidth || isTenantGalleriesFullWidth)
                 ? "px-3 md:px-6 max-w-none mx-0"
                 : "px-4 md:px-10 max-w-[1600px] mx-auto"
           )}

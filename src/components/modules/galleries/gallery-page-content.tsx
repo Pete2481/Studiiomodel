@@ -44,12 +44,11 @@ export function GalleryPageContent({
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
-  const [isLocalOnly, setIsLocalOnly] = useState(false);
   const [galleries, setGalleries] = useState(initialGalleries);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedGallery, setSelectedGallery] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [viewMode, setViewMode] = useState<"grid" | "list">("list");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
   const [activeCopyGallery, setActiveCopyGallery] = useState<any>(null);
   const [isCreatingInvoice, setIsCreatingInvoice] = useState<string | null>(null);
@@ -119,17 +118,6 @@ export function GalleryPageContent({
   useEffect(() => {
     void ensureRefData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Local-only UI experiments (avoid hydration mismatch by setting after mount)
-  useEffect(() => {
-    try {
-      const isLocal = window.location.hostname === "localhost";
-      setIsLocalOnly(isLocal);
-      if (isLocal) setViewMode("grid");
-    } catch {
-      // ignore
-    }
   }, []);
 
   // Sync state with props when router.refresh() is called
@@ -343,7 +331,7 @@ export function GalleryPageContent({
         <div
           className={cn(
             "grid grid-cols-1",
-            isLocalOnly ? "gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6" : "gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+            "gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6"
           )}
         >
           {filteredGalleries.map((gallery: any) => (
@@ -356,12 +344,12 @@ export function GalleryPageContent({
               key={gallery.id}
               className={cn(
                 "group relative flex flex-col overflow-hidden bg-white transition-all hover:shadow-xl hover:shadow-slate-200/50",
-                isLocalOnly ? "rounded-[24px] border" : "rounded-[32px] border border-slate-200",
-                isLocalOnly ? localBorder : "border-slate-200"
+                "rounded-[24px] border",
+                localBorder
               )}
             >
               {/* Cover Image */}
-              <div className={cn("overflow-hidden relative", isLocalOnly ? "aspect-[16/10]" : "aspect-[4/3]")}>
+              <div className="overflow-hidden relative aspect-[16/10]">
                 {gallery.cover && gallery.cover !== "" ? (
                   gallery.cover?.includes("/api/dropbox/assets") ? (
                     <img 
@@ -416,7 +404,7 @@ export function GalleryPageContent({
               </div>
 
               {/* Content */}
-              <div className={cn("flex flex-1 flex-col", isLocalOnly ? "p-4" : "p-6")}>
+              <div className="flex flex-1 flex-col p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1">
                     <h3 className="font-bold text-slate-900 group-hover:text-primary transition-colors line-clamp-1">{gallery.title}</h3>
