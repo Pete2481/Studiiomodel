@@ -95,6 +95,11 @@ export async function GET(req: Request) {
         .filter(Boolean)
         .slice(0, 3);
 
+      const teamMemberIds = (b.assignments || [])
+        .map((a: any) => a?.teamMemberId)
+        .filter(Boolean)
+        .map((id: any) => String(id));
+
       return {
         id: String(b.id),
         title: isClientOrAgent && isBlocked ? "TIME BLOCK OUT" : String(b.title || (b.isPlaceholder ? `${b.slotType} SLOT` : "Booking")),
@@ -109,6 +114,7 @@ export async function GET(req: Request) {
         isDraft: !!((b.metadata as any)?.draft),
         teamAvatars,
         teamCount: members.length,
+        teamMemberIds,
       };
     })
     .filter(Boolean);

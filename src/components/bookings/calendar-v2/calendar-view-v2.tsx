@@ -50,6 +50,7 @@ type LiteBooking = {
   isTemp?: boolean;
   teamAvatars?: string[];
   teamCount?: number;
+  teamMemberIds?: string[];
   slotCapacity?: number;
   slotIndex?: number;
 };
@@ -90,6 +91,11 @@ export function CalendarViewV2(props: {
 }) {
   const { user, tenantTimezone, tenantLat, tenantLon, businessHours, aiLogisticsEnabled = false, reference, slotSettings } = props;
   const calendarRef = useRef<any>(null);
+
+  // Local-only feature gates (do not ship to prod UI).
+  const isLocalOnly = typeof window !== "undefined" && window.location.hostname === "localhost";
+  const [selectedTeamMemberIds, setSelectedTeamMemberIds] = useState<string[]>([]);
+  const [isStaffFilterOpen, setIsStaffFilterOpen] = useState(false);
 
   const [bookings, setBookings] = useState<LiteBooking[]>([]);
   const [sunSlots, setSunSlots] = useState<LiteBooking[]>([]);
@@ -790,7 +796,21 @@ export function CalendarViewV2(props: {
       return out;
     })();
 
-    const allBookings = [...bookings, ...sunSlotsRender, ...(clientTempBooking ? [clientTempBooking] : [])];
+    const staffFilteredBookings = (() => {
+      if (!isLocalOnly) return bookings;
+      if (!selectedTeamMemberIds.length) return bookings;
+      const sel = new Set(selectedTeamMemberIds.map(String));
+      return (bookings || []).filter((b: any) => {
+        if (!b || b.isPlaceholder) return true;
+        const ids = Array.isArray((b as any).teamMemberIds) ? ((b as any).teamMemberIds as any[]).map(String) : [];
+        // Keep Unassigned visible.
+        if (!ids.length) return true;
+        for (const id of ids) if (sel.has(String(id))) return true;
+        return false;
+      });
+    })();
+
+    const allBookings = [...staffFilteredBookings, ...sunSlotsRender, ...(clientTempBooking ? [clientTempBooking] : [])];
 
     // 1) Availability background (punched holes)
     if (businessHours) {
@@ -879,7 +899,17 @@ export function CalendarViewV2(props: {
     });
 
     return events;
-  }, [aiLogisticsEnabled, bookings, sunSlots, clientTempBooking, businessHours, isClientOrRestrictedAgent, user]);
+  }, [
+    aiLogisticsEnabled,
+    bookings,
+    sunSlots,
+    clientTempBooking,
+    businessHours,
+    isClientOrRestrictedAgent,
+    user,
+    isLocalOnly,
+    selectedTeamMemberIds,
+  ]);
 
   // Business hours baseline (for FullCalendar non-business shading + constraints)
   const calendarBusinessHours = useMemo(() => {
@@ -1078,6 +1108,74 @@ export function CalendarViewV2(props: {
             Month
           </button>
         </div>
+
+        {/* Local-only: Staff filter (multi-select) */}
+        {isLocalOnly && user?.role !== "CLIENT" ? (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsStaffFilterOpen((v) => !v)}
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-white text-slate-700 rounded-full border border-slate-200 text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all shadow-sm"
+              title="Filter by staff"
+              aria-label="Filter by staff"
+            >
+              <span>Staff</span>
+              <span className="text-slate-400">{selectedTeamMemberIds.length ? `(${selectedTeamMemberIds.length})` : ""}</span>
+            </button>
+
+            {isStaffFilterOpen ? (
+              <>
+                <div className="fixed inset-0 z-[220]" onClick={() => setIsStaffFilterOpen(false)} />
+                <div className="absolute z-[230] right-0 mt-2 w-[280px] bg-white border border-slate-100 rounded-[24px] shadow-2xl overflow-hidden">
+                  <div className="p-3 border-b border-slate-100 flex items-center justify-between">
+                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Staff view</div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTeamMemberIds([])}
+                      className="text-[10px] font-black uppercase tracking-widest text-emerald-700 hover:underline"
+                    >
+                      All
+                    </button>
+                  </div>
+                  <div className="max-h-[260px] overflow-y-auto py-2">
+                    {(reference?.teamMembers || []).map((m: any) => {
+                      const id = String(m.id || "");
+                      const selected = selectedTeamMemberIds.includes(id);
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          className={cn(
+                            "w-full px-4 py-2.5 flex items-center justify-between text-left hover:bg-slate-50",
+                            selected && "bg-emerald-50/50"
+                          )}
+                          onClick={() => {
+                            setSelectedTeamMemberIds((prev) => {
+                              if (prev.includes(id)) return prev.filter((x) => x !== id);
+                              return [...prev, id];
+                            });
+                          }}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="h-8 w-8 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden shrink-0">
+                              {m?.avatarUrl ? <img src={m.avatarUrl} alt="" className="h-full w-full object-cover" /> : null}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-sm font-black text-slate-900 truncate">{String(m.displayName || "Team")}</div>
+                            </div>
+                          </div>
+                          <div className={cn("h-5 w-5 rounded-full border flex items-center justify-center", selected ? "bg-emerald-600 border-emerald-600" : "bg-white border-slate-200")}>
+                            {selected ? <span className="text-white text-[12px] leading-none">✓</span> : null}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="flex items-center gap-2">
           <button

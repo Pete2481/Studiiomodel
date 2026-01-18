@@ -156,6 +156,23 @@ export function BookingPopoverV2(props: {
     repeat: "none" as "none" | "daily" | "weekly" | "monthly",
   });
 
+  // Tenant portal: keep selected contact (agent) consistent with selected client
+  useEffect(() => {
+    if (!open) return;
+    if (isClient) return;
+    // Only relevant for Agency client mode
+    if (form.clientMode !== "existing" || !form.clientId) {
+      if (form.agentId) setForm((p) => ({ ...p, agentId: "" }));
+      return;
+    }
+    if (!form.agentId) return;
+    const ok = (localRef.agents || []).some((a: any) => String(a.id) === String(form.agentId) && String(a.clientId) === String(form.clientId));
+    if (!ok) {
+      setForm((p) => ({ ...p, agentId: "" }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isClient, form.clientId, form.clientMode, localRef.agents]);
+
   const [notesOpen, setNotesOpen] = useState(false);
   const isSunLocked = form.slotType === "SUNRISE" || form.slotType === "DUSK";
 
@@ -986,7 +1003,7 @@ export function BookingPopoverV2(props: {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => setForm((p) => ({ ...p, clientMode: "existing" }))}
+                          onClick={() => setForm((p) => ({ ...p, clientMode: "existing", agentId: "" }))}
                           className={cn(
                             "h-8 px-3 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all",
                             form.clientMode === "existing" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-white text-slate-400 border-slate-200"
@@ -996,7 +1013,7 @@ export function BookingPopoverV2(props: {
                         </button>
                         <button
                           type="button"
-                          onClick={() => setForm((p) => ({ ...p, clientMode: "otc", clientId: "" }))}
+                          onClick={() => setForm((p) => ({ ...p, clientMode: "otc", clientId: "", agentId: "" }))}
                           className={cn(
                             "h-8 px-3 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all",
                             form.clientMode === "otc" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-white text-slate-400 border-slate-200"
@@ -1091,7 +1108,7 @@ export function BookingPopoverV2(props: {
                                           selected ? "bg-emerald-50/50" : "hover:bg-slate-50"
                                         )}
                                         onClick={() => {
-                                          setForm((p) => ({ ...p, clientId: c.id }));
+                                          setForm((p) => ({ ...p, clientId: c.id, agentId: "" }));
                                           setIsClientDropdownOpen(false);
                                         }}
                                       >
@@ -1109,6 +1126,26 @@ export function BookingPopoverV2(props: {
                         )}
                       </div>
                     )}
+
+                    {/* Contact / Agent (tenant portal) */}
+                    {form.clientMode === "existing" && !!form.clientId ? (
+                      <Field label="Contact">
+                        <select
+                          className="w-full h-14 rounded-3xl border border-slate-200 px-5 pr-11 text-sm font-black bg-white appearance-none"
+                          value={form.agentId}
+                          onChange={(e) => setForm((p) => ({ ...p, agentId: e.target.value }))}
+                        >
+                          <option value="">Select contact…</option>
+                          {(localRef.agents || [])
+                            .filter((a: any) => String(a.clientId) === String(form.clientId))
+                            .map((a: any) => (
+                              <option key={String(a.id)} value={String(a.id)}>
+                                {String(a.name || "Contact")}
+                              </option>
+                            ))}
+                        </select>
+                      </Field>
+                    ) : null}
                   </>
                 )}
 
