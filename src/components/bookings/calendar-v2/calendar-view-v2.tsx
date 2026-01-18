@@ -126,10 +126,21 @@ export function CalendarViewV2(props: {
   const sunRangeCacheRef = useRef<Map<string, LiteBooking[]>>(new Map());
   const sunRangeInflightRef = useRef<Map<string, Promise<LiteBooking[]>>>(new Map());
 
-  const [hoveredEvent, setHoveredEvent] = useState<{ event: BookingDetails; x: number; y: number } | null>(null);
-  const hoverTimerRef = useRef<number | null>(null);
-  const hoverAbortRef = useRef<AbortController | null>(null);
-  const detailsCacheRef = useRef<Map<string, BookingDetails>>(new Map());
+  type HoverLiteEvent = {
+    id: string;
+    title: string;
+    startAt: string;
+    endAt: string;
+    status: string;
+    isPlaceholder?: boolean;
+    isMasked?: boolean;
+    client?: { name?: string; businessName?: string } | null;
+    property?: { name?: string } | null;
+    teamAvatars?: string[];
+    teamCount?: number;
+  };
+
+  const [hoveredEvent, setHoveredEvent] = useState<{ event: HoverLiteEvent; x: number; y: number } | null>(null);
   const hoverDomHandlersRef = useRef<WeakMap<Element, { enter: () => void; leave: () => void }>>(new WeakMap());
   const pointerMoveHandlersRef = useRef<WeakMap<Element, (e: MouseEvent) => void>>(new WeakMap());
 
@@ -1018,14 +1029,6 @@ export function CalendarViewV2(props: {
   }, [businessHours, bookings, sunSlots, tenantTimezone]);
 
   const clearHover = () => {
-    if (hoverTimerRef.current) {
-      window.clearTimeout(hoverTimerRef.current);
-      hoverTimerRef.current = null;
-    }
-    if (hoverAbortRef.current) {
-      hoverAbortRef.current.abort();
-      hoverAbortRef.current = null;
-    }
     setHoveredEvent(null);
   };
 
@@ -1043,38 +1046,28 @@ export function CalendarViewV2(props: {
 
     const rect = (el as any)?.getBoundingClientRect?.();
     if (!rect) return;
-    scheduleHoverFetch(String(evt.id), rect.left + rect.width / 2, rect.top);
-  };
+    const x = rect.left + rect.width / 2;
+    const y = rect.top;
 
-  const scheduleHoverFetch = (bookingId: string, x: number, y: number) => {
-    if (hoverTimerRef.current) window.clearTimeout(hoverTimerRef.current);
-    if (hoverAbortRef.current) hoverAbortRef.current.abort();
+    const startAtIso = String(evt.extendedProps?.startAt || (evt.start ? evt.start.toISOString() : ""));
+    const endAtIso = String(evt.extendedProps?.endAt || (evt.end ? evt.end.toISOString() : ""));
+    if (!startAtIso || !endAtIso) return;
 
-    hoverTimerRef.current = window.setTimeout(async () => {
-      // Cache hit
-      const cached = detailsCacheRef.current.get(bookingId);
-      if (cached) {
-        setHoveredEvent({ event: cached, x, y });
-        return;
-      }
+    const lite: HoverLiteEvent = {
+      id: String(evt.id || ""),
+      title: String(evt.title || ""),
+      startAt: startAtIso,
+      endAt: endAtIso,
+      status: String(evt.extendedProps?.status || evt.extendedProps?.statusRaw || "").toUpperCase() || String(status || ""),
+      isPlaceholder: !!evt.extendedProps?.isPlaceholder,
+      isMasked: !!evt.extendedProps?.isMasked,
+      client: evt.extendedProps?.client || null,
+      property: evt.extendedProps?.property || null,
+      teamAvatars: Array.isArray(evt.extendedProps?.teamAvatars) ? (evt.extendedProps.teamAvatars as string[]) : [],
+      teamCount: Number(evt.extendedProps?.teamCount || 0),
+    };
 
-      const ac = new AbortController();
-      hoverAbortRef.current = ac;
-
-      try {
-        const res = await fetch(`/api/tenant/calendar/booking/${encodeURIComponent(bookingId)}`, { signal: ac.signal });
-        const data = await res.json().catch(() => ({}));
-        const booking = (data?.booking || null) as BookingDetails | null;
-        if (!booking) return;
-
-        detailsCacheRef.current.set(String(booking.id), booking);
-        setHoveredEvent({ event: booking, x, y });
-      } catch (e) {
-        // ignore aborts
-      } finally {
-        if (hoverAbortRef.current === ac) hoverAbortRef.current = null;
-      }
-    }, 150);
+    setHoveredEvent({ event: lite, x, y });
   };
 
   useEffect(() => {
@@ -1724,7 +1717,7 @@ export function CalendarViewV2(props: {
         />
       </div>
 
-      {/* Desktop Hover Tooltip (fetches details on hover) */}
+      {/* Desktop Hover Tooltip (instant, derived from lite card data) */}
       {hoveredEvent && !hoveredEvent.event.isPlaceholder && (
         <div
           className="fixed z-[200] w-72 bg-white rounded-3xl shadow-2xl border border-slate-100 p-6 pointer-events-none animate-in fade-in zoom-in duration-150"
@@ -1760,39 +1753,29 @@ export function CalendarViewV2(props: {
 
               <div className="flex items-start justify-between gap-4">
                 <span className="text-[10px] font-bold text-slate-400 uppercase pt-0.5">Team</span>
-                <div className="flex flex-col items-end gap-2">
-                  {hoveredEvent.event.assignments?.length ? (
-                    hoveredEvent.event.assignments.map((a: any, i: number) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-slate-700">{a.teamMember?.displayName}</span>
-                        {a.teamMember?.avatarUrl && (
-                          <div className="h-6 w-6 rounded-lg overflow-hidden border border-slate-100 bg-slate-50">
-                            <img src={a.teamMember.avatarUrl} className="h-full w-full object-cover" alt="" />
+                <div className="flex items-center justify-end gap-2">
+                  {Number(hoveredEvent.event.teamCount || 0) > 0 ? (
+                    <>
+                      <div className="flex items-center">
+                        {(hoveredEvent.event.teamAvatars || []).slice(0, 3).map((u, i) => (
+                          <div
+                            key={`${u}-${i}`}
+                            className="h-6 w-6 rounded-lg overflow-hidden border-2 border-white bg-slate-50 shadow-sm"
+                            style={{ marginLeft: i === 0 ? 0 : -8 }}
+                          >
+                            <img src={u} className="h-full w-full object-cover" alt="" />
                           </div>
-                        )}
+                        ))}
                       </div>
-                    ))
+                      {Number(hoveredEvent.event.teamCount || 0) > 3 ? (
+                        <span className="text-[10px] font-black text-slate-600">+{Number(hoveredEvent.event.teamCount || 0) - 3}</span>
+                      ) : null}
+                    </>
                   ) : (
                     <span className="text-xs font-bold text-slate-400 italic">To be assigned</span>
                   )}
                 </div>
               </div>
-
-              {hoveredEvent.event.services?.length ? (
-                <div className="flex items-start justify-between gap-4 pt-1">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase pt-0.5">Services</span>
-                  <div className="flex flex-wrap justify-end gap-1 max-w-[160px]">
-                    {hoveredEvent.event.services.map((s: any, i: number) => (
-                      <span
-                        key={i}
-                        className="px-2 py-0.5 bg-slate-50 text-slate-600 rounded-md text-[9px] font-black border border-slate-100 uppercase tracking-tighter"
-                      >
-                        {s.name}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
             </div>
           </div>
         </div>
