@@ -77,6 +77,7 @@ export function CalendarViewV2(props: {
   tenantTimezone: string;
   tenantLat?: number | null;
   tenantLon?: number | null;
+  sunSlotsAddress?: string | null;
   customStatuses?: string[];
   businessHours?: any;
   calendarSecret?: string | null;
@@ -89,7 +90,7 @@ export function CalendarViewV2(props: {
     duskSlotsPerDay: number;
   };
 }) {
-  const { user, tenantTimezone, tenantLat, tenantLon, businessHours, aiLogisticsEnabled = false, reference, slotSettings } = props;
+  const { user, tenantTimezone, tenantLat, tenantLon, businessHours, aiLogisticsEnabled = false, reference, slotSettings, sunSlotsAddress } = props;
   const calendarRef = useRef<any>(null);
 
   // Local-only feature gates (do not ship to prod UI).
@@ -1822,6 +1823,7 @@ export function CalendarViewV2(props: {
         onClose={() => setIsHoursModalOpen(false)}
         initialHours={businessHours}
         aiLogisticsEnabled={aiLogisticsEnabled}
+        initialSunSlotsAddress={sunSlotsAddress || ""}
       />
       <CalendarSubscriptionModal
         isOpen={isSubscriptionModalOpen}

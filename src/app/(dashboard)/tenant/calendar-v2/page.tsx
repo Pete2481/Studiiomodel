@@ -122,11 +122,24 @@ async function CalendarV2DataWrapper({ sessionUser, isGlobal }: { sessionUser: a
     ];
 
   return (
+    (() => {
+      const settings = ((tenant as any)?.settings || {}) as any;
+      const sunSlotsAddress = settings?.sunSlotsAddress ? String(settings.sunSlotsAddress) : "";
+      const settingsLat = settings?.sunSlotsLat != null ? Number(settings.sunSlotsLat) : null;
+      const settingsLon = settings?.sunSlotsLon != null ? Number(settings.sunSlotsLon) : null;
+      const geoLat = tenantGeoProperty?.latitude != null ? Number(tenantGeoProperty.latitude) : null;
+      const geoLon = tenantGeoProperty?.longitude != null ? Number(tenantGeoProperty.longitude) : null;
+
+      const tenantLat = settingsLat != null ? settingsLat : geoLat;
+      const tenantLon = settingsLon != null ? settingsLon : geoLon;
+
+      return (
     <BookingsCalendarV2PageContent
       user={user}
       tenantTimezone={(tenant as any)?.timezone || "Australia/Sydney"}
-      tenantLat={tenantGeoProperty?.latitude != null ? Number(tenantGeoProperty.latitude) : null}
-      tenantLon={tenantGeoProperty?.longitude != null ? Number(tenantGeoProperty.longitude) : null}
+      tenantLat={tenantLat}
+      tenantLon={tenantLon}
+      sunSlotsAddress={sunSlotsAddress}
       customStatuses={customStatuses}
       businessHours={(tenant as any)?.businessHours || null}
       calendarSecret={effectiveCalendarSecret}
@@ -138,6 +151,8 @@ async function CalendarV2DataWrapper({ sessionUser, isGlobal }: { sessionUser: a
         duskSlotsPerDay: (tenant as any)?.duskSlotsPerDay || 1,
       }}
     />
+      );
+    })()
   );
 }
 

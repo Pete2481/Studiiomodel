@@ -20,6 +20,7 @@ export function BookingsCalendarV2PageContent(props: {
   tenantTimezone: string;
   tenantLat?: number | null;
   tenantLon?: number | null;
+  sunSlotsAddress?: string | null;
   customStatuses?: string[];
   businessHours?: any;
   calendarSecret?: string | null;

@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSessionTenantId, getTenantPrisma } from "@/lib/tenant-guard";
 import { revalidatePath } from "next/cache";
 import { format, addDays, subMinutes, addMinutes, startOfDay } from "date-fns";
-import { getWeatherData } from "./weather";
+import { getSunTimesForLatLonRange } from "./weather";
 import { auth } from "@/auth";
 import { BookingStatus } from "@prisma/client";
 
@@ -200,7 +200,7 @@ export async function updateTenantBookingStatuses(statuses: string[]) {
   }
 }
 
-export async function updateTenantBusinessHours(hours: any) {
+export async function updateTenantBusinessHours(input: any) {
   try {
     const session = await auth();
     const tenantId = await getSessionTenantId();
@@ -209,6 +209,41 @@ export async function updateTenantBusinessHours(hours: any) {
     // ROLE CHECK
     if (session.user.role !== "TENANT_ADMIN" && session.user.role !== "ADMIN") {
       return { success: false, error: "Permission Denied: Admin only." };
+    }
+
+    const hours = (input && typeof input === "object" && "hours" in input) ? (input as any).hours : input;
+    const sunSlotsAddressRaw =
+      (input && typeof input === "object" && "sunSlotsAddress" in input) ? String((input as any).sunSlotsAddress || "").trim() : "";
+
+    // Resolve and persist Sun Slots base location into tenant.settings (optional)
+    if (sunSlotsAddressRaw) {
+      const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+      if (!apiKey) return { success: false, error: "Missing Google Maps API key" };
+
+      const geoUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(sunSlotsAddressRaw)}&key=${apiKey}`;
+      const geoRes = await fetch(geoUrl);
+      const geoData = await geoRes.json().catch(() => ({}));
+      if (geoData.status !== "OK" || !geoData.results?.[0]?.geometry?.location) {
+        return { success: false, error: "Failed to geocode sun slots address" };
+      }
+      const { lat, lng } = geoData.results[0].geometry.location;
+
+      const existing = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { settings: true },
+      });
+      const currentSettings = (existing?.settings as any) || {};
+      await prisma.tenant.update({
+        where: { id: tenantId },
+        data: {
+          settings: {
+            ...currentSettings,
+            sunSlotsAddress: sunSlotsAddressRaw,
+            sunSlotsLat: Number(lat),
+            sunSlotsLon: Number(lng),
+          },
+        },
+      });
     }
 
     // 1. Update the business hours in the DB using Raw SQL to ensure "Hard Save"
@@ -220,93 +255,89 @@ export async function updateTenantBusinessHours(hours: any) {
       tenantId
     );
 
-    // 2. Generate/Update Placeholders for the next 30 days
+    // 2. Generate/Update Placeholders for the next 30 days (timezone-safe)
+    const tPrisma = await getTenantPrisma();
     const startDate = new Date();
     const startDateStr = format(startDate, "yyyy-MM-dd");
+    const endDateStr = format(addDays(startDate, 29), "yyyy-MM-dd");
 
-    const tPrisma = await getTenantPrisma();
-    
-    // 1. Delete ALL future placeholders to start fresh (from today onwards)
+    // Delete ALL future placeholders to start fresh (from today onwards)
     await tPrisma.booking.deleteMany({
       where: {
         isPlaceholder: true,
-        startAt: { gte: startOfDay(startDate) }
-      }
+        startAt: { gte: startOfDay(startDate) },
+      },
     });
 
-    // Get weather/sun data for placeholders (Open-Meteo forecast is max 16 days)
-    const weatherRes = await getWeatherData(-28.8333, 153.4333, startDateStr, format(addDays(startDate, 13), "yyyy-MM-dd"));
-    
-    if (weatherRes.success && weatherRes.daily) {
-      const lastSunriseStr = weatherRes.daily.sunrise[weatherRes.daily.sunrise.length - 1];
-      const lastSunsetStr = weatherRes.daily.sunset[weatherRes.daily.sunset.length - 1];
+    // Use tenant-configured Sun Slots location if available; otherwise fall back to a reasonable default.
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { timezone: true, settings: true },
+    });
+    const timeZone = String((tenant as any)?.timezone || "Australia/Sydney");
+    const settings = ((tenant as any)?.settings || {}) as any;
+    const lat = Number(settings?.sunSlotsLat ?? -28.8333);
+    const lon = Number(settings?.sunSlotsLon ?? 153.4333);
 
-      // Prepare batch data
-      const placeholdersToCreate = [];
+    const sunRes = await getSunTimesForLatLonRange({
+      lat,
+      lon,
+      startDate: startDateStr,
+      endDate: endDateStr,
+      timeZone,
+    });
+    if (sunRes.success) {
+      const byDate = new Map<string, { sunrise: Date; sunset: Date }>();
+      for (const d of sunRes.days) {
+        const sr = new Date(d.sunrise);
+        const ss = new Date(d.sunset);
+        if (!isNaN(sr.getTime()) && !isNaN(ss.getTime())) byDate.set(String(d.date), { sunrise: sr, sunset: ss });
+      }
 
+      const placeholdersToCreate: any[] = [];
       for (let i = 0; i < 30; i++) {
         const currentDate = addDays(startDate, i);
         const dateStr = format(currentDate, "yyyy-MM-dd");
         const dayOfWeek = currentDate.getDay().toString();
-        const config = hours[dayOfWeek];
-
+        const config = (hours as any)[dayOfWeek];
         if (!config || (!config.sunrise && !config.dusk)) continue;
 
-        let sunriseTime: Date;
-        let sunsetTime: Date;
+        const sun = byDate.get(dateStr);
+        if (!sun) continue;
 
-        const sunDataIdx = weatherRes.daily.time.indexOf(dateStr);
-        if (sunDataIdx !== -1) {
-          sunriseTime = new Date(weatherRes.daily.sunrise[sunDataIdx]);
-          sunsetTime = new Date(weatherRes.daily.sunset[sunDataIdx]);
-        } else {
-          // Calculate approximate sun times based on the last known day
-          const daysFromLast = i - (weatherRes.daily.time.length - 1);
-          const baseSunrise = new Date(lastSunriseStr);
-          const baseSunset = new Date(lastSunsetStr);
-          
-          sunriseTime = new Date(baseSunrise.getTime() + (daysFromLast * 24 * 60 * 60 * 1000));
-          sunsetTime = new Date(baseSunset.getTime() + (daysFromLast * 24 * 60 * 60 * 1000));
-        }
-
-        // Create Sunrise Slots
         for (let s = 0; s < (config.sunrise || 0); s++) {
           placeholdersToCreate.push({
             tenantId,
             title: "SUNRISE SLOT",
-            startAt: subMinutes(sunriseTime, 30),
-            endAt: addMinutes(sunriseTime, 30),
+            startAt: subMinutes(sun.sunrise, 30),
+            endAt: addMinutes(sun.sunrise, 30),
             status: BookingStatus.REQUESTED,
             isPlaceholder: true,
             slotType: "SUNRISE",
             clientId: null,
             propertyId: null,
-            metadata: {}
+            metadata: {},
           });
         }
 
-        // Create Dusk Slots
         for (let d = 0; d < (config.dusk || 0); d++) {
           placeholdersToCreate.push({
             tenantId,
             title: "DUSK SLOT",
-            startAt: subMinutes(sunsetTime, 30),
-            endAt: addMinutes(sunsetTime, 30),
+            startAt: subMinutes(sun.sunset, 30),
+            endAt: addMinutes(sun.sunset, 30),
             status: BookingStatus.REQUESTED,
             isPlaceholder: true,
             slotType: "DUSK",
             clientId: null,
             propertyId: null,
-            metadata: {}
+            metadata: {},
           });
         }
       }
 
-      // 2. Batch Create everything
       if (placeholdersToCreate.length > 0) {
-        await tPrisma.booking.createMany({
-          data: placeholdersToCreate
-        });
+        await tPrisma.booking.createMany({ data: placeholdersToCreate });
       }
     }
 

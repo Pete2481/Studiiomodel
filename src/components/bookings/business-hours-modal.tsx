@@ -5,12 +5,14 @@ import { X, Clock, Check, Sunrise, Sunset, Minus, Plus, Loader2 } from "lucide-r
 import { cn } from "@/lib/utils";
 import { updateTenantBusinessHours } from "@/app/actions/tenant-settings";
 import { LoadingOverlay } from "@/components/ui/loading-overlay";
+import { AddressAutocomplete } from "@/components/ui/address-autocomplete";
 
 interface BusinessHoursModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialHours: any;
   aiLogisticsEnabled?: boolean;
+  initialSunSlotsAddress?: string | null;
 }
 
 const DAYS = [
@@ -23,7 +25,7 @@ const DAYS = [
   { id: 6, label: "Saturday" },
 ];
 
-export function BusinessHoursModal({ isOpen, onClose, initialHours, aiLogisticsEnabled = false }: BusinessHoursModalProps) {
+export function BusinessHoursModal({ isOpen, onClose, initialHours, aiLogisticsEnabled = false, initialSunSlotsAddress = "" }: BusinessHoursModalProps) {
   const [hours, setHours] = useState(initialHours || {
     "0": { open: false, start: "09:00", end: "17:00" },
     "1": { open: true, start: "09:00", end: "17:00" },
@@ -34,6 +36,7 @@ export function BusinessHoursModal({ isOpen, onClose, initialHours, aiLogisticsE
     "6": { open: true, start: "09:00", end: "17:00" },
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [sunSlotsAddress, setSunSlotsAddress] = useState<string>(String(initialSunSlotsAddress || ""));
 
   if (!isOpen) return null;
 
@@ -63,7 +66,7 @@ export function BusinessHoursModal({ isOpen, onClose, initialHours, aiLogisticsE
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      const res = await updateTenantBusinessHours(hours);
+      const res = await updateTenantBusinessHours({ hours, sunSlotsAddress });
       if (res.success) {
         onClose();
       } else {
@@ -94,6 +97,19 @@ export function BusinessHoursModal({ isOpen, onClose, initialHours, aiLogisticsE
         </div>
 
         <div className="p-8 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
+          <div className="space-y-2">
+            <div className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">Sun slots base address</div>
+            <AddressAutocomplete
+              value={sunSlotsAddress}
+              onChange={(v) => setSunSlotsAddress(v)}
+              placeholder="Enter the suburb/street used for Sunrise/Dusk times"
+              className="w-full rounded-3xl border border-slate-200 px-5 py-4 text-sm font-semibold focus:outline-none focus:ring-0 bg-white"
+            />
+            <div className="text-[11px] text-slate-500">
+              Used to calculate Sunrise/Dusk times. If blank, we fall back to your first property with coordinates.
+            </div>
+          </div>
+
           {/* Header Row */}
           <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 pb-2 border-b border-slate-50">
             <div className="min-w-[120px]">Day</div>
