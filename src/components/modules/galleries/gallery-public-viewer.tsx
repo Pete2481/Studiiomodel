@@ -2444,20 +2444,19 @@ export function GalleryPublicViewer({
 
               {/* AI Social Video (PREMIUM) */}
               <button
-                onClick={() => {
-                  setIsChoiceModalOpen(false);
-                  openAiSocialVideo();
-                }}
-                className="group p-8 rounded-[32px] border-2 border-slate-100 bg-white hover:border-slate-900/30 hover:bg-slate-900/[0.02] transition-all flex flex-col items-center text-center gap-6"
+                type="button"
+                disabled
+                className="group p-8 rounded-[32px] border-2 border-slate-100 bg-white transition-all flex flex-col items-center text-center gap-6 opacity-60 cursor-not-allowed"
+                aria-disabled="true"
               >
-                <span className="text-[10px] font-black uppercase tracking-widest text-rose-500">PREMIUM</span>
-                <div className="h-16 w-16 rounded-2xl bg-slate-900/10 text-slate-900 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">PREMIUM</span>
+                <div className="h-16 w-16 rounded-2xl bg-slate-900/10 text-slate-900 flex items-center justify-center">
                   <Film className="h-8 w-8" />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-center gap-2">
                     <p className="text-sm font-black text-slate-900 uppercase tracking-widest">AI Social Video</p>
-                    <span className="px-2 py-0.5 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest rounded-md">COST</span>
+                    <span className="px-2 py-0.5 bg-slate-700 text-white text-[9px] font-black uppercase tracking-widest rounded-md">COMING SOON</span>
                   </div>
                   <p className="text-xs font-medium text-slate-400 leading-relaxed">
                     Turn 3–5 photos into a short moving video (vertical).
