@@ -97,6 +97,23 @@ export function CalendarViewV2(props: {
   const [selectedTeamMemberIds, setSelectedTeamMemberIds] = useState<string[]>([]);
   const [isStaffFilterOpen, setIsStaffFilterOpen] = useState(false);
 
+  // Mobile responsiveness (keep desktop unchanged)
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 640px)");
+    const update = () => setIsMobile(!!mq.matches);
+    update();
+    try {
+      mq.addEventListener("change", update);
+      return () => mq.removeEventListener("change", update);
+    } catch {
+      // Safari fallback
+      mq.addListener(update);
+      return () => mq.removeListener(update);
+    }
+  }, []);
+
   const [bookings, setBookings] = useState<LiteBooking[]>([]);
   const [sunSlots, setSunSlots] = useState<LiteBooking[]>([]);
   const [clientTempBooking, setClientTempBooking] = useState<LiteBooking | null>(null);
@@ -112,11 +129,15 @@ export function CalendarViewV2(props: {
   const hoverTimerRef = useRef<number | null>(null);
   const hoverAbortRef = useRef<AbortController | null>(null);
   const detailsCacheRef = useRef<Map<string, BookingDetails>>(new Map());
+  const hoverDomHandlersRef = useRef<WeakMap<Element, { enter: () => void; leave: () => void }>>(new WeakMap());
+  const pointerMoveHandlersRef = useRef<WeakMap<Element, (e: MouseEvent) => void>>(new WeakMap());
 
   const [popover, setPopover] = useState<{ open: boolean; mode: "booking" | "blockout"; bookingId?: string; startAt?: string; endAt?: string; presetSlotType?: "" | "SUNRISE" | "DUSK" | null }>(
     { open: false, mode: "booking" }
   );
   const [popoverAnchor, setPopoverAnchor] = useState<{ left: number; top: number; right: number; bottom: number; width: number; height: number } | null>(null);
+  const [popoverRestore, setPopoverRestore] = useState<{ key: number; form: any } | null>(null);
+  const [saveErrorMsg, setSaveErrorMsg] = useState<string | null>(null);
 
   const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
   const [isHoursModalOpen, setIsHoursModalOpen] = useState(false);
@@ -984,6 +1005,23 @@ export function CalendarViewV2(props: {
     setHoveredEvent(null);
   };
 
+  const tryScheduleHoverFetch = (evt: any, el?: Element | null) => {
+    if (!evt) return;
+    const display = String(evt.display || "").toLowerCase();
+    if (display === "background") return;
+
+    const isMasked = !!evt.extendedProps?.isMasked;
+    const isPlaceholder = !!evt.extendedProps?.isPlaceholder;
+    const status = String(evt.extendedProps?.status || "").toUpperCase();
+    const isBlocked = status === "BLOCKED";
+    if (isMasked || isPlaceholder) return;
+    if (user?.role === "CLIENT" && isBlocked) return;
+
+    const rect = (el as any)?.getBoundingClientRect?.();
+    if (!rect) return;
+    scheduleHoverFetch(String(evt.id), rect.left + rect.width / 2, rect.top);
+  };
+
   const scheduleHoverFetch = (bookingId: string, x: number, y: number) => {
     if (hoverTimerRef.current) window.clearTimeout(hoverTimerRef.current);
     if (hoverAbortRef.current) hoverAbortRef.current.abort();
@@ -1033,12 +1071,17 @@ export function CalendarViewV2(props: {
     });
   };
 
+  const flashSaveError = (msg: string) => {
+    setSaveErrorMsg(msg);
+    window.setTimeout(() => setSaveErrorMsg(null), 3500);
+  };
+
   return (
     <div className="relative">
       {/* Top menu (V1 parity) */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+      <div className={cn("flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4", isMobile && "mb-3")}>
         {/* Prev / Today / Next + range title (iOS style) */}
-        <div className="flex items-center justify-between gap-3">
+        <div className={cn("flex items-center justify-between gap-3", isMobile && "w-full")}>
           <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-full p-1 shadow-sm">
             <button
               type="button"
@@ -1069,13 +1112,14 @@ export function CalendarViewV2(props: {
             </button>
           </div>
 
-          <div className="text-right">
+          <div className={cn("text-right", isMobile && "flex-1")}>
             <div className="text-[22px] md:text-[26px] font-black tracking-tight text-slate-900">
               {rangeTitle || ""}
             </div>
           </div>
         </div>
 
+        {!isMobile ? (
         <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-full p-1 shadow-sm">
           <button
             type="button"
@@ -1108,9 +1152,10 @@ export function CalendarViewV2(props: {
             Month
           </button>
         </div>
+        ) : null}
 
         {/* Local-only: Staff filter (multi-select) */}
-        {isLocalOnly && user?.role !== "CLIENT" ? (
+        {isLocalOnly && !isMobile && user?.role !== "CLIENT" ? (
           <div className="relative">
             <button
               type="button"
@@ -1177,6 +1222,7 @@ export function CalendarViewV2(props: {
           </div>
         ) : null}
 
+        {!isMobile ? (
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsSubscriptionModalOpen(true)}
@@ -1203,6 +1249,7 @@ export function CalendarViewV2(props: {
             <span>New Appt</span>
           </button>
         </div>
+        ) : null}
       </div>
 
       {user?.role === "CLIENT" && clientHoursMsg ? (
@@ -1213,14 +1260,23 @@ export function CalendarViewV2(props: {
         </div>
       ) : null}
 
+      {saveErrorMsg ? (
+        <div className="mb-3">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-black uppercase tracking-widest">
+            {saveErrorMsg}
+          </div>
+        </div>
+      ) : null}
+
       <div className="rounded-[32px] border border-slate-100 bg-white overflow-hidden">
         <FullCalendar
           ref={calendarRef}
           plugins={[luxonPlugin, timeGridPlugin, interactionPlugin, ...(dayGridPlugin ? [dayGridPlugin] : [])]}
-          initialView="timeGridWeek"
+          views={{ timeGridTwoDay: { type: "timeGrid", duration: { days: 2 } } } as any}
+          initialView={isMobile ? "timeGridTwoDay" : "timeGridWeek"}
           headerToolbar={false}
           timeZone={tenantTimezone}
-          height="70vh"
+          height={isMobile ? "78vh" : "70vh"}
           events={calendarEvents}
           businessHours={calendarBusinessHours}
           selectable={!(isRestrictedRole && !canClientPlaceBookings)}
@@ -1301,12 +1357,26 @@ export function CalendarViewV2(props: {
             await createDraftBooking(start.toISOString(), end.toISOString(), anchor);
           }}
           eventDidMount={(info) => {
-            // Track pointer position for selection fallback anchoring.
             const el = info.el as HTMLElement;
-            const onMove = (e: MouseEvent) => {
-              lastPointerRef.current = { x: e.clientX, y: e.clientY };
-            };
-            el.addEventListener("mousemove", onMove);
+            if (!el) return;
+
+            // Track pointer position for selection fallback anchoring.
+            if (!pointerMoveHandlersRef.current.has(el)) {
+              const onMove = (e: MouseEvent) => {
+                lastPointerRef.current = { x: e.clientX, y: e.clientY };
+              };
+              el.addEventListener("mousemove", onMove);
+              pointerMoveHandlersRef.current.set(el, onMove);
+            }
+
+            // Hover tooltip fallback (production-safe): attach native DOM listeners
+            if (!hoverDomHandlersRef.current.has(el)) {
+              const enter = () => tryScheduleHoverFetch(info.event, el);
+              const leave = () => clearHover();
+              el.addEventListener("mouseenter", enter);
+              el.addEventListener("mouseleave", leave);
+              hoverDomHandlersRef.current.set(el, { enter, leave });
+            }
 
             // If we just created this booking, re-anchor popover to the real card edge.
             const maybeId = String((info.event as any)?.id || "");
@@ -1322,7 +1392,23 @@ export function CalendarViewV2(props: {
               });
               pendingAnchorBookingIdRef.current = null;
             }
-            return () => el.removeEventListener("mousemove", onMove);
+          }}
+          eventWillUnmount={(info) => {
+            const el = info.el as HTMLElement;
+            if (!el) return;
+
+            const onMove = pointerMoveHandlersRef.current.get(el);
+            if (onMove) {
+              el.removeEventListener("mousemove", onMove);
+              pointerMoveHandlersRef.current.delete(el);
+            }
+
+            const h = hoverDomHandlersRef.current.get(el);
+            if (h) {
+              el.removeEventListener("mouseenter", h.enter);
+              el.removeEventListener("mouseleave", h.leave);
+              hoverDomHandlersRef.current.delete(el);
+            }
           }}
           datesSet={(arg) => {
             // FullCalendar gives inclusive/exclusive range boundaries.
@@ -1498,17 +1584,7 @@ export function CalendarViewV2(props: {
             return !isOverlappingBlocked;
           }}
           eventMouseEnter={(info) => {
-            if (info.event.display === "background") return;
-
-            const isMasked = !!info.event.extendedProps.isMasked;
-            const isPlaceholder = !!info.event.extendedProps.isPlaceholder;
-            const status = String(info.event.extendedProps.status || "").toUpperCase();
-            const isBlocked = status === "BLOCKED";
-            if (isMasked || isPlaceholder) return;
-            if (user?.role === "CLIENT" && isBlocked) return;
-
-            const rect = info.el.getBoundingClientRect();
-            scheduleHoverFetch(String(info.event.id), rect.left + rect.width / 2, rect.top);
+            tryScheduleHoverFetch(info.event, info.el);
           }}
           eventMouseLeave={() => clearHover()}
           eventContent={(eventInfo) => {
@@ -1533,7 +1609,7 @@ export function CalendarViewV2(props: {
             return (
               <div
                 className={cn(
-                  "flex flex-col h-full p-3 rounded-[20px] border-2 transition-all duration-200 relative bg-white",
+                  "flex flex-col h-full p-2 md:p-3 rounded-[16px] md:rounded-[20px] border-2 transition-all duration-200 relative bg-white",
                   !isStatic && "group cursor-pointer hover:shadow-xl hover:-translate-y-[1px]",
                   isPlaceholder && "bg-amber-100 border-dashed border-amber-400",
                   !isPlaceholder && config.border,
@@ -1561,12 +1637,12 @@ export function CalendarViewV2(props: {
 
                 {/* Status dot */}
                 {!isPlaceholder && (
-                  <div className={cn("absolute right-3 top-3 h-2.5 w-2.5 rounded-full", config.dot)} />
+                  <div className={cn("absolute right-2 top-2 md:right-3 md:top-3 h-2 w-2 md:h-2.5 md:w-2.5 rounded-full", config.dot, "hidden sm:block")} />
                 )}
 
                 {/* Team avatars + +N */}
                 {!isMasked && !isPlaceholder && !isBlocked && teamCount > 0 && (
-                  <div className="absolute -top-2 -right-2 z-[20] flex items-center">
+                  <div className="absolute -top-2 -right-2 z-[20] hidden sm:flex items-center">
                     {teamAvatars.slice(0, 3).map((url: string, idx: number) => (
                       <div
                         key={`${url}-${idx}`}
@@ -1588,8 +1664,8 @@ export function CalendarViewV2(props: {
                   </div>
                 )}
 
-                <div className="space-y-1 min-w-0 pr-10">
-                  <div className="text-[12px] font-black uppercase tracking-wider truncate text-slate-700">
+                <div className="space-y-1 min-w-0 pr-6 sm:pr-10">
+                  <div className="text-[11px] md:text-[12px] font-black uppercase tracking-wider truncate text-slate-700">
                     {isPlaceholder
                       ? `${eventInfo.event.extendedProps.slotType} SLOT`
                       : isBlocked
@@ -1602,17 +1678,17 @@ export function CalendarViewV2(props: {
                   </div>
 
                   {!isMasked && !isBlocked && (
-                    <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 truncate">
-                      <IconMapPin className="h-3 w-3" />
+                    <div className="flex items-center gap-1 text-[9px] md:text-[10px] font-bold text-slate-400 truncate">
+                      <IconMapPin className="h-3 w-3 hidden sm:block" />
                       <span className="truncate">{isPlaceholder ? "Available to book" : eventInfo.event.extendedProps.property?.name || "TBC"}</span>
                     </div>
                   )}
                 </div>
 
                 <div className="mt-auto">
-                  <div className="bg-slate-50 text-slate-700 px-3 py-1.5 rounded-full flex items-center justify-center border border-slate-100">
-                    <span className="text-[10px] font-black tracking-widest uppercase flex items-center gap-1">
-                      <IconClock className="h-3 w-3 opacity-60" />
+                  <div className="bg-slate-50 text-slate-700 px-2 md:px-3 py-1 rounded-full flex items-center justify-center border border-slate-100">
+                    <span className="text-[9px] md:text-[10px] font-black tracking-widest uppercase flex items-center gap-1">
+                      <IconClock className="h-3 w-3 opacity-60 hidden sm:block" />
                       {formatTimeRangeTenant(eventInfo.event.start, eventInfo.event.end)}
                     </span>
                   </div>
@@ -1708,6 +1784,21 @@ export function CalendarViewV2(props: {
         presetSlotType={popover.presetSlotType || null}
         tenantTimezone={tenantTimezone}
         reference={reference}
+        restoreForm={popoverRestore?.form || null}
+        restoreKey={popoverRestore?.key || 0}
+        onRequestReopen={(opts) => {
+          flashSaveError(String(opts?.error || "Save failed. Please try again."));
+          setPopoverRestore({ key: Date.now(), form: opts?.restoreForm || null });
+          setPopoverAnchor((opts?.anchorRect as any) || popoverAnchor);
+          setPopover({
+            open: true,
+            mode: opts.mode,
+            bookingId: opts.bookingId,
+            startAt: opts.startAt,
+            endAt: opts.endAt,
+            presetSlotType: opts.presetSlotType || null,
+          });
+        }}
         onUpserted={(calendarBooking) => {
           if (!calendarBooking) return;
           const lite = toLiteFromCalendarBooking(calendarBooking);
@@ -1721,6 +1812,7 @@ export function CalendarViewV2(props: {
         onClose={() => {
           setPopover((p) => ({ ...p, open: false }));
           setPopoverAnchor(null);
+          setPopoverRestore(null);
           if (user?.role === "CLIENT") setClientTempBooking(null);
         }}
       />
