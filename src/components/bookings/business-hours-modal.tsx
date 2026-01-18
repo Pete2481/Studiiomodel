@@ -109,7 +109,7 @@ export function BusinessHoursModal({ isOpen, onClose, initialHours, aiLogisticsE
               className="w-full rounded-3xl border border-slate-200 px-5 py-4 text-sm font-semibold focus:outline-none focus:ring-0 bg-white"
             />
             <div className="text-[11px] text-slate-500">
-              Used to calculate Sunrise/Dusk times. If blank, we fall back to your first property with coordinates.
+              Used to calculate Sunrise/Dusk times. If blank (or geocoding fails), Sunrise/Dusk slots will be disabled in testing mode.
             </div>
           </div>
 

@@ -231,7 +231,11 @@ export async function updateTenantBusinessHours(input: any) {
 
         if (status !== "OK" || !geoData.results?.[0]?.geometry?.location) {
           // Don't block saving hours if geocoding fails (key restrictions are common).
-          geocodeWarning = `Geocoding failed (${status}${errMsg ? `: ${errMsg}` : ""}). Saved hours, but could not update sun slots location.`;
+          const hint =
+            status === "REQUEST_DENIED" && errMsg.includes("referer restrictions")
+              ? " Use a server key in GOOGLE_GEOCODING_API_KEY (not a referrer-restricted NEXT_PUBLIC key)."
+              : "";
+          geocodeWarning = `Geocoding failed (${status}${errMsg ? `: ${errMsg}` : ""}). Saved hours, but could not update sun slots location.${hint}`;
         } else {
           const { lat, lng } = geoData.results[0].geometry.location;
           const existing = await prisma.tenant.findUnique({
