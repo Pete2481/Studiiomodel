@@ -474,11 +474,10 @@ export function CalendarViewV2(props: {
       }
 
       const p = (async (): Promise<LiteBooking[]> => {
-        // NOTE: we currently use a fixed default location; we can later swap this to a tenant-configured lat/lon.
-        const DEFAULT_SUN_LAT = -28.8333;
-        const DEFAULT_SUN_LON = 153.4333;
-        const lat = Number(tenantLat ?? DEFAULT_SUN_LAT);
-        const lon = Number(tenantLon ?? DEFAULT_SUN_LON);
+        // STRICT: Sunrise/Dusk slots require an explicit tenant-configured base location.
+        const lat = Number(tenantLat);
+        const lon = Number(tenantLon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return [];
 
         const res = await getSunTimesForLatLonRange({
           lat,

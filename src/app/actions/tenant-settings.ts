@@ -289,15 +289,25 @@ export async function updateTenantBusinessHours(input: any) {
       },
     });
 
-    // Use tenant-configured Sun Slots location if available; otherwise fall back to a reasonable default.
+    // STRICT: Sunrise/Dusk placeholders require an explicit tenant-configured base location.
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { timezone: true, settings: true },
     });
     const timeZone = String((tenant as any)?.timezone || "Australia/Sydney");
     const settings = ((tenant as any)?.settings || {}) as any;
-    const lat = Number(settings?.sunSlotsLat ?? -28.8333);
-    const lon = Number(settings?.sunSlotsLon ?? 153.4333);
+    const lat = Number(settings?.sunSlotsLat);
+    const lon = Number(settings?.sunSlotsLon);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      geocodeWarning =
+        geocodeWarning ||
+        "Saved hours, but Sunrise/Dusk slots are disabled until Sun slots base address is successfully geocoded.";
+      revalidatePath("/tenant/settings");
+      revalidatePath("/tenant/calendar");
+      revalidatePath("/tenant/bookings");
+      return { success: true, warning: geocodeWarning };
+    }
 
     const sunRes = await getSunTimesForLatLonRange({
       lat,
