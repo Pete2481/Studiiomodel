@@ -64,7 +64,7 @@ async function CalendarV2DataWrapper({ sessionUser, isGlobal }: { sessionUser: a
     permissions: sessionUser.permissions || {},
   };
 
-  const [tenant, tenantGeoProperty, currentMember] = await Promise.all([
+  const [tenant, currentMember] = await Promise.all([
     tPrisma.tenant.findUnique({
       where: { id: sessionUser.tenantId as string },
       select: {
@@ -80,11 +80,6 @@ async function CalendarV2DataWrapper({ sessionUser, isGlobal }: { sessionUser: a
         settings: true,
         aiLogisticsEnabled: true,
       },
-    }),
-    // Tenant doesn't have lat/lon in schema. Use a representative property with coordinates as the tenant's "base" location.
-    tPrisma.property.findFirst({
-      where: { tenantId: sessionUser.tenantId as string, deletedAt: null, latitude: { not: null }, longitude: { not: null } },
-      select: { latitude: true, longitude: true },
     }),
     sessionUser.teamMemberId
       ? prisma.teamMember.findUnique({
@@ -122,12 +117,18 @@ async function CalendarV2DataWrapper({ sessionUser, isGlobal }: { sessionUser: a
     "Tenanted Property", "Owner Occupied", "Empty (Keys at office)"
   ];
 
+  const settings = (((tenant as any)?.settings) || {}) as any;
+  const sunSlotsAddress = settings?.sunSlotsAddress ? String(settings.sunSlotsAddress) : "";
+  const tenantLat = settings?.sunSlotsLat != null ? Number(settings.sunSlotsLat) : null;
+  const tenantLon = settings?.sunSlotsLon != null ? Number(settings.sunSlotsLon) : null;
+
   return (
     <BookingsCalendarV2PageContent
       user={user}
       tenantTimezone={(tenant as any)?.timezone || "Australia/Sydney"}
-      tenantLat={tenantGeoProperty?.latitude != null ? Number(tenantGeoProperty.latitude) : null}
-      tenantLon={tenantGeoProperty?.longitude != null ? Number(tenantGeoProperty.longitude) : null}
+      tenantLat={tenantLat}
+      tenantLon={tenantLon}
+      sunSlotsAddress={sunSlotsAddress}
       customStatuses={customStatuses}
       businessHours={(tenant as any)?.businessHours || null}
       calendarSecret={calendarSecret}
