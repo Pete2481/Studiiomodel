@@ -1295,6 +1295,8 @@ export function CalendarViewV2(props: {
           timeZone={tenantTimezone}
           height={isMobile ? "78vh" : "70vh"}
           events={calendarEvents}
+          // For timeGrid, force collisions to render side-by-side (not overlapping).
+          slotEventOverlap={false}
           businessHours={calendarBusinessHours}
           hiddenDays={hiddenDaysForView}
           selectable={!(isRestrictedRole && !canClientPlaceBookings)}
