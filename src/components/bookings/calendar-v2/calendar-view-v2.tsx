@@ -880,6 +880,8 @@ export function CalendarViewV2(props: {
       if (!b.startAt || !b.endAt) return;
       const slotType = String(b.slotType || "").toUpperCase();
       const isSunSlot = !!b.isPlaceholder && (slotType === "SUNRISE" || slotType === "DUSK") && String(b.id || "").startsWith("sun-slot-");
+      // Month view: hide Sunrise/Dusk placeholder cards (keep them in Day/Week only)
+      if (view === "dayGridMonth" && isSunSlot) return;
       // When AI logistics is on, hide generic placeholder availability, but keep sunrise/dusk guides visible.
       if (aiLogisticsEnabled && b.isPlaceholder && !isSunSlot) return;
 
@@ -930,7 +932,29 @@ export function CalendarViewV2(props: {
     user,
     isLocalOnly,
     selectedTeamMemberIds,
+    view,
   ]);
+
+  // Hide closed days in multi-day views (Week + 2-day). Month stays full.
+  const hiddenDaysForView = useMemo(() => {
+    if (!businessHours) return [];
+    if (view === "dayGridMonth") return [];
+    // Only apply to views that show multiple days as columns.
+    const isMultiDayGrid = view === "timeGridWeek" || view === "timeGridTwoDay";
+    if (!isMultiDayGrid) return [];
+
+    const hidden: number[] = [];
+    for (const [day, cfg] of Object.entries(businessHours as any)) {
+      const d = Number(day);
+      if (!Number.isFinite(d)) continue;
+      if (!cfg || typeof cfg !== "object") continue;
+      const c = cfg as any;
+      if (c?.open === false) hidden.push(d);
+    }
+    // Safety: don't allow hiding everything.
+    if (hidden.length >= 7) return [];
+    return hidden;
+  }, [businessHours, view]);
 
   // Business hours baseline (for FullCalendar non-business shading + constraints)
   const calendarBusinessHours = useMemo(() => {
@@ -1279,6 +1303,7 @@ export function CalendarViewV2(props: {
           height={isMobile ? "78vh" : "70vh"}
           events={calendarEvents}
           businessHours={calendarBusinessHours}
+          hiddenDays={hiddenDaysForView}
           selectable={!(isRestrictedRole && !canClientPlaceBookings)}
           selectMirror
           // Critical: prevents a simple click from also triggering `select` in timeGrid.

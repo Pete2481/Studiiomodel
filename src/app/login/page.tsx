@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Image from "next/image";
 import { 
   ShieldCheck, 
   Mail, 
@@ -18,6 +19,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
+import { formatDropboxUrl } from "@/lib/utils";
 
 type LoginStep = "EMAIL" | "TENANT_SELECT" | "OTP";
 
@@ -39,6 +41,7 @@ export default function LoginPage() {
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [failedLogos, setFailedLogos] = useState<Record<string, true>>({});
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -257,6 +260,9 @@ export default function LoginPage() {
 
               <div className="space-y-4 max-h-[360px] overflow-y-auto pr-2 custom-scrollbar">
                 {tenants.map((tenant) => (
+                  (() => {
+                    const hasLogo = !!tenant.logoUrl && !failedLogos[tenant.id] && tenant.id !== "MASTER";
+                    return (
                   <button 
                     key={tenant.id}
                     onClick={() => handleTenantSelect(tenant)}
@@ -264,8 +270,25 @@ export default function LoginPage() {
                     className="w-full flex items-center justify-between p-6 rounded-[28px] border border-slate-100 bg-slate-50/30 hover:bg-white hover:border-slate-200 hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.06)] transition-all group disabled:opacity-50 relative overflow-hidden"
                   >
                     <div className="flex items-center gap-5 text-left">
-                      <div className="h-12 w-12 rounded-[18px] bg-white border border-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-slate-900 group-hover:text-emerald-400 group-hover:border-slate-900 transition-all duration-500 shadow-sm">
-                        {tenant.id === "MASTER" ? <Sparkles className="h-6 w-6" /> : <Building2 className="h-6 w-6" />}
+                      <div
+                        className={
+                          hasLogo
+                            ? "h-12 w-12 rounded-[18px] bg-white border border-slate-100 flex items-center justify-center transition-all duration-500 shadow-sm overflow-hidden relative group-hover:border-slate-200"
+                            : "h-12 w-12 rounded-[18px] bg-white border border-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-slate-900 group-hover:text-emerald-400 group-hover:border-slate-900 transition-all duration-500 shadow-sm"
+                        }
+                      >
+                        {hasLogo ? (
+                          <Image
+                            src={formatDropboxUrl(String(tenant.logoUrl))}
+                            alt={tenant.name || "Workspace"}
+                            fill
+                            sizes="48px"
+                            className="object-contain p-2"
+                            onError={() => setFailedLogos((prev) => ({ ...prev, [tenant.id]: true }))}
+                          />
+                        ) : (
+                          tenant.id === "MASTER" ? <Sparkles className="h-6 w-6" /> : <Building2 className="h-6 w-6" />
+                        )}
                       </div>
                       <div className="space-y-0.5">
                         <p className="text-[15px] font-bold text-slate-900 tracking-tight">{tenant.name}</p>
@@ -280,6 +303,8 @@ export default function LoginPage() {
                       </div>
                     )}
                   </button>
+                    );
+                  })()
                 ))}
               </div>
 
@@ -303,7 +328,34 @@ export default function LoginPage() {
                 <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Security Code</h2>
                 <p className="text-[14px] text-slate-500 font-medium leading-relaxed">Verification sent to <span className="font-bold text-slate-900 underline underline-offset-4 decoration-emerald-200">{email}</span></p>
                 <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold uppercase tracking-[0.15em] mt-6 shadow-sm shadow-emerald-500/5">
-                  <Building2 className="h-3 w-3" /> {selectedTenant?.name}
+                  {(() => {
+                    const hasSelectedLogo =
+                      !!selectedTenant?.logoUrl &&
+                      !!selectedTenant?.id &&
+                      !failedLogos[selectedTenant.id] &&
+                      selectedTenant.id !== "MASTER";
+                    return (
+                      <>
+                        {hasSelectedLogo ? (
+                          <span className="relative h-4 w-4 rounded-full bg-white border border-emerald-100 overflow-hidden">
+                            <Image
+                              src={formatDropboxUrl(String(selectedTenant!.logoUrl))}
+                              alt={selectedTenant?.name || "Workspace"}
+                              fill
+                              sizes="16px"
+                              className="object-contain p-[2px]"
+                              onError={() =>
+                                setFailedLogos((prev) => ({ ...prev, [String(selectedTenant!.id)]: true }))
+                              }
+                            />
+                          </span>
+                        ) : (
+                          <Building2 className="h-3 w-3" />
+                        )}
+                        <span>{selectedTenant?.name}</span>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 
