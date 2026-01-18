@@ -68,6 +68,9 @@ export function BusinessHoursModal({ isOpen, onClose, initialHours, aiLogisticsE
     try {
       const res = await updateTenantBusinessHours({ hours, sunSlotsAddress });
       if (res.success) {
+        if ((res as any)?.warning) {
+          alert(String((res as any).warning));
+        }
         onClose();
       } else {
         alert(res.error);

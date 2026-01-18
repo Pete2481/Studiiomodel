@@ -214,35 +214,55 @@ export async function updateTenantBusinessHours(input: any) {
     const hours = (input && typeof input === "object" && "hours" in input) ? (input as any).hours : input;
     const sunSlotsAddressRaw =
       (input && typeof input === "object" && "sunSlotsAddress" in input) ? String((input as any).sunSlotsAddress || "").trim() : "";
+    let geocodeWarning: string | null = null;
 
     // Resolve and persist Sun Slots base location into tenant.settings (optional)
     if (sunSlotsAddressRaw) {
-      const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-      if (!apiKey) return { success: false, error: "Missing Google Maps API key" };
+      const apiKey = process.env.GOOGLE_GEOCODING_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+      if (!apiKey) {
+        // Don't block saving hours if geocoding isn't configured.
+        geocodeWarning = "Geocoding not configured. Saved hours, but could not update sun slots location.";
+      } else {
+        const geoUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(sunSlotsAddressRaw)}&key=${apiKey}`;
+        const geoRes = await fetch(geoUrl);
+        const geoData = await geoRes.json().catch(() => ({}));
+        const status = String(geoData?.status || "");
+        const errMsg = String(geoData?.error_message || "");
 
-      const geoUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(sunSlotsAddressRaw)}&key=${apiKey}`;
-      const geoRes = await fetch(geoUrl);
-      const geoData = await geoRes.json().catch(() => ({}));
-      if (geoData.status !== "OK" || !geoData.results?.[0]?.geometry?.location) {
-        return { success: false, error: "Failed to geocode sun slots address" };
+        if (status !== "OK" || !geoData.results?.[0]?.geometry?.location) {
+          // Don't block saving hours if geocoding fails (key restrictions are common).
+          geocodeWarning = `Geocoding failed (${status}${errMsg ? `: ${errMsg}` : ""}). Saved hours, but could not update sun slots location.`;
+        } else {
+          const { lat, lng } = geoData.results[0].geometry.location;
+          const existing = await prisma.tenant.findUnique({
+            where: { id: tenantId },
+            select: { settings: true },
+          });
+          const currentSettings = (existing?.settings as any) || {};
+          await prisma.tenant.update({
+            where: { id: tenantId },
+            data: {
+              settings: {
+                ...currentSettings,
+                sunSlotsAddress: sunSlotsAddressRaw,
+                sunSlotsLat: Number(lat),
+                sunSlotsLon: Number(lng),
+              },
+            },
+          });
+        }
       }
-      const { lat, lng } = geoData.results[0].geometry.location;
 
       const existing = await prisma.tenant.findUnique({
         where: { id: tenantId },
         select: { settings: true },
       });
       const currentSettings = (existing?.settings as any) || {};
+      // Always persist the address string itself so it survives refresh.
+      // (Lat/lon are only updated when geocoding succeeds.)
       await prisma.tenant.update({
         where: { id: tenantId },
-        data: {
-          settings: {
-            ...currentSettings,
-            sunSlotsAddress: sunSlotsAddressRaw,
-            sunSlotsLat: Number(lat),
-            sunSlotsLon: Number(lng),
-          },
-        },
+        data: { settings: { ...currentSettings, sunSlotsAddress: sunSlotsAddressRaw } },
       });
     }
 
@@ -344,7 +364,7 @@ export async function updateTenantBusinessHours(input: any) {
     revalidatePath("/tenant/settings");
     revalidatePath("/tenant/calendar");
     revalidatePath("/tenant/bookings");
-    return { success: true };
+    return { success: true, warning: geocodeWarning };
   } catch (error: any) {
     console.error("UPDATE BUSINESS HOURS ERROR:", error);
     return { success: false, error: error.message || "Failed to update business hours" };
