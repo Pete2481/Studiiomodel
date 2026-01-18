@@ -30,11 +30,14 @@ export function BookingPopoverV2(props: {
   anchorRect?: AnchorRect | null;
   tenantTimezone: string;
   reference?: { clients: any[]; services: any[]; teamMembers: any[]; agents: any[] };
+  restoreForm?: any;
+  restoreKey?: number;
+  onRequestReopen?: (opts: { mode: "booking" | "blockout"; bookingId?: string; startAt?: string; endAt?: string; presetSlotType?: "" | "SUNRISE" | "DUSK" | null; anchorRect?: AnchorRect | null; restoreForm: any; error?: string }) => void;
   onUpserted?: (calendarBooking: any) => void;
   onDeleted?: (bookingId: string) => void;
   onClose: () => void;
 }) {
-  const { open, mode, user, bookingId, startAt, endAt, presetSlotType, anchorRect, tenantTimezone, reference, onUpserted, onDeleted, onClose } = props;
+  const { open, mode, user, bookingId, startAt, endAt, presetSlotType, anchorRect, tenantTimezone, reference, restoreForm, restoreKey, onRequestReopen, onUpserted, onDeleted, onClose } = props;
   const isClient = user?.role === "CLIENT";
   const [tab, setTab] = useState<"booking" | "blockout">(mode === "blockout" && isClient ? "booking" : mode);
   const popoverRef = useRef<HTMLDivElement | null>(null);
@@ -155,6 +158,14 @@ export function BookingPopoverV2(props: {
     internalNotes: "",
     repeat: "none" as "none" | "daily" | "weekly" | "monthly",
   });
+
+  // Restore form state when reopening after a failed background save.
+  useEffect(() => {
+    if (!open) return;
+    if (!restoreForm) return;
+    setForm((p) => ({ ...p, ...(restoreForm || {}) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, restoreKey]);
 
   // Tenant portal: keep selected contact (agent) consistent with selected client
   useEffect(() => {
@@ -487,7 +498,10 @@ export function BookingPopoverV2(props: {
     return () => ro.disconnect();
   }, [open, tab]);
 
+  // Keep component mountable for background-save reopen/restore flows.
   if (!open) return null;
+
+  const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches;
 
   const margin = 12;
   const arrowWidth = 12;
@@ -501,9 +515,6 @@ export function BookingPopoverV2(props: {
   const anchor = anchorRect || { left: vw / 2, right: vw / 2, top: 120, bottom: 120, width: 0, height: 0 };
   const anchorMidY = (anchor.top + anchor.bottom) / 2;
 
-  const rightSpace = vw - anchor.right;
-  const leftSpace = anchor.left;
-
   const prefersRight = true;
   const availRight = vw - margin - (anchor.right + gap);
   const availLeft = (anchor.left - gap) - margin;
@@ -515,17 +526,26 @@ export function BookingPopoverV2(props: {
 
   // If space is tight, shrink width to fit the chosen side rather than overlapping the card.
   const maxWidthOnSide = Math.max(minWidth, side === "right" ? availRight : availLeft);
-  const popoverWidth = Math.min(desiredWidth, maxWidthOnSide, vw - margin * 2);
+  const popoverWidth = isMobile ? Math.min(desiredWidth, vw - margin * 2) : Math.min(desiredWidth, maxWidthOnSide, vw - margin * 2);
 
   let left = side === "right" ? anchor.right + gap : anchor.left - gap - popoverWidth;
-  // Hard constraint: never overlap the anchor card
-  if (side === "right") left = Math.max(left, anchor.right + gap);
-  if (side === "left") left = Math.min(left, anchor.left - gap - popoverWidth);
-  // Clamp within viewport
-  left = Math.max(margin, Math.min(left, vw - margin - popoverWidth));
+  if (isMobile) {
+    left = margin;
+  } else {
+    // Hard constraint: never overlap the anchor card
+    if (side === "right") left = Math.max(left, anchor.right + gap);
+    if (side === "left") left = Math.min(left, anchor.left - gap - popoverWidth);
+    // Clamp within viewport
+    left = Math.max(margin, Math.min(left, vw - margin - popoverWidth));
+  }
 
   let top = anchorMidY - measured.h / 2;
-  top = Math.max(margin, Math.min(top, vh - margin - measured.h));
+  if (isMobile) {
+    // Bottom-sheet behavior: stick to bottom with margin
+    top = Math.max(margin, vh - margin - measured.h);
+  } else {
+    top = Math.max(margin, Math.min(top, vh - margin - measured.h));
+  }
 
   const arrowSize = 14;
   const arrowInset = 26; // keep arrow away from rounded corners
@@ -544,11 +564,13 @@ export function BookingPopoverV2(props: {
           top,
           width: popoverWidth,
           maxWidth: "92vw",
+          ...(isMobile ? ({ right: margin } as any) : null),
         }}
       >
         {/* Keep overflow visible so the arrow can sit outside the bubble */}
         <div ref={popoverRef} className="relative overflow-visible">
           {/* Arrow (speech-bubble triangle) */}
+          {!isMobile ? (
           <div className={cn("absolute", side === "right" ? "left-[-12px]" : "right-[-12px]")} style={{ top: arrowTop }}>
             {/* border triangle */}
             <div
@@ -569,9 +591,10 @@ export function BookingPopoverV2(props: {
               )}
             />
           </div>
+          ) : null}
 
           {/* Bubble (scrollable) */}
-          <div className="rounded-[28px] border border-slate-100 bg-white shadow-2xl overflow-hidden max-h-[calc(100vh-40px)] overflow-y-auto overscroll-contain">
+          <div className={cn("rounded-[28px] border border-slate-100 bg-white shadow-2xl overflow-hidden max-h-[calc(100vh-40px)] overflow-y-auto overscroll-contain", isMobile && "rounded-[24px]")}>
           <div className="p-5 pb-4">
             <div className="flex items-start justify-between gap-4">
               <div className="text-xs font-black text-slate-500 uppercase tracking-widest">
@@ -1539,11 +1562,118 @@ export function BookingPopoverV2(props: {
                     type="button"
                     disabled={isSaving}
                     onClick={async () => {
+                      if (isSaving) return;
+
+                      // Snapshot for rollback
+                      const snapshot = { ...form };
+                      const snapshotAnchor = anchorRect || null;
+                      const snapshotMode = tab;
+                      const snapshotBookingId = bookingId;
+                      const snapshotStartAt = snapshot.startAt;
+                      const snapshotEndAt = snapshot.endAt;
+                      const snapshotSlotType = presetSlotType || null;
+
+                      // Keep draft=true until we have a client or OTC name
+                      const hasClient = !!snapshot.clientId || (snapshot.clientMode === "otc" && !!snapshot.otcName.trim());
+                      const metadata = { draft: !hasClient };
+
+                      // Optimistic calendar update (instant feel)
+                      const optimisticId = snapshotBookingId || `optimistic-${Date.now()}`;
+                      const clientObj = (() => {
+                        if (snapshot.clientMode === "otc") return { name: "", businessName: snapshot.otcName || "OTC" };
+                        const c = (localRef.clients || []).find((x: any) => String(x.id) === String(snapshot.clientId));
+                        return !c ? { name: "", businessName: "" } : { name: String(c.name || ""), businessName: String(c.businessName || "") };
+                      })();
+                      const servicesObj = (snapshot.serviceIds || []).map((id) => {
+                        const s = (localRef.services || []).find((x: any) => String(x.id) === String(id));
+                        return { serviceId: String(id), name: String(s?.name || "Service") };
+                      });
+                      const assignmentsObj = (snapshot.teamMemberIds || []).map((id) => {
+                        const m = (localRef.teamMembers || []).find((x: any) => String(x.id) === String(id));
+                        return {
+                          teamMemberId: String(id),
+                          teamMember: { displayName: String(m?.displayName || "Team"), avatarUrl: m?.avatarUrl || null },
+                        };
+                      });
+
+                      onUpserted?.({
+                        id: String(optimisticId),
+                        title: String(snapshot.title || "New Event"),
+                        startAt: String(snapshot.startAt || ""),
+                        endAt: String(snapshot.endAt || ""),
+                        status: String(normalizeStatus(snapshot.status)),
+                        propertyStatus: "",
+                        metadata,
+                        clientId: snapshot.clientMode === "existing" ? String(snapshot.clientId || "") : null,
+                        agentId: snapshot.agentId ? String(snapshot.agentId) : null,
+                        client: clientObj,
+                        property: { name: String(snapshot.address || "TBC") },
+                        internalNotes: String(snapshot.internalNotes || ""),
+                        clientNotes: String(snapshot.clientNotes || ""),
+                        isPlaceholder: false,
+                        slotType: snapshot.slotType || null,
+                        services: servicesObj,
+                        assignments: assignmentsObj,
+                      });
+
+                      // If user chose to send notifications, keep existing preview flow.
+                      const wantsPreview = notifyPref === "send";
+
+                      // Instant-close for silent saves; background persist.
+                      if (!wantsPreview) {
+                        onClose();
+                        setIsSaving(true);
+                        void (async () => {
+                          try {
+                            const result = await upsertBooking({
+                              ...(snapshotBookingId ? { id: snapshotBookingId } : {}),
+                              title: snapshot.title || "New Event",
+                              startAt: snapshot.startAt,
+                              endAt: snapshot.endAt,
+                              status: normalizeStatus(snapshot.status),
+                              slotType: snapshot.slotType || null,
+                              clientId: snapshot.clientMode === "existing" ? snapshot.clientId : "",
+                              agentId: snapshot.agentId || "",
+                              otcName: snapshot.clientMode === "otc" ? snapshot.otcName : "",
+                              otcEmail: snapshot.clientMode === "otc" ? snapshot.otcEmail : "",
+                              otcPhone: snapshot.clientMode === "otc" ? snapshot.otcPhone : "",
+                              address: snapshot.address,
+                              serviceIds: snapshot.serviceIds,
+                              teamMemberIds: snapshot.teamMemberIds,
+                              notes: snapshot.internalNotes, // legacy maps to internalNotes in backend
+                              clientNotes: snapshot.clientNotes,
+                              metadata,
+                            });
+                            if ((result as any)?.success && (result as any)?.booking) {
+                              const saved = (result as any).booking;
+                              onUpserted?.(saved);
+                              if (!snapshotBookingId && optimisticId && onDeleted) onDeleted(String(optimisticId));
+                              // Update baseline after save
+                              initialStatusRef.current = normalizeStatus(snapshot.status);
+                              return;
+                            }
+                            throw new Error((result as any)?.error || "Save failed");
+                          } catch (e: any) {
+                            onRequestReopen?.({
+                              mode: snapshotMode,
+                              bookingId: snapshotBookingId,
+                              startAt: snapshotStartAt,
+                              endAt: snapshotEndAt,
+                              presetSlotType: snapshotSlotType,
+                              anchorRect: snapshotAnchor,
+                              restoreForm: snapshot,
+                              error: e?.message || "Save failed. Please try again.",
+                            });
+                          } finally {
+                            setIsSaving(false);
+                          }
+                        })();
+                        return;
+                      }
+
+                      // Preview/send path: keep existing synchronous behavior (user expects draft email popup).
                       setIsSaving(true);
                       try {
-                        // Keep draft=true until we have a client or OTC name
-                        const hasClient = !!form.clientId || (form.clientMode === "otc" && !!form.otcName.trim());
-                        const metadata = { draft: !hasClient };
                         const result = await upsertBooking({
                           ...(bookingId ? { id: bookingId } : {}),
                           title: form.title || "New Event",
@@ -1567,22 +1697,14 @@ export function BookingPopoverV2(props: {
                           const saved = (result as any).booking;
                           onUpserted?.(saved);
 
-                          // Decide whether to prompt an email preview for this action.
                           const isCreate = !bookingId;
                           const prevStatus = isCreate ? "pencilled" : (initialStatusRef.current || "pencilled");
                           const nextStatus = normalizeStatus(form.status);
                           const type = computeNotificationType({ isCreate, prevStatus, nextStatus });
-
-                          const wantsPreview = nextStatus === "approved" ? notifyPref === "send" : true;
-                          // Update baseline after save
                           initialStatusRef.current = nextStatus;
 
-                          if (wantsPreview) {
-                            await openPreview({ bookingId: String(saved.id), type });
-                            return;
-                          }
-
-                          onClose();
+                          await openPreview({ bookingId: String(saved.id), type });
+                          return;
                         }
                       } finally {
                         setIsSaving(false);

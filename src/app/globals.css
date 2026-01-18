@@ -170,6 +170,12 @@ body {
   .fc .fc-button { @apply px-2 py-1.5 text-[8px] !important; }
 }
 
+/* Mobile: tighten time grid + event harness spacing (calendar-view-v2 handles card internals) */
+@media (max-width: 640px) {
+  .fc .fc-timegrid-event-harness { @apply p-0.5 !important; }
+  .fc .fc-timegrid-slot { @apply h-[34px] !important; }
+}
+
 .fc .fc-button {
   @apply rounded-xl md:rounded-full px-3 md:px-5 py-2 md:py-2.5 text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all shadow-none border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 active:scale-95 focus:ring-0 !important;
 }
