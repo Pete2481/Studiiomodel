@@ -343,7 +343,7 @@ export function CalendarViewV2(props: {
         title: "New Event",
         startAt: startAtIso,
         endAt: endAtIso,
-        status: "pencilled",
+        status: "approved",
         metadata: { draft: true },
         slotType: opts?.slotType || null,
       });

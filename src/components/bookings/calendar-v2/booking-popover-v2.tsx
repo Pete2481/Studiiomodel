@@ -140,7 +140,7 @@ export function BookingPopoverV2(props: {
 
   const [form, setForm] = useState({
     title: "New Event",
-    status: isClient ? "requested" : "pencilled",
+    status: isClient ? "requested" : "approved",
     slotType: "" as "" | "SUNRISE" | "DUSK",
     clientMode: "existing" as "existing" | "otc",
     clientId: isClient ? String(user?.clientId || "") : "",
@@ -166,6 +166,16 @@ export function BookingPopoverV2(props: {
     setForm((p) => ({ ...p, ...(restoreForm || {}) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, restoreKey]);
+
+  // Default for NEW tenant bookings: Approved + Approve(silent)
+  useEffect(() => {
+    if (!open) return;
+    if (isClient) return;
+    if (bookingId) return; // editing existing
+    setNotifyPref("silent");
+    setForm((p) => ({ ...p, status: "approved" }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isClient, bookingId]);
 
   // Tenant portal: keep selected contact (agent) consistent with selected client
   useEffect(() => {
