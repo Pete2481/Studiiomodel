@@ -309,6 +309,7 @@ export async function updateTenantBusinessHours(input: any) {
         "Saved hours, but Sunrise/Dusk slots are disabled until Sun slots base address is successfully geocoded.";
       revalidatePath("/tenant/settings");
       revalidatePath("/tenant/calendar");
+      revalidatePath("/tenant/calendar-v2");
       revalidatePath("/tenant/bookings");
       return { success: true, warning: geocodeWarning };
     }
@@ -377,6 +378,7 @@ export async function updateTenantBusinessHours(input: any) {
 
     revalidatePath("/tenant/settings");
     revalidatePath("/tenant/calendar");
+    revalidatePath("/tenant/calendar-v2");
     revalidatePath("/tenant/bookings");
     return { success: true, warning: geocodeWarning };
   } catch (error: any) {
