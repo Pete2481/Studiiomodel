@@ -1098,7 +1098,7 @@ export function BookingPopoverV2(props: {
                               <div className="text-sm font-black text-slate-900 truncate">
                                 {form.clientId
                                   ? (() => {
-                                      const c = (localRef.clients || []).find((x: any) => x.id === form.clientId);
+                                      const c = (localRef.clients || []).find((x: any) => String(x.id) === String(form.clientId));
                                       return c?.businessName || c?.name || "Select client…";
                                     })()
                                   : "Select client…"}
@@ -1125,13 +1125,13 @@ export function BookingPopoverV2(props: {
                                 </div>
                               </div>
                               <div className="max-h-[240px] overflow-y-auto py-1">
-                                {(reference?.clients || [])
+                                {(localRef.clients || [])
                                   .filter((c: any) => {
                                     const q = clientSearch.toLowerCase();
                                     return String(c.name || "").toLowerCase().includes(q) || String(c.businessName || "").toLowerCase().includes(q);
                                   })
                                   .map((c: any) => {
-                                    const selected = form.clientId === c.id;
+                                    const selected = String(form.clientId) === String(c.id);
                                     return (
                                       <button
                                         key={c.id}
@@ -1141,7 +1141,7 @@ export function BookingPopoverV2(props: {
                                           selected ? "bg-emerald-50/50" : "hover:bg-slate-50"
                                         )}
                                         onClick={() => {
-                                          setForm((p) => ({ ...p, clientId: c.id, agentId: "" }));
+                                          setForm((p) => ({ ...p, clientId: String(c.id), agentId: "" }));
                                           setIsClientDropdownOpen(false);
                                         }}
                                       >
