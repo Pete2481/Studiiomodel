@@ -44,6 +44,7 @@ export function GalleryPageContent({
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
+  const [isLocalOnly, setIsLocalOnly] = useState(false);
   const [galleries, setGalleries] = useState(initialGalleries);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedGallery, setSelectedGallery] = useState<any>(null);
@@ -118,6 +119,17 @@ export function GalleryPageContent({
   useEffect(() => {
     void ensureRefData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Local-only UI experiments (avoid hydration mismatch by setting after mount)
+  useEffect(() => {
+    try {
+      const isLocal = window.location.hostname === "localhost";
+      setIsLocalOnly(isLocal);
+      if (isLocal) setViewMode("grid");
+    } catch {
+      // ignore
+    }
   }, []);
 
   // Sync state with props when router.refresh() is called
@@ -232,27 +244,19 @@ export function GalleryPageContent({
       window.location.href = "/tenant/settings?tab=billing";
       return;
     }
-    setIsCreatingInvoice(galleryId);
-    try {
-      const res = await createInvoiceFromGallery(galleryId);
-      if (res.success && res.invoiceId) {
-        // OTC invoices are email-only (no portal client record). We auto-send and return to invoices list.
-        if ((res as any).sent) {
-          alert("Invoice sent to OTC email.");
-          router.push(`/tenant/invoices`);
-        } else {
-          // OPEN the editor as requested
-          router.push(`/tenant/invoices/${res.invoiceId}/edit`);
-        }
-      } else {
-        alert(res.error || "Failed to create invoice");
-      }
-    } catch (err) {
-      console.error("Invoice creation error:", err);
-      alert("An unexpected error occurred. Please try again.");
-    } finally {
-      setIsCreatingInvoice(null);
+    const g = (galleries || []).find((x: any) => String(x?.id) === String(galleryId));
+    const st = String(g?.status || "").toUpperCase();
+    const isDeliveredish = st === "DELIVERED" || st === "APPROVED" || st === "CONFIRMED";
+    if (!isDeliveredish) {
+      alert("Invoices can only be created once the gallery is delivered.");
+      return;
     }
+    // IMPORTANT: Do not create an invoice record until user presses Save (draft) or Save & Send.
+    // We open the invoice editor immediately (it shows its own loading UI while data loads).
+    setIsCreatingInvoice(String(galleryId));
+    window.setTimeout(() => {
+      router.push(`/tenant/invoices/new?galleryId=${encodeURIComponent(String(galleryId))}`);
+    }, 0);
   };
 
   const filteredGalleries = galleries.filter(g => 
@@ -336,11 +340,28 @@ export function GalleryPageContent({
 
       {/* Gallery Content */}
       {viewMode === "grid" ? (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div
+          className={cn(
+            "grid grid-cols-1",
+            isLocalOnly ? "gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6" : "gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+          )}
+        >
           {filteredGalleries.map((gallery: any) => (
-            <div key={gallery.id} className="group relative flex flex-col overflow-hidden rounded-[32px] border border-slate-200 bg-white transition-all hover:shadow-xl hover:shadow-slate-200/50">
+            (() => {
+              const status = String(gallery?.status || "").toUpperCase();
+              const isDeliveredish = status === "DELIVERED" || status === "APPROVED" || status === "CONFIRMED";
+              const localBorder = isDeliveredish ? "border-emerald-400" : "border-rose-400";
+              return (
+            <div
+              key={gallery.id}
+              className={cn(
+                "group relative flex flex-col overflow-hidden bg-white transition-all hover:shadow-xl hover:shadow-slate-200/50",
+                isLocalOnly ? "rounded-[24px] border" : "rounded-[32px] border border-slate-200",
+                isLocalOnly ? localBorder : "border-slate-200"
+              )}
+            >
               {/* Cover Image */}
-              <div className="aspect-[4/3] overflow-hidden relative">
+              <div className={cn("overflow-hidden relative", isLocalOnly ? "aspect-[16/10]" : "aspect-[4/3]")}>
                 {gallery.cover && gallery.cover !== "" ? (
                   gallery.cover?.includes("/api/dropbox/assets") ? (
                     <img 
@@ -395,7 +416,7 @@ export function GalleryPageContent({
               </div>
 
               {/* Content */}
-              <div className="flex flex-1 flex-col p-6">
+              <div className={cn("flex flex-1 flex-col", isLocalOnly ? "p-4" : "p-6")}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1">
                     <h3 className="font-bold text-slate-900 group-hover:text-primary transition-colors line-clamp-1">{gallery.title}</h3>
@@ -468,8 +489,54 @@ export function GalleryPageContent({
                   </div>
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{gallery.client}</span>
                 </div>
+
+                {/* Invoice CTA (primary invoicing entrypoint for this page) */}
+                {(user.role !== "CLIENT" && permissionService.can(user, "canViewInvoices")) ? (
+                  <div className="mt-3">
+                    {gallery.invoice ? (
+                      String(gallery.invoice.status || "").toUpperCase() === "DRAFT" ? (
+                        <Link
+                          href={`/tenant/invoices/${gallery.invoice.id}/edit`}
+                          className="w-full h-10 rounded-full bg-amber-400 text-amber-950 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-amber-500 transition-all shadow-[0_8px_20px_-4px_rgba(251,191,36,0.35)]"
+                        >
+                          <Clock className="h-3.5 w-3.5" />
+                          FINALIZE INVOICE
+                        </Link>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!permissionService.can(user, "canViewInvoices")) return;
+                            setSelectedInvoice(gallery.invoice);
+                            setIsPreviewOpen(true);
+                          }}
+                          className="w-full h-10 rounded-full border border-emerald-300 bg-emerald-50/50 text-emerald-700 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-50 transition-all"
+                        >
+                          <DollarSign className="h-3 w-3" />
+                          VIEW {String(gallery.invoice.number || "INVOICE")}
+                        </button>
+                      )
+                    ) : (isDeliveredish && !isActionLocked) ? (
+                      <button
+                        type="button"
+                        onClick={() => handleCreateInvoice(gallery.id)}
+                        disabled={isCreatingInvoice === gallery.id}
+                        className="w-full h-10 rounded-full bg-[#d64550] text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-[#c03945] transition-all shadow-[0_8px_20px_-4px_rgba(214,69,80,0.35)] disabled:opacity-50"
+                      >
+                        {isCreatingInvoice === gallery.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Plus className="h-3.5 w-3.5" />
+                        )}
+                        CREATE INVOICE
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </div>
+              );
+            })()
           ))}
         </div>
       ) : (
@@ -538,7 +605,7 @@ export function GalleryPageContent({
                     {(user.role !== "CLIENT" || permissionService.can(user, "canViewInvoices")) && (
                       <td className="px-6 py-4">
                         {gallery.invoice ? (
-                          (user.role !== "CLIENT" && gallery.invoice.status === 'DRAFT' && gallery.status !== 'DELIVERED') ? (
+                          (user.role !== "CLIENT" && String(gallery.invoice.status || "").toUpperCase() === 'DRAFT') ? (
                             <Link 
                               href={`/tenant/invoices/${gallery.invoice.id}/edit`}
                               className="h-10 px-6 rounded-full bg-amber-400 text-amber-950 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-amber-500 transition-all shadow-[0_8px_20px_-4px_rgba(251,191,36,0.4)]"
@@ -562,7 +629,10 @@ export function GalleryPageContent({
                               View {gallery.invoice.number}
                             </button>
                           )
-                        ) : (user.role !== "CLIENT" && !isActionLocked) ? (
+                        ) : (user.role !== "CLIENT" && !isActionLocked && (() => {
+                          const s = String(gallery?.status || "").toUpperCase();
+                          return s === "DELIVERED" || s === "APPROVED" || s === "CONFIRMED";
+                        })()) ? (
                           <button 
                             onClick={() => handleCreateInvoice(gallery.id)}
                             disabled={isCreatingInvoice === gallery.id}

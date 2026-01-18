@@ -27,6 +27,14 @@ export function DashboardGalleries({
   isActionLocked = false
 }: DashboardGalleriesProps) {
   const router = useRouter();
+  const [isLocalOnly, setIsLocalOnly] = useState(false);
+  useEffect(() => {
+    try {
+      setIsLocalOnly(window.location.hostname === "localhost");
+    } catch {
+      setIsLocalOnly(false);
+    }
+  }, []);
   const [galleries, setGalleries] = useState(initialGalleries);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedGallery, setSelectedGallery] = useState<any>(null);
@@ -239,7 +247,7 @@ export function DashboardGalleries({
     g.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     g.client.toLowerCase().includes(searchQuery.toLowerCase()) ||
     g.property.toLowerCase().includes(searchQuery.toLowerCase())
-  ).slice(0, 8); // Always show max 8 on dashboard
+  ).slice(0, isLocalOnly ? 18 : 8); // Local-only: test 6x3 (18) layout
 
   return (
     <section className="space-y-6 w-full max-w-full overflow-hidden">
@@ -308,11 +316,28 @@ export function DashboardGalleries({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 w-full">
+      <div
+        className={cn(
+          "grid grid-cols-1 w-full",
+          isLocalOnly ? "gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6" : "gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+        )}
+      >
         {filteredGalleries.map((gallery: any, idx: number) => (
-          <div key={gallery.id} className="group relative flex flex-col overflow-hidden rounded-[32px] border border-slate-200 bg-white transition-all hover:shadow-xl hover:shadow-slate-200/50">
+          (() => {
+            const status = String(gallery?.status || "").toUpperCase();
+            const isDeliveredish = status === "DELIVERED" || status === "APPROVED" || status === "CONFIRMED";
+            const localBorder = isDeliveredish ? "border-emerald-400" : "border-rose-400";
+            return (
+          <div
+            key={gallery.id}
+            className={cn(
+              "group relative flex flex-col overflow-hidden bg-white transition-all hover:shadow-xl hover:shadow-slate-200/50",
+              isLocalOnly ? "rounded-[24px] border" : "rounded-[32px] border border-slate-200",
+              isLocalOnly ? localBorder : "border-slate-200"
+            )}
+          >
             {/* Cover Image */}
-            <div className="aspect-[4/3] overflow-hidden relative bg-slate-100">
+            <div className={cn("overflow-hidden relative bg-slate-100", isLocalOnly ? "aspect-[16/10]" : "aspect-[4/3]")}>
               {(() => {
                 const coverUrl = gallery.cover;
                 const formattedUrl = formatDropboxUrl(coverUrl);
@@ -408,7 +433,7 @@ export function DashboardGalleries({
             </div>
 
             {/* Content */}
-            <div className="flex flex-1 flex-col p-6">
+            <div className={cn("flex flex-1 flex-col", isLocalOnly ? "p-4" : "p-6")}>
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1">
                   <h3 className="font-bold text-slate-900 group-hover:text-primary transition-colors line-clamp-1">{gallery.title}</h3>
@@ -501,6 +526,8 @@ export function DashboardGalleries({
                           </div>
             </div>
           </div>
+            );
+          })()
         ))}
         {filteredGalleries.length === 0 && (
           <div className="col-span-full py-20 text-center rounded-[32px] border-2 border-dashed border-slate-100 bg-white shadow-sm">

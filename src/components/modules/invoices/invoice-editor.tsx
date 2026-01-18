@@ -46,11 +46,12 @@ interface InvoiceEditorProps {
   services: any[];
   bookings: any[];
   initialData?: any;
+  prefillData?: any;
   tenant?: any;
   isActionLocked?: boolean;
 }
 
-export function InvoiceEditor({ clients, services, bookings, initialData, tenant, isActionLocked = false }: InvoiceEditorProps) {
+export function InvoiceEditor({ clients, services, bookings, initialData, prefillData, tenant, isActionLocked = false }: InvoiceEditorProps) {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,9 +82,9 @@ export function InvoiceEditor({ clients, services, bookings, initialData, tenant
   const [formData, setFormData] = useState({
     id: initialData?.id || null,
     number: initialData?.number || "",
-    clientId: initialData?.clientId || "",
-    bookingId: initialData?.bookingId || "",
-    address: initialData?.address || "",
+    clientId: initialData?.clientId || prefillData?.clientId || "",
+    bookingId: initialData?.bookingId || prefillData?.bookingId || "",
+    address: initialData?.address || prefillData?.address || "",
     issuedAt: initialData?.issuedAt ? format(new Date(initialData.issuedAt), "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"),
     dueAt: initialData?.dueAt ? format(new Date(initialData.dueAt), "yyyy-MM-dd") : format(addDays(new Date(), tenant?.invoiceDueDays ?? 7), "yyyy-MM-dd"),
     status: initialData?.status || "DRAFT",
@@ -94,10 +95,12 @@ export function InvoiceEditor({ clients, services, bookings, initialData, tenant
     clientNotes: initialData?.clientNotes || "Thank you for your business!",
     invoiceTerms: initialData?.invoiceTerms || tenant?.invoiceTerms || "",
     internalNotes: initialData?.internalNotes || "",
-    galleryId: initialData?.galleryId || "",
-    lineItems: initialData?.lineItems?.map((li: any) => ({ ...li, id: li.id || crypto.randomUUID() })) || [
-      { id: crypto.randomUUID(), description: "", quantity: 1, unitPrice: 0 }
-    ]
+    galleryId: initialData?.galleryId || prefillData?.galleryId || "",
+    lineItems:
+      initialData?.lineItems?.map((li: any, i: number) => ({ ...li, id: li.id || `li-${i}` })) ||
+      prefillData?.lineItems?.map((li: any, i: number) => ({ ...li, id: li.id || `li-${i}` })) || [
+        { id: "li-0", description: "", quantity: 1, unitPrice: 0 }
+      ]
   });
 
   // AUTO-CALCULATE DUE DATE based on Issue Date and Tenant Terms

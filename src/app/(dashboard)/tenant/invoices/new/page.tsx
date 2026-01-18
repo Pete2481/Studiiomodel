@@ -7,9 +7,13 @@ import { Suspense } from "react";
 import { ShellSettings } from "@/components/layout/shell-settings";
 import { Loader2 } from "lucide-react";
 
-export default async function NewInvoicePage() {
+export default async function NewInvoicePage(props: {
+  searchParams: Promise<{ galleryId?: string }>
+}) {
   const session = await auth();
   if (!session?.user?.tenantId) redirect("/login");
+  const searchParams = await props.searchParams;
+  const galleryId = searchParams?.galleryId ? String(searchParams.galleryId) : "";
 
   return (
     <div className="space-y-12">
@@ -23,16 +27,16 @@ export default async function NewInvoicePage() {
           <Loader2 className="h-10 w-10 text-primary animate-spin" />
         </div>
       }>
-        <NewInvoiceDataWrapper session={session} />
+        <NewInvoiceDataWrapper session={session} galleryId={galleryId} />
       </Suspense>
     </div>
   );
 }
 
-async function NewInvoiceDataWrapper({ session }: { session: any }) {
+async function NewInvoiceDataWrapper({ session, galleryId }: { session: any, galleryId: string }) {
   const tenantId = session.user.tenantId;
 
-  const [clients, services, bookings, tenant, isSubscribed] = await Promise.all([
+  const [clients, services, bookings, tenant, isSubscribed, gallery] = await Promise.all([
     prisma.client.findMany({
       where: { tenantId, deletedAt: null },
       select: { id: true, name: true, businessName: true, avatarUrl: true, settings: true }
@@ -57,7 +61,17 @@ async function NewInvoiceDataWrapper({ session }: { session: any }) {
         settings: true 
       }
     }),
-    checkSubscriptionStatus(tenantId)
+    checkSubscriptionStatus(tenantId),
+    galleryId
+      ? prisma.gallery.findFirst({
+          where: { id: galleryId, tenantId, deletedAt: null },
+          include: {
+            client: { select: { id: true, name: true, businessName: true, settings: true } },
+            property: { select: { name: true } },
+            services: { include: { service: { select: { id: true, name: true, price: true } } } },
+          },
+        })
+      : null,
   ]);
 
   const serializedServices = services.map(s => ({ ...s, price: Number(s.price) }));
@@ -76,6 +90,37 @@ async function NewInvoiceDataWrapper({ session }: { session: any }) {
     taxInclusive: (tenant as any)?.taxInclusive ?? true,
   };
 
+  // Prefill invoice editor from gallery (without creating an invoice record yet).
+  // Invoice is only created when user presses Save as Draft or Save & Send.
+  const prefill = (() => {
+    if (!gallery || !gallery.client) return null;
+    const status = String((gallery as any).status || "").toUpperCase();
+    const isDeliveredish = status === "DELIVERED" || status === "APPROVED" || status === "CONFIRMED";
+    if (!isDeliveredish) return null;
+
+    const clientSettings = ((gallery.client as any)?.settings || {}) as any;
+    const priceOverrides = (clientSettings?.priceOverrides || {}) as Record<string, any>;
+    const lineItems = (gallery.services || []).map((gs: any, i: number) => {
+      const sid = String(gs?.service?.id || gs?.serviceId || "");
+      const override = priceOverrides?.[sid];
+      const unitPrice = override !== undefined ? Number(override) : Number(gs?.service?.price || 0);
+      return {
+        id: `prefill-${i}`,
+        description: String(gs?.service?.name || ""),
+        quantity: 1,
+        unitPrice,
+        serviceId: sid || null,
+      };
+    });
+    return {
+      galleryId: String(gallery.id),
+      clientId: String(gallery.client.id),
+      bookingId: String((gallery as any).bookingId || ""),
+      address: String(gallery.property?.name || ""),
+      lineItems,
+    };
+  })();
+
   return (
     <InvoiceEditor 
       clients={serializedClients} 
@@ -83,6 +128,7 @@ async function NewInvoiceDataWrapper({ session }: { session: any }) {
       bookings={serializedBookings} 
       tenant={serializedTenant as any}
       isActionLocked={!isSubscribed}
+      prefillData={prefill}
     />
   );
 }
