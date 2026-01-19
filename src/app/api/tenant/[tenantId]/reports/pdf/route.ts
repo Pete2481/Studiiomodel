@@ -5,6 +5,13 @@ import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
+function safePdfText(input: unknown) {
+  const s = String(input ?? "");
+  // pdf-lib StandardFonts are not full-Unicode; strip characters that can crash drawText/width calculations.
+  // Keep: tabs/newlines/carriage returns + basic Latin + Latin-1 supplement.
+  return s.replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/g, "");
+}
+
 function parseIsoDate(iso: string | null) {
   if (!iso) return null;
   const parts = iso.split("-").map((p) => p.trim());
@@ -44,18 +51,22 @@ function decodeDataUrl(dataUrl: string): { mime: string; bytes: Uint8Array } | n
 }
 
 function drawSectionTitle(page: any, bold: any, x: number, y: number, text: string) {
-  page.drawText(text, { x, y, size: 12, font: bold, color: rgb(0.06, 0.08, 0.12) });
+  const safe = safePdfText(text);
+  if (!safe) return;
+  page.drawText(safe, { x, y, size: 12, font: bold, color: rgb(0.06, 0.08, 0.12) });
 }
 
 function drawBadge(page: any, font: any, x: number, y: number, text: string) {
+  const safe = safePdfText(text);
+  if (!safe) return 0;
   const size = 9;
   const padX = 8;
   const padY = 4;
-  const textWidth = font.widthOfTextAtSize(text, size);
+  const textWidth = font.widthOfTextAtSize(safe, size);
   const w = textWidth + padX * 2;
   const h = size + padY * 2;
   page.drawRectangle({ x, y: y - h, width: w, height: h, color: rgb(0.95, 0.97, 0.99) });
-  page.drawText(text, { x: x + padX, y: y - h + padY + 1, size, font, color: rgb(0.25, 0.28, 0.35) });
+  page.drawText(safe, { x: x + padX, y: y - h + padY + 1, size, font, color: rgb(0.25, 0.28, 0.35) });
   return w;
 }
 
@@ -78,10 +89,13 @@ function drawCard(params: {
   if (accent) {
     page.drawRectangle({ x, y: y - 4, width: w, height: 4, color: rgb(accent.r, accent.g, accent.b) });
   }
-  page.drawText(title.toUpperCase(), { x: x + 12, y: y - 18, size: 8, font: bold, color: rgb(0.55, 0.6, 0.68) });
-  page.drawText(value, { x: x + 12, y: y - 42, size: 18, font: bold, color: rgb(0.06, 0.08, 0.12) });
+  const safeTitle = safePdfText(title).toUpperCase();
+  const safeValue = safePdfText(value);
+  if (safeTitle) page.drawText(safeTitle, { x: x + 12, y: y - 18, size: 8, font: bold, color: rgb(0.55, 0.6, 0.68) });
+  if (safeValue) page.drawText(safeValue, { x: x + 12, y: y - 42, size: 18, font: bold, color: rgb(0.06, 0.08, 0.12) });
   if (subtitle) {
-    page.drawText(subtitle, { x: x + 12, y: y - 62, size: 9, font, color: rgb(0.35, 0.4, 0.48) });
+    const safeSubtitle = safePdfText(subtitle);
+    if (safeSubtitle) page.drawText(safeSubtitle, { x: x + 12, y: y - 62, size: 9, font, color: rgb(0.35, 0.4, 0.48) });
   }
 }
 
@@ -100,7 +114,8 @@ function drawBarChart(params: {
 }) {
   const { page, font, bold, x, y, w, h, title, data, color, valueFormat } = params;
   page.drawRectangle({ x, y: y - h, width: w, height: h, color: rgb(1, 1, 1), borderColor: rgb(0.9, 0.91, 0.93), borderWidth: 1 });
-  page.drawText(title, { x: x + 12, y: y - 18, size: 11, font: bold, color: rgb(0.06, 0.08, 0.12) });
+  const safeTitle = safePdfText(title);
+  if (safeTitle) page.drawText(safeTitle, { x: x + 12, y: y - 18, size: 11, font: bold, color: rgb(0.06, 0.08, 0.12) });
 
   const innerX = x + 12;
   const innerY = y - 30;
@@ -130,12 +145,16 @@ function drawBarChart(params: {
   for (let i = 0; i < barCount; i += step) {
     const d = data[i];
     const bx = innerX + i * (barW + gap);
-    page.drawText(d.label, { x: bx, y: (y - h) + 6, size: 7, font, color: rgb(0.5, 0.54, 0.6) });
+    const safeLabel = safePdfText(d.label);
+    if (safeLabel) page.drawText(safeLabel, { x: bx, y: (y - h) + 6, size: 7, font, color: rgb(0.5, 0.54, 0.6) });
   }
 
   const total = data.reduce((sum, d) => sum + d.value, 0);
   const totalText = valueFormat ? valueFormat(total) : total.toFixed(0);
-  page.drawText(totalText, { x: x + w - 12 - font.widthOfTextAtSize(totalText, 10), y: y - 18, size: 10, font: bold, color: rgb(0.25, 0.28, 0.35) });
+  const safeTotalText = safePdfText(totalText);
+  if (safeTotalText) {
+    page.drawText(safeTotalText, { x: x + w - 12 - font.widthOfTextAtSize(safeTotalText, 10), y: y - 18, size: 10, font: bold, color: rgb(0.25, 0.28, 0.35) });
+  }
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ tenantId: string }> }) {
@@ -204,7 +223,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ tena
     page.drawRectangle({ x: 0, y: pageH - 90, width: pageW, height: 4, color: rgb(brandColor.r, brandColor.g, brandColor.b) });
 
     page.drawText("Performance Report", { x: margin, y: pageH - 48, size: 20, font: bold, color: rgb(0.06, 0.08, 0.12) });
-    page.drawText(tenant.name, { x: margin, y: pageH - 70, size: 11, font: bold, color: rgb(0.25, 0.28, 0.35) });
+    const safeTenantName = safePdfText(tenant.name);
+    if (safeTenantName) {
+      page.drawText(safeTenantName, { x: margin, y: pageH - 70, size: 11, font: bold, color: rgb(0.25, 0.28, 0.35) });
+    }
 
     let bx = pageW - margin - 260;
     bx += drawBadge(page, font, bx, pageH - 40, `Range: ${fromStr} to ${toStr}`) + 10;

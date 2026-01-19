@@ -5,6 +5,13 @@ import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
+function safePdfText(input: unknown) {
+  const s = String(input ?? "");
+  // pdf-lib StandardFonts are not full-Unicode; strip characters that can crash drawText/width calculations.
+  // Keep: tabs/newlines/carriage returns + basic Latin + Latin-1 supplement.
+  return s.replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/g, "");
+}
+
 function decodeDataUrl(dataUrl: string): { mime: string; bytes: Uint8Array } | null {
   if (!dataUrl.startsWith("data:")) return null;
   const [meta, payload] = dataUrl.split(",", 2);
@@ -39,8 +46,9 @@ function money(n: number) {
 }
 
 function wrapText(text: string, maxWidth: number, font: any, fontSize: number): string[] {
-  if (!text) return [];
-  const words = text.split(/\s+/);
+  const safe = safePdfText(text);
+  if (!safe) return [];
+  const words = safe.split(/\s+/);
   const lines: string[] = [];
   let currentLine = "";
 
@@ -110,8 +118,9 @@ export async function GET(
 
     // Header Info (Tenant)
     const drawText = (text: string, x: number, yPos: number, size: number, f = font, color = rgb(0, 0, 0)) => {
-      if (!text) return;
-      page.drawText(text, { x, y: yPos, size, font: f, color });
+      const safe = safePdfText(text);
+      if (!safe) return;
+      page.drawText(safe, { x, y: yPos, size, font: f, color });
     };
 
     // Use invoice-specific logo if available, fallback to studio logo
@@ -155,8 +164,10 @@ export async function GET(
     let rightY = y;
     const drawRight = (text: string, size: number, isBold = false, color = rgb(0,0,0)) => {
       const f = isBold ? bold : font;
-      const w = f.widthOfTextAtSize(text, size);
-      drawText(text, pageW - margin - w, rightY - size, size, f, color);
+      const safe = safePdfText(text);
+      if (!safe) return;
+      const w = f.widthOfTextAtSize(safe, size);
+      drawText(safe, pageW - margin - w, rightY - size, size, f, color);
       rightY -= size + 5;
     };
 
@@ -205,9 +216,11 @@ export async function GET(
     });
 
     const drawSummaryLine = (label: string, value: string, posY: number, isBold = false) => {
-      drawText(label, summaryX + 15, posY, 9, isBold ? bold : font, rgb(0.4, 0.4, 0.4));
-      const valW = (isBold ? bold : font).widthOfTextAtSize(value, 11);
-      drawText(value, pageW - margin - 15 - valW, posY, 11, isBold ? bold : font);
+      const safeLabel = safePdfText(label);
+      const safeValue = safePdfText(value);
+      drawText(safeLabel, summaryX + 15, posY, 9, isBold ? bold : font, rgb(0.4, 0.4, 0.4));
+      const valW = (isBold ? bold : font).widthOfTextAtSize(safeValue || "—", 11);
+      drawText(safeValue, pageW - margin - 15 - valW, posY, 11, isBold ? bold : font);
     };
 
     const subtotal = invoice.lineItems.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0);
@@ -264,9 +277,11 @@ export async function GET(
     // Totals Section
     const drawTotalLine = (label: string, value: string, isBold = false) => {
       const f = isBold ? bold : font;
-      drawText(label, margin + 350, y, 10, isBold ? bold : font, rgb(0.4, 0.4, 0.4));
-      const valW = f.widthOfTextAtSize(value, 11);
-      drawText(value, pageW - margin - valW, y, 11, f);
+      const safeLabel = safePdfText(label);
+      const safeValue = safePdfText(value);
+      drawText(safeLabel, margin + 350, y, 10, isBold ? bold : font, rgb(0.4, 0.4, 0.4));
+      const valW = f.widthOfTextAtSize(safeValue || "—", 11);
+      drawText(safeValue, pageW - margin - valW, y, 11, f);
       y -= 20;
     };
 
@@ -298,7 +313,7 @@ export async function GET(
     if (bankDetailsToUse) {
       drawText("PAYMENT INFORMATION", margin, y, 10, bold, rgb(0.5, 0.5, 0.5));
       y -= 15;
-      const lines = bankDetailsToUse.split('\n');
+      const lines = safePdfText(bankDetailsToUse).split("\n");
       lines.forEach(line => {
         drawText(line, margin, y, 9, font, rgb(0.2, 0.2, 0.2));
         y -= 12;
@@ -311,7 +326,7 @@ export async function GET(
     if (termsToUse) {
       drawText("TERMS & CONDITIONS", margin, y, 10, bold, rgb(0.5, 0.5, 0.5));
       y -= 15;
-      const termsLines = wrapText(termsToUse, pageW - margin * 2, font, 8);
+      const termsLines = wrapText(safePdfText(termsToUse), pageW - margin * 2, font, 8);
       termsLines.forEach(line => {
         if (y < margin + 40) { // Basic page overflow check
           y = pageH - margin;
@@ -326,7 +341,7 @@ export async function GET(
       y -= 20;
       drawText("NOTES", margin, y, 10, bold, rgb(0.5, 0.5, 0.5));
       y -= 15;
-      const noteLines = wrapText(invoice.clientNotes, pageW - margin * 2, font, 9);
+      const noteLines = wrapText(safePdfText(invoice.clientNotes), pageW - margin * 2, font, 9);
       noteLines.forEach(line => {
         drawText(line, margin, y, 9);
         y -= 12;
