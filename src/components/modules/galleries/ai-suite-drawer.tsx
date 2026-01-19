@@ -263,6 +263,26 @@ export function AISuiteDrawer({
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar">
+          {/* Context Preview (keeps orientation when the panel is open) */}
+          {!resultUrl && !!assetUrl && (
+            <div className="mx-8 mt-8">
+              <div className="relative aspect-[4/3] rounded-[32px] overflow-hidden border border-white/10 bg-slate-900/60">
+                <img
+                  src={assetUrl}
+                  alt={assetName}
+                  className="h-full w-full object-cover opacity-90"
+                  onError={(e) => {
+                    try {
+                      (e.currentTarget as any).style.opacity = "0.2";
+                    } catch {
+                      // ignore
+                    }
+                  }}
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-transparent" />
+              </div>
+            </div>
+          )}
           {error && (
             <div className="mx-8 mt-8 p-6 rounded-[32px] bg-rose-500/10 border border-rose-500/20 flex flex-col gap-3 text-rose-500 animate-in zoom-in-95">
               <div className="flex items-center gap-3 font-bold text-xs">

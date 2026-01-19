@@ -1595,6 +1595,9 @@ export function GalleryPublicViewer({
                         ))}
 
                         {TOOLBAR.locked.map((t) => (
+                          (() => {
+                            const aiReady = aiSuiteUnlocked && aiSuiteRemainingEdits > 0;
+                            return (
                           <button
                             key={t.id}
                             type="button"
@@ -1602,16 +1605,27 @@ export function GalleryPublicViewer({
                               e.stopPropagation();
                               (t as any).onClick?.();
                             }}
-                            className="relative shrink-0 h-10 px-4 rounded-full bg-white/5 hover:bg-white/10 text-white/70 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all border border-white/10"
+                            className={cn(
+                              "relative shrink-0 h-10 px-4 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all border",
+                              aiReady
+                                ? "bg-emerald-500/10 hover:bg-emerald-500/20 text-white border-emerald-500/25"
+                                : "bg-white/5 hover:bg-white/10 text-white/70 border-white/10"
+                            )}
                             title={t.label}
                             aria-label={t.label}
                           >
                             <t.icon className="h-3.5 w-3.5" />
                             <span className="hidden md:inline">{t.label}</span>
                             <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-slate-900 border border-white/10 flex items-center justify-center">
-                              <Lock className="h-3 w-3 text-white/80" />
+                              {aiReady ? (
+                                <Zap className="h-3 w-3 text-emerald-400" />
+                              ) : (
+                                <Lock className="h-3 w-3 text-white/80" />
+                              )}
                             </span>
                           </button>
+                            );
+                          })()
                         ))}
 
                         {TOOLBAR.comingSoon.map((t) => (
