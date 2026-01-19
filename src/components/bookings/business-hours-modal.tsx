@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { X, Clock, Check, Sunrise, Sunset, Minus, Plus, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { updateTenantBusinessHours } from "@/app/actions/tenant-settings";
+import { cleanupLegacySunPlaceholders } from "@/app/actions/slot-management";
 import { LoadingOverlay } from "@/components/ui/loading-overlay";
 import { AddressAutocomplete } from "@/components/ui/address-autocomplete";
 
@@ -36,6 +37,7 @@ export function BusinessHoursModal({ isOpen, onClose, initialHours, aiLogisticsE
     "6": { open: true, start: "09:00", end: "17:00" },
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [isCleaning, setIsCleaning] = useState(false);
   const [sunSlotsAddress, setSunSlotsAddress] = useState<string>(String(initialSunSlotsAddress || ""));
 
   if (!isOpen) return null;
@@ -80,6 +82,24 @@ export function BusinessHoursModal({ isOpen, onClose, initialHours, aiLogisticsE
       alert("Failed to save business hours");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleCleanupLegacy = async () => {
+    const ok = typeof window !== "undefined"
+      ? window.confirm("Cleanup legacy Sunrise/Dusk placeholders?\n\nThis removes old duplicated placeholder bookings created by the previous system. V2 will keep generating the correct slots from Max AM/PM.")
+      : false;
+    if (!ok) return;
+    setIsCleaning(true);
+    try {
+      const res = await cleanupLegacySunPlaceholders();
+      if ((res as any)?.success) {
+        alert(`Cleanup complete: removed ${(res as any)?.deletedCount ?? 0} legacy placeholder(s).`);
+      } else {
+        alert((res as any)?.error || "Cleanup failed.");
+      }
+    } finally {
+      setIsCleaning(false);
     }
   };
 
@@ -226,7 +246,26 @@ export function BusinessHoursModal({ isOpen, onClose, initialHours, aiLogisticsE
           })}
         </div>
 
-        <div className="p-8 border-t border-slate-100 bg-slate-50/50 flex items-center justify-end gap-4">
+        <div className="p-8 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between gap-4">
+          <button
+            type="button"
+            onClick={handleCleanupLegacy}
+            disabled={isSaving || isCleaning}
+            className={cn(
+              "h-11 px-5 rounded-full border border-slate-200 bg-white text-slate-700 text-xs font-black uppercase tracking-widest shadow-sm hover:bg-slate-50 active:scale-95 transition-all",
+              (isSaving || isCleaning) && "opacity-50 pointer-events-none"
+            )}
+          >
+            {isCleaning ? (
+              <span className="inline-flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Cleaning…
+              </span>
+            ) : (
+              "Cleanup legacy sun slots"
+            )}
+          </button>
+          <div className="flex items-center justify-end gap-4">
           <button 
             onClick={onClose}
             className="text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors"
@@ -235,7 +274,7 @@ export function BusinessHoursModal({ isOpen, onClose, initialHours, aiLogisticsE
           </button>
           <button 
             onClick={handleSave}
-            disabled={isSaving}
+            disabled={isSaving || isCleaning}
             className="h-12 px-8 rounded-full bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:opacity-90 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
           >
             {isSaving ? (
@@ -250,6 +289,7 @@ export function BusinessHoursModal({ isOpen, onClose, initialHours, aiLogisticsE
               </>
             )}
           </button>
+          </div>
         </div>
       </div>
     </div>

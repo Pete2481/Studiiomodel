@@ -828,10 +828,21 @@ export function CalendarViewV2(props: {
     })();
 
     const staffFilteredBookings = (() => {
-      if (!isLocalOnly) return bookings;
-      if (!selectedTeamMemberIds.length) return bookings;
+      const stripLegacyDbSunPlaceholders = (items: LiteBooking[]) => {
+        // Legacy system created Sunrise/Dusk placeholders as *real* Booking rows (isPlaceholder=true).
+        // Calendar V2 now generates sun slots dynamically (sunSlotsRender), so showing DB placeholders causes duplicates.
+        return (items || []).filter((b: any) => {
+          const st = String(b?.slotType || "").toUpperCase();
+          if (!!b?.isPlaceholder && (st === "SUNRISE" || st === "DUSK")) return false;
+          return true;
+        });
+      };
+
+      const cleaned = stripLegacyDbSunPlaceholders(bookings);
+      if (!isLocalOnly) return cleaned;
+      if (!selectedTeamMemberIds.length) return cleaned;
       const sel = new Set(selectedTeamMemberIds.map(String));
-      return (bookings || []).filter((b: any) => {
+      return (cleaned || []).filter((b: any) => {
         if (!b || b.isPlaceholder) return true;
         const ids = Array.isArray((b as any).teamMemberIds) ? ((b as any).teamMemberIds as any[]).map(String) : [];
         // Keep Unassigned visible.

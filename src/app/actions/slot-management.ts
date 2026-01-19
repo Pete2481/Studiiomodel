@@ -4,6 +4,7 @@ import { getTenantPrisma, getSessionTenantId } from "@/lib/tenant-guard";
 import { revalidatePath } from "next/cache";
 import { startOfDay, endOfDay, setHours, setMinutes, addMinutes, subMinutes, format } from "date-fns";
 import { getWeatherData } from "./weather";
+import { auth } from "@/auth";
 
 export async function toggleSlotPlaceholder(data: {
   date: Date;
@@ -11,6 +12,12 @@ export async function toggleSlotPlaceholder(data: {
   action: "ADD" | "REMOVE";
 }) {
   try {
+    const session = await auth();
+    const role = (session?.user as any)?.role;
+    if (!session?.user || (role !== "TENANT_ADMIN" && role !== "ADMIN")) {
+      return { success: false, error: "Permission denied." };
+    }
+
     const tPrisma = await getTenantPrisma();
     const tenantId = await getSessionTenantId();
 
@@ -30,6 +37,13 @@ export async function toggleSlotPlaceholder(data: {
         }
       });
     } else {
+      // DEPRECATED: Calendar V2 generates Sunrise/Dusk placeholders dynamically based on Business Hours Max AM/PM.
+      // Creating DB placeholder bookings causes duplicates on the V2 calendar.
+      return {
+        success: false,
+        error: "Daily overrides are deprecated. Use Business Hours Max AM/PM (Sunrise/Dusk counters) instead.",
+      };
+      /*
       // Get tenant settings and real weather if possible
       const tenant = await (tPrisma as any).tenant.findUnique({
         where: { id: tenantId },
@@ -87,9 +101,11 @@ export async function toggleSlotPlaceholder(data: {
           status: "PENCILLED"
         }
       });
+      */
     }
 
     revalidatePath("/tenant/calendar");
+    revalidatePath("/tenant/calendar-v2");
     revalidatePath("/tenant/bookings");
     return { success: true };
   } catch (error: any) {
@@ -105,6 +121,12 @@ export async function updateSlotSettings(data: {
   duskSlotsPerDay: number;
 }) {
   try {
+    const session = await auth();
+    const role = (session?.user as any)?.role;
+    if (!session?.user || (role !== "TENANT_ADMIN" && role !== "ADMIN")) {
+      return { success: false, error: "Permission denied." };
+    }
+
     const tPrisma = await getTenantPrisma();
     const tenantId = await getSessionTenantId();
 
@@ -119,11 +141,41 @@ export async function updateSlotSettings(data: {
     });
 
     revalidatePath("/tenant/calendar");
+    revalidatePath("/tenant/calendar-v2");
     revalidatePath("/tenant/settings");
     return { success: true };
   } catch (error: any) {
     console.error("UPDATE SLOT SETTINGS ERROR:", error);
     return { success: false, error: error.message };
+  }
+}
+
+export async function cleanupLegacySunPlaceholders() {
+  try {
+    const session = await auth();
+    const role = (session?.user as any)?.role;
+    if (!session?.user || (role !== "TENANT_ADMIN" && role !== "ADMIN")) {
+      return { success: false, error: "Permission denied." };
+    }
+
+    const tPrisma = await getTenantPrisma();
+    await getSessionTenantId(); // ensure tenant context exists
+
+    const res = await (tPrisma as any).booking.deleteMany({
+      where: {
+        isPlaceholder: true,
+        slotType: { in: ["SUNRISE", "DUSK"] },
+      },
+    });
+
+    revalidatePath("/tenant/calendar");
+    revalidatePath("/tenant/calendar-v2");
+    revalidatePath("/tenant/bookings");
+
+    return { success: true, deletedCount: Number(res?.count || 0) };
+  } catch (error: any) {
+    console.error("CLEANUP LEGACY SUN PLACEHOLDERS ERROR:", error);
+    return { success: false, error: error.message || "Failed to cleanup placeholders." };
   }
 }
 
