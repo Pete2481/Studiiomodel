@@ -2214,10 +2214,10 @@ export function GalleryPublicViewer({
           {isRequestingEdit && (
             <div className="absolute inset-0 z-[60] flex items-center justify-end p-4 md:p-8 bg-transparent pointer-events-none animate-in fade-in duration-300">
               <div 
-                className="w-full max-w-5xl bg-white rounded-[32px] shadow-2xl overflow-hidden flex flex-col h-full max-h-[850px] animate-in slide-in-from-right duration-500 pointer-events-auto"
+                className="w-full max-w-[860px] bg-white rounded-[28px] shadow-2xl overflow-hidden flex flex-col h-full max-h-[760px] animate-in slide-in-from-right duration-500 pointer-events-auto"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="p-6 md:p-8 border-b border-slate-50 flex items-center justify-between shrink-0">
+                <div className="p-5 md:p-6 border-b border-slate-50 flex items-center justify-between shrink-0">
                   <div className="space-y-1">
                     <p className="text-[10px] font-black text-primary uppercase tracking-widest">
                       {drawingData ? "VISUAL INSTRUCTIONS ADDED" : "EDIT DETAILS"}
@@ -2241,7 +2241,7 @@ export function GalleryPublicViewer({
 
                 <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
                   {/* Left Column: Visual Marking (Drawing) */}
-                  <div className="w-full lg:w-[40%] p-6 md:p-8 border-b lg:border-b-0 lg:border-r border-slate-50 overflow-y-auto custom-scrollbar">
+                  <div className="w-full lg:w-[38%] p-5 md:p-6 border-b lg:border-b-0 lg:border-r border-slate-50 overflow-y-auto custom-scrollbar">
                     <div className="space-y-4">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center justify-between">
                         Visual Marking (Optional)
@@ -2291,11 +2291,11 @@ export function GalleryPublicViewer({
 
                   {/* Right Column: Edit Types & Instructions */}
                   <div className="w-full lg:w-[60%] flex flex-col overflow-hidden">
-                    <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8 custom-scrollbar">
+                    <div className="flex-1 overflow-y-auto p-5 md:p-6 space-y-6 custom-scrollbar">
                       {/* Edit Tags (Multi-select) */}
                       <div className="space-y-4">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Edit Type</label>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="grid grid-cols-2 gap-2">
                           {editTags.map((tag: any) => {
                             const isSelected = selectedTagIds.includes(tag.id);
                             return (
@@ -2310,7 +2310,7 @@ export function GalleryPublicViewer({
                                   }
                                 }}
                                 className={cn(
-                                  "flex items-center justify-between px-4 py-3 rounded-2xl text-[11px] font-bold transition-all border text-left",
+                                  "flex items-center justify-between px-3 py-2 rounded-xl text-[11px] font-bold transition-all border text-left",
                                   isSelected 
                                     ? "bg-primary border-primary text-white shadow-lg shadow-primary/20" 
                                     : "bg-white border-slate-200 text-slate-600 hover:border-primary hover:text-primary"
@@ -2318,7 +2318,7 @@ export function GalleryPublicViewer({
                               >
                                 <span>{tag.name}</span>
                                 <span className={cn(
-                                  "px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest",
+                                  "px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest shrink-0",
                                   isSelected ? "bg-white/20 text-white" : "bg-slate-50 text-slate-400"
                                 )}>
                                   ${tag.cost}
@@ -2336,13 +2336,13 @@ export function GalleryPublicViewer({
                           value={editNote}
                           onChange={(e) => setEditNote(e.target.value)}
                           placeholder="e.g. Please remove the car and also the green bin on the left..."
-                          className="w-full h-40 rounded-2xl border border-slate-200 p-4 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-none"
+                          className="w-full h-28 rounded-2xl border border-slate-200 p-4 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-none"
                         />
                       </div>
                     </div>
 
                     {/* Sticky Footer */}
-                    <div className="p-6 md:p-8 border-t border-slate-50 bg-slate-50/50 shrink-0">
+                    <div className="p-5 md:p-6 border-t border-slate-50 bg-slate-50/50 shrink-0">
                       {editSuccess ? (
                         <div className="h-14 w-full rounded-2xl bg-emerald-500 text-white flex items-center justify-center gap-2 animate-in zoom-in duration-300">
                           <Check className="h-5 w-5" />
@@ -2353,7 +2353,7 @@ export function GalleryPublicViewer({
                           type="button"
                           onClick={handleSubmitEditRequest}
                           disabled={isSubmittingEdit || (selectedTagIds.length === 0 && !editNote)}
-                          className="h-14 w-full rounded-2xl bg-slate-900 text-white font-bold flex items-center justify-center gap-2 hover:scale-[1.02] transition-all shadow-xl disabled:opacity-50 disabled:hover:scale-100"
+                          className="h-12 w-full rounded-2xl bg-slate-900 text-white font-bold flex items-center justify-center gap-2 hover:scale-[1.02] transition-all shadow-xl disabled:opacity-50 disabled:hover:scale-100"
                         >
                           {isSubmittingEdit ? (
                             <>
