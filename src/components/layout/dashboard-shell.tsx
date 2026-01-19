@@ -170,7 +170,7 @@ function DashboardShellContent({
   const [counts, setCounts] = useState<{ bookings?: number, galleries?: number, edits?: number }>(navCounts || {});
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
     "Operations": true,
-    "Clients": true
+    "Studio Setup": true
   });
 
   const toggleExpand = (label: string) => {

@@ -31,63 +31,53 @@ export interface NavSection {
 }
 
 export const UNIFIED_NAV_CONFIG: NavSection[] = [
-  // 1. Overview
+  // 1) Top level
   {
     items: [
       { label: "Dashboard", href: "/", icon: "LayoutDashboard", module: "dashboard" },
-      { label: "Reports", href: "/tenant/reports", icon: "ChartColumn", module: "reports" },
+      { label: "WIP", href: "/tenant/wip", icon: "Activity", module: "dashboard" },
+      { label: "Calendar", href: "/tenant/calendar", icon: "Calendar", module: "bookings" },
     ],
   },
 
-  // 2. Operations
+  // 2) OPERATIONS dropdown
   {
     heading: "Work",
     items: [
-      { 
-        label: "Operations", 
-        href: "/tenant/calendar", 
-        icon: "Activity", 
+      {
+        label: "Operations",
+        href: "/tenant/bookings",
+        icon: "Activity",
         module: "bookings",
         items: [
-          { label: "Calendar", href: "/tenant/calendar", module: "bookings" },
+          { label: "Reports", href: "/tenant/reports", module: "reports" },
           { label: "Bookings", href: "/tenant/bookings", module: "bookings" },
-          { label: "Galleries", href: "/tenant/galleries", module: "galleries" },
+          { label: "Gallery", href: "/tenant/galleries", module: "galleries" },
           { label: "Edit requests", href: "/tenant/edits", module: "edits" },
-        ]
+          { label: "Invoices", href: "/tenant/invoices", module: "invoices" },
+          { label: "Services", href: "/tenant/services", module: "services" },
+        ],
       },
     ],
   },
 
-  // 3. Relationships
-  {
-    heading: "People",
-    items: [
-      { 
-        label: "Clients", 
-        href: "/tenant/clients", 
-        icon: "Users", 
-        module: "clients"
-      },
-      { label: "Studio Crew", href: "/tenant/photographers", icon: "Camera", module: "team" },
-    ],
-  },
-
-  // 4. Studio Setup
+  // 3) STUDIO SETUP dropdown
   {
     heading: "Studio Setup",
     items: [
-      { label: "Invoices", href: "/tenant/invoices", icon: "Receipt", module: "invoices" },
-      { label: "Services", href: "/tenant/services", icon: "Wrench", module: "services" },
-    ],
-  },
-
-  // 5. Config
-  {
-    heading: "Config",
-    items: [
-      { label: "Reminders", href: "/tenant/reminders", icon: "Bell", module: "reminders" },
-      { label: "Newsletter", href: "/tenant/newsletter", icon: "Newspaper", module: "newsletter" },
-      { label: "Settings", href: "/tenant/settings", icon: "Settings", module: "settings" },
+      {
+        label: "Studio Setup",
+        href: "/tenant/clients",
+        icon: "Settings",
+        module: "dashboard",
+        items: [
+          { label: "Clients", href: "/tenant/clients", module: "clients" },
+          { label: "Team Members", href: "/tenant/photographers", module: "team" },
+          { label: "Reminder", href: "/tenant/reminders", module: "reminders" },
+          { label: "Newsletter", href: "/tenant/newsletter", module: "newsletter" },
+          { label: "Settings", href: "/tenant/settings", module: "settings" },
+        ],
+      },
     ],
   },
 

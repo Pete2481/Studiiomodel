@@ -163,3 +163,92 @@ export async function deleteBooking(id: string) {
     return { success: false, error: error.message || "Failed to delete booking." };
   }
 }
+
+export async function rescheduleBooking(input: { id: string; startAt: string; endAt: string; status?: string }) {
+  try {
+    const session = await auth();
+    const tenantId = session?.user?.tenantId as string | undefined;
+    if (!session || !tenantId) return { success: false, error: "Unauthorized" };
+
+    // PERMISSION CHECK
+    if (!permissionService.can(session.user as any, "viewBookings")) {
+      return { success: false, error: "Permission Denied: Cannot manage bookings." };
+    }
+
+    // SECURITY: Prevent API-level bypass of the paywall
+    await enforceSubscription(tenantId);
+
+    const bookingId = String(input?.id || "");
+    if (!bookingId) return { success: false, error: "Missing booking id." };
+
+    const startAt = new Date(String(input?.startAt || ""));
+    const endAt = new Date(String(input?.endAt || ""));
+    if (isNaN(startAt.getTime()) || isNaN(endAt.getTime())) {
+      return { success: false, error: "Invalid start/end date format." };
+    }
+    if (endAt.getTime() <= startAt.getTime()) {
+      return { success: false, error: "End time must be after start time." };
+    }
+
+    const sessionUser = session.user as any;
+    const role = String(sessionUser?.role || "");
+    const canViewAll = permissionService.can(session.user as any, "viewAllBookings") || role === "TENANT_ADMIN" || role === "ADMIN";
+
+    const tPrisma = (await getTenantPrisma()) as any;
+    const existing = await tPrisma.booking.findFirst({
+      where: { id: bookingId, deletedAt: null, tenantId },
+      select: {
+        id: true,
+        tenantId: true,
+        clientId: true,
+        agentId: true,
+        assignments: { select: { teamMemberId: true } },
+      },
+    });
+    if (!existing) return { success: false, error: "Not found." };
+
+    // Ownership check (same logic as calendar-lite masking)
+    let isOwned = !!canViewAll;
+    if (!isOwned) {
+      if (role === "CLIENT" && existing.clientId && sessionUser.clientId && String(existing.clientId) === String(sessionUser.clientId)) isOwned = true;
+      else if (role === "AGENT" && existing.agentId && sessionUser.agentId && String(existing.agentId) === String(sessionUser.agentId)) isOwned = true;
+      else if (sessionUser.teamMemberId && (existing.assignments || []).some((a: any) => String(a.teamMemberId) === String(sessionUser.teamMemberId))) isOwned = true;
+    }
+    if (!isOwned) return { success: false, error: "Permission Denied." };
+
+    // Status rules:
+    // - CLIENT/AGENT reschedules always become REQUESTED (unconfirmed)
+    // - Tenant/staff can optionally set status (e.g. PENCILLED)
+    let nextStatus: string | undefined = undefined;
+    if (role === "CLIENT" || role === "AGENT") {
+      nextStatus = "REQUESTED";
+    } else if (input?.status) {
+      nextStatus = String(input.status || "").toUpperCase();
+    }
+
+    const updated = await tPrisma.booking.update({
+      where: { id: bookingId },
+      data: {
+        startAt,
+        endAt,
+        ...(nextStatus ? { status: nextStatus } : {}),
+      },
+      include: {
+        client: true,
+        property: true,
+        services: { include: { service: true } },
+        assignments: { include: { teamMember: true } },
+      },
+    });
+
+    revalidatePath("/tenant/bookings");
+    revalidatePath("/tenant/calendar");
+    revalidatePath("/");
+
+    const calendarBooking = toCalendarBooking(updated);
+    return { success: true, bookingId: String(bookingId), booking: calendarBooking };
+  } catch (error: any) {
+    console.error("RESCHEDULE ERROR:", error);
+    return { success: false, error: error.message || "Failed to reschedule booking." };
+  }
+}

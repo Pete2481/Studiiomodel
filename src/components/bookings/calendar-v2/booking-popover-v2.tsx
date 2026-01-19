@@ -47,6 +47,7 @@ export function BookingPopoverV2(props: {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [notifyPref, setNotifyPref] = useState<"silent" | "send">("silent");
+  const notifyTouchedRef = useRef(false);
   const [preview, setPreview] = useState<null | { type: string; bookingId: string; subject: string; html: string; to: string[] }>(null);
   const [isPreviewSending, setIsPreviewSending] = useState(false);
   const initialStatusRef = useRef<string>("");
@@ -167,15 +168,29 @@ export function BookingPopoverV2(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, restoreKey]);
 
-  // Default for NEW tenant bookings: Approved + Approve(silent)
+  // Notify preference defaults:
+  // - Only meaningful for Approved bookings (we don't want to accidentally email on normal edits).
+  // - For Approved, default to Approve + Send, unless the user manually toggles it.
   useEffect(() => {
     if (!open) return;
-    if (isClient) return;
-    if (bookingId) return; // editing existing
+    notifyTouchedRef.current = false;
     setNotifyPref("silent");
-    setForm((p) => ({ ...p, status: "approved" }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isClient, bookingId]);
+  }, [open, bookingId]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (isClient) {
+      setNotifyPref("silent");
+      return;
+    }
+    const isApproved = normalizeStatus(form.status) === "approved";
+    if (!isApproved) {
+      setNotifyPref("silent");
+      return;
+    }
+    if (notifyTouchedRef.current) return;
+    setNotifyPref("send");
+  }, [open, isClient, form.status]);
 
   // Tenant portal: keep selected contact (agent) consistent with selected client
   useEffect(() => {
@@ -341,6 +356,26 @@ export function BookingPopoverV2(props: {
       if (end.getTime() < minEnd.getTime()) end = minEnd;
     }
     setForm((prev) => ({ ...prev, endAt: end.toISOString() }));
+  };
+
+  const dateValueYMD = useMemo(() => {
+    const base = new Date(form.startAt || form.endAt || "");
+    if (isNaN(base.getTime())) return "";
+    const p = dtfParts.partsFromDate(base);
+    return `${String(p.y).padStart(4, "0")}-${String(p.m).padStart(2, "0")}-${String(p.d).padStart(2, "0")}`;
+  }, [form.startAt, form.endAt, dtfParts]);
+
+  const setDateYMD = (ymd: string) => {
+    const [yStr, mStr, dStr] = String(ymd || "").split("-");
+    const y = Number(yStr);
+    const m = Number(mStr);
+    const d = Number(dStr);
+    if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return;
+    const base = new Date(form.startAt || form.endAt || "");
+    if (isNaN(base.getTime())) return;
+    const p = dtfParts.partsFromDate(base);
+    const utc = zonedTimeToUtc({ y, m, d, hh: p.hh, mm: p.mm }, tenantTimezone);
+    setForm((prev) => ({ ...prev, startAt: utc.toISOString() }));
   };
 
   const [sunInfo, setSunInfo] = useState<{ sunriseLabel: string; sunsetLabel: string } | null>(null);
@@ -642,9 +677,10 @@ export function BookingPopoverV2(props: {
                       if (!bookingId) return;
                       setIsDeleting(true);
                       try {
-                        await deleteBooking(String(bookingId));
+                        // Optimistic UI: remove immediately from calendar and close popover
                         onDeleted?.(String(bookingId));
                         onClose();
+                        await deleteBooking(String(bookingId));
                       } finally {
                         setIsDeleting(false);
                       }
@@ -1000,7 +1036,10 @@ export function BookingPopoverV2(props: {
                           "h-9 px-4 rounded-full text-[11px] font-black uppercase tracking-widest",
                           notifyPref === "silent" ? "bg-white shadow-sm text-slate-900" : "text-slate-600"
                         )}
-                        onClick={() => setNotifyPref("silent")}
+                        onClick={() => {
+                          notifyTouchedRef.current = true;
+                          setNotifyPref("silent");
+                        }}
                       >
                         Approve (silent)
                       </button>
@@ -1010,7 +1049,10 @@ export function BookingPopoverV2(props: {
                           "h-9 px-4 rounded-full text-[11px] font-black uppercase tracking-widest",
                           notifyPref === "send" ? "bg-white shadow-sm text-slate-900" : "text-slate-600"
                         )}
-                        onClick={() => setNotifyPref("send")}
+                        onClick={() => {
+                          notifyTouchedRef.current = true;
+                          setNotifyPref("send");
+                        }}
                       >
                         Approve + Send
                       </button>
@@ -1185,24 +1227,29 @@ export function BookingPopoverV2(props: {
                     )}
 
                     {/* Contact / Agent (tenant portal) */}
-                    {form.clientMode === "existing" && !!form.clientId ? (
-                      <Field label="Contact">
-                        <select
-                          className="w-full h-14 rounded-3xl border border-slate-200 px-5 pr-11 text-sm font-black bg-white appearance-none"
-                          value={form.agentId}
-                          onChange={(e) => setForm((p) => ({ ...p, agentId: e.target.value }))}
-                        >
-                          <option value="">Select contact…</option>
-                          {(localRef.agents || [])
-                            .filter((a: any) => String(a.clientId) === String(form.clientId))
-                            .map((a: any) => (
-                              <option key={String(a.id)} value={String(a.id)}>
-                                {String(a.name || "Contact")}
-                              </option>
-                            ))}
-                        </select>
-                      </Field>
-                    ) : null}
+                    <Field label="Contact">
+                      <select
+                        className={cn(
+                          "w-full h-14 rounded-3xl border border-slate-200 px-5 pr-11 text-sm font-black bg-white appearance-none",
+                          !(form.clientMode === "existing" && !!form.clientId) && "opacity-60"
+                        )}
+                        value={form.agentId}
+                        disabled={!(form.clientMode === "existing" && !!form.clientId)}
+                        onChange={(e) => setForm((p) => ({ ...p, agentId: e.target.value }))}
+                      >
+                        <option value="">
+                          {form.clientMode === "existing" && !!form.clientId ? "Select contact…" : "Select client first…"}
+                        </option>
+                        {(form.clientMode === "existing" && !!form.clientId
+                          ? (localRef.agents || []).filter((a: any) => String(a.clientId) === String(form.clientId))
+                          : []
+                        ).map((a: any) => (
+                          <option key={String(a.id)} value={String(a.id)}>
+                            {String(a.name || "Contact")}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
                   </>
                 )}
 
@@ -1218,6 +1265,22 @@ export function BookingPopoverV2(props: {
                     }}
                     placeholder="45 Jarra Rd, Clunes"
                     className="w-full rounded-3xl border border-slate-200 px-5 py-4 text-sm font-semibold focus:outline-none focus:ring-0"
+                  />
+                </Field>
+
+                <Field label="Date">
+                  <input
+                    type="date"
+                    value={dateValueYMD}
+                    disabled={isSunLocked}
+                    onChange={(e) => {
+                      if (isSunLocked) return;
+                      setDateYMD(e.target.value);
+                    }}
+                    className={cn(
+                      "w-full h-14 rounded-3xl border border-slate-200 px-5 pr-5 text-sm font-black bg-white",
+                      isSunLocked && "opacity-60 cursor-not-allowed"
+                    )}
                   />
                 </Field>
 

@@ -6,8 +6,13 @@ export default auth((req) => {
   const isApiAuthRoute = req.nextUrl.pathname.startsWith("/api/auth");
   const isPublicBooking = req.nextUrl.pathname.startsWith("/book/");
   const isPublicGallery = req.nextUrl.pathname.startsWith("/gallery/");
+  const isManifest = req.nextUrl.pathname === "/manifest.webmanifest";
+  const isFavicon = req.nextUrl.pathname === "/favicon.ico";
+  const isAppIcons = req.nextUrl.pathname.startsWith("/icon-") || req.nextUrl.pathname.startsWith("/apple-icon") || req.nextUrl.pathname.startsWith("/android-icon");
 
-  if (isApiAuthRoute || isPublicBooking || isPublicGallery) return;
+  // Always allow unauthenticated access to public assets/metadata.
+  // Otherwise the browser fetches HTML redirects which causes "Manifest: Syntax error" warnings.
+  if (isApiAuthRoute || isPublicBooking || isPublicGallery || isManifest || isFavicon || isAppIcons) return;
 
   if (isAuthPage) {
     if (isLoggedIn) {

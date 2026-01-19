@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
@@ -9,7 +9,7 @@ import { addDays, addMinutes, format, subMinutes } from "date-fns";
 import { cn } from "@/lib/utils";
 import { permissionService } from "@/lib/permission-service";
 import { BookingPopoverV2 } from "./booking-popover-v2";
-import { deleteBooking, upsertBooking } from "@/app/actions/booking-upsert";
+import { deleteBooking, rescheduleBooking, upsertBooking } from "@/app/actions/booking-upsert";
 import dynamic from "next/dynamic";
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Settings } from "lucide-react";
 import { getSunTimesForLatLonRange } from "@/app/actions/weather";
@@ -116,6 +116,10 @@ export function CalendarViewV2(props: {
   }, []);
 
   const [bookings, setBookings] = useState<LiteBooking[]>([]);
+  const bookingsRef = useRef<LiteBooking[]>([]);
+  useEffect(() => {
+    bookingsRef.current = bookings;
+  }, [bookings]);
   const [sunSlots, setSunSlots] = useState<LiteBooking[]>([]);
   const [clientTempBooking, setClientTempBooking] = useState<LiteBooking | null>(null);
   const [rangeTitle, setRangeTitle] = useState<string>("");
@@ -143,6 +147,7 @@ export function CalendarViewV2(props: {
   const [hoveredEvent, setHoveredEvent] = useState<{ event: HoverLiteEvent; x: number; y: number } | null>(null);
   const hoverDomHandlersRef = useRef<WeakMap<Element, { enter: () => void; leave: () => void }>>(new WeakMap());
   const pointerMoveHandlersRef = useRef<WeakMap<Element, (e: MouseEvent) => void>>(new WeakMap());
+  const dragPointerDownHandlersRef = useRef<WeakMap<Element, (e: PointerEvent | MouseEvent) => void>>(new WeakMap());
 
   const [popover, setPopover] = useState<{ open: boolean; mode: "booking" | "blockout"; bookingId?: string; startAt?: string; endAt?: string; presetSlotType?: "" | "SUNRISE" | "DUSK" | null }>(
     { open: false, mode: "booking" }
@@ -150,6 +155,37 @@ export function CalendarViewV2(props: {
   const [popoverAnchor, setPopoverAnchor] = useState<{ left: number; top: number; right: number; bottom: number; width: number; height: number } | null>(null);
   const [popoverRestore, setPopoverRestore] = useState<{ key: number; form: any } | null>(null);
   const [saveErrorMsg, setSaveErrorMsg] = useState<string | null>(null);
+
+  type PendingMoveConfirm = {
+    open: boolean;
+    bookingId: string;
+    kind: "tenant" | "clientAgent";
+    oldStartAt: string;
+    oldEndAt: string;
+    newStartAt: string;
+    newEndAt: string;
+    saving?: boolean;
+  };
+  const [moveConfirm, setMoveConfirm] = useState<PendingMoveConfirm | null>(null);
+  const moveRevertRef = useRef<null | (() => void)>(null);
+  const lastCalendarChangeHandledRef = useRef<{ id: string; startAt: string; endAt: string; at: number } | null>(null);
+  const moveConfirmRef = useRef<PendingMoveConfirm | null>(null);
+  useEffect(() => {
+    moveConfirmRef.current = moveConfirm;
+  }, [moveConfirm]);
+  const suppressMoveModalCloseUntilRef = useRef<number>(0);
+  const suppressEventClickUntilRef = useRef<number>(0);
+  const dragSnapshotRef = useRef<{ id: string; startAt: string; endAt: string; at: number } | null>(null);
+  const dragCandidateRef = useRef<{ id: string; oldStartAt: string; oldEndAt: string; at: number } | null>(null);
+
+  // FullCalendar can keep the initial handler references even after React re-renders.
+  // To ensure drag/drop keeps working after the first interaction, we provide stable handlers
+  // that delegate to the latest implementation via refs.
+  const eventDropImplRef = useRef<(info: any) => void>(() => {});
+  const eventResizeImplRef = useRef<(info: any) => void>(() => {});
+  const eventChangeImplRef = useRef<(info: any) => void>(() => {});
+  const eventDragStartImplRef = useRef<(info: any) => void>(() => {});
+  const eventDragStopImplRef = useRef<(info: any) => void>(() => {});
 
   const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
   const [isHoursModalOpen, setIsHoursModalOpen] = useState(false);
@@ -165,6 +201,7 @@ export function CalendarViewV2(props: {
 
   const isClientOrRestrictedAgent = user?.role === "CLIENT" || (user?.role === "AGENT" && !user?.permissions?.seeAll);
   const isRestrictedRole = user?.role === "CLIENT" || user?.role === "AGENT";
+  const isTenantStaff = !isRestrictedRole;
   const canPlaceBookings = permissionService.can(user, "canPlaceBookings");
   const canClientPlaceBookings = canPlaceBookings;
 
@@ -373,12 +410,30 @@ export function CalendarViewV2(props: {
   };
 
   const deleteBookingLocal = async (id: string) => {
+    const targetId = String(id || "");
+    if (!targetId) return;
+
+    // Optimistic remove (instant UI)
+    const snapshot = bookings.find((b) => String(b?.id) === targetId) || null;
+    setBookings((prev) => prev.filter((b) => String(b.id) !== targetId));
+
+    // Purge from cached ranges so it won't reappear until refresh
     try {
-      await deleteBooking(id);
+      for (const [k, arr] of rangeCacheRef.current.entries()) {
+        const next = (arr || []).filter((b) => String((b as any)?.id) !== targetId);
+        rangeCacheRef.current.set(k, next);
+      }
+    } catch {
+      // ignore cache purge issues
+    }
+
+    try {
+      await deleteBooking(targetId);
     } catch (e) {
       console.error("[CALENDAR_V2] delete failed:", e);
-    } finally {
-      setBookings((prev) => prev.filter((b) => String(b.id) !== String(id)));
+      // Best-effort restore if the delete fails
+      if (snapshot) setBookings((prev) => mergeBookingsById(prev, [snapshot]));
+      window.alert("Delete failed. Please try again.");
     }
   };
 
@@ -936,9 +991,9 @@ export function CalendarViewV2(props: {
         backgroundColor: "transparent",
         borderColor: "transparent",
         className: cn("booking-event-card", isMasked && "masked-event", b.isPlaceholder && "placeholder-event"),
-        editable: !isMasked && !b.isPlaceholder && user?.role !== "CLIENT" && user?.role !== "AGENT",
-        startEditable: !isMasked && !b.isPlaceholder && user?.role !== "CLIENT" && user?.role !== "AGENT",
-        durationEditable: !isMasked && !b.isPlaceholder && user?.role !== "CLIENT" && user?.role !== "AGENT",
+        editable: !isMasked && !b.isPlaceholder && !isBlocked && !b.isTemp && (!isRestrictedRole || canClientPlaceBookings),
+        startEditable: !isMasked && !b.isPlaceholder && !isBlocked && !b.isTemp && (!isRestrictedRole || canClientPlaceBookings),
+        durationEditable: isTenantStaff && !isMasked && !b.isPlaceholder && !isBlocked && !b.isTemp,
       });
     });
 
@@ -1102,6 +1157,443 @@ export function CalendarViewV2(props: {
     setSaveErrorMsg(msg);
     window.setTimeout(() => setSaveErrorMsg(null), 3500);
   };
+
+  const updateBookingTimesLocal = (bookingId: string, startAt: string, endAt: string) => {
+    const id = String(bookingId || "");
+    if (!id) return;
+    setBookings((prev) =>
+      (prev || []).map((b) => {
+        if (!b || String(b.id) !== id) return b;
+        return { ...b, startAt: String(startAt), endAt: String(endAt) };
+      })
+    );
+    try {
+      for (const [k, arr] of rangeCacheRef.current.entries()) {
+        const next = (arr || []).map((b) => {
+          if (!b || String((b as any).id) !== id) return b;
+          return { ...(b as any), startAt: String(startAt), endAt: String(endAt) };
+        });
+        rangeCacheRef.current.set(k, next as any);
+      }
+    } catch {
+      // ignore cache update issues
+    }
+  };
+
+  const sendBookingEmail = async (bookingId: string, type: "BOOKING_UPDATED" | "BOOKING_CHANGE_REQUESTED") => {
+    try {
+      await fetch("/api/tenant/calendar/notifications/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookingId, type }),
+      });
+    } catch (e) {
+      console.error("[CALENDAR_V2] send email failed:", e);
+    }
+  };
+
+  const cancelMove = () => {
+    if (!moveConfirm?.bookingId) {
+      moveRevertRef.current = null;
+      setMoveConfirm(null);
+      return;
+    }
+    updateBookingTimesLocal(moveConfirm.bookingId, moveConfirm.oldStartAt, moveConfirm.oldEndAt);
+    try {
+      moveRevertRef.current?.();
+    } catch {
+      // ignore
+    }
+    moveRevertRef.current = null;
+    setMoveConfirm(null);
+  };
+
+  const safeSetEventDates = (id: string, startIso: string, endIso: string) => {
+    try {
+      const api = calendarRef.current?.getApi?.();
+      const ev = api?.getEventById?.(String(id));
+      if (!ev) return;
+      try {
+        ev.setDates(new Date(startIso), new Date(endIso));
+      } catch {
+        // fallback for older APIs
+        ev.setStart(startIso);
+        ev.setEnd(endIso);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const openMoveConfirm = useCallback(
+    (opts: { id: string; oldStartAt: string; oldEndAt: string; newStartAt: string; newEndAt: string }) => {
+      const id = String(opts.id || "");
+      if (!id) return;
+      if (moveConfirmRef.current?.open) return;
+
+      // No-op if nothing changed
+      if (opts.oldStartAt === opts.newStartAt && opts.oldEndAt === opts.newEndAt) return;
+
+      suppressEventClickUntilRef.current = Date.now() + 450;
+
+      // Optimistic local update
+      updateBookingTimesLocal(id, opts.newStartAt, opts.newEndAt);
+
+      // Robust revert
+      moveRevertRef.current = () => {
+        updateBookingTimesLocal(id, opts.oldStartAt, opts.oldEndAt);
+        safeSetEventDates(id, opts.oldStartAt, opts.oldEndAt);
+      };
+
+      lastCalendarChangeHandledRef.current = { id, startAt: opts.newStartAt, endAt: opts.newEndAt, at: Date.now() };
+      suppressMoveModalCloseUntilRef.current = Date.now() + 350;
+      setMoveConfirm({
+        open: true,
+        bookingId: id,
+        kind: isTenantStaff ? "tenant" : "clientAgent",
+        oldStartAt: opts.oldStartAt,
+        oldEndAt: opts.oldEndAt,
+        newStartAt: opts.newStartAt,
+        newEndAt: opts.newEndAt,
+        saving: false,
+      });
+    },
+    [isTenantStaff, updateBookingTimesLocal]
+  );
+
+  const confirmAndPersistMove = async (mode: "tenant_send" | "tenant_save" | "tenant_pencilled" | "client_confirm") => {
+    if (!moveConfirm?.bookingId) return;
+    const bookingId = String(moveConfirm.bookingId);
+    setMoveConfirm((cur) => (cur ? { ...cur, saving: true } : cur));
+
+    const status = mode === "tenant_pencilled" ? "PENCILLED" : mode === "client_confirm" ? "REQUESTED" : undefined;
+    const res = await rescheduleBooking({
+      id: bookingId,
+      startAt: moveConfirm.newStartAt,
+      endAt: moveConfirm.newEndAt,
+      status,
+    });
+
+    if (!(res as any)?.success) {
+      updateBookingTimesLocal(bookingId, moveConfirm.oldStartAt, moveConfirm.oldEndAt);
+      try {
+        moveRevertRef.current?.();
+      } catch {
+        // ignore
+      }
+      moveRevertRef.current = null;
+      setMoveConfirm(null);
+      flashSaveError(String((res as any)?.error || "Save failed. Please try again."));
+      return;
+    }
+
+    const calendarBooking = (res as any)?.booking;
+    if (calendarBooking) {
+      const lite = toLiteFromCalendarBooking(calendarBooking);
+      setBookings((prev) => mergeBookingsById(prev, [lite]));
+    }
+
+    if (mode === "tenant_send") void sendBookingEmail(bookingId, "BOOKING_UPDATED");
+    if (mode === "client_confirm") void sendBookingEmail(bookingId, "BOOKING_CHANGE_REQUESTED");
+
+    moveRevertRef.current = null;
+    setMoveConfirm(null);
+  };
+
+  const handleEventDrop = useCallback(async (info: any) => {
+    try {
+      const id = String(info?.event?.id || "");
+      if (!id) return;
+      console.debug("[CALENDAR_V2] eventDrop", { id });
+      if (moveConfirmRef.current?.open) {
+        info?.revert?.();
+        return;
+      }
+      // Trackpad reliability: if we captured dragStart for this id recently, prefer dragStop flow.
+      const snap = dragSnapshotRef.current;
+      if (snap && snap.id === id && Date.now() - snap.at < 4000) {
+        return;
+      }
+
+      const newStart = info?.event?.start ? new Date(info.event.start) : null;
+      const oldStartIso = String(info?.oldEvent?.start ? new Date(info.oldEvent.start).toISOString() : info?.event?.extendedProps?.startAt || "");
+      const oldEndIso = String(info?.oldEvent?.end ? new Date(info.oldEvent.end).toISOString() : info?.event?.extendedProps?.endAt || "");
+      if (!newStart || !oldStartIso || !oldEndIso) {
+        info?.revert?.();
+        return;
+      }
+
+      const oldStart = new Date(oldStartIso);
+      const oldEnd = new Date(oldEndIso);
+      if (isNaN(oldStart.getTime()) || isNaN(oldEnd.getTime())) {
+        info?.revert?.();
+        return;
+      }
+
+      // Move-only duration: keep original duration (important for CLIENT/AGENT)
+      const durationMs = Math.max(0, oldEnd.getTime() - oldStart.getTime());
+      const nextStartIso = newStart.toISOString();
+      const nextEndIso = new Date(newStart.getTime() + durationMs).toISOString();
+
+      updateBookingTimesLocal(id, nextStartIso, nextEndIso);
+
+      moveRevertRef.current = typeof info?.revert === "function" ? info.revert : null;
+      lastCalendarChangeHandledRef.current = { id, startAt: nextStartIso, endAt: nextEndIso, at: Date.now() };
+      // Prevent drop mouseup/click from instantly closing the modal (common on drag/drop)
+      suppressMoveModalCloseUntilRef.current = Date.now() + 350;
+      setMoveConfirm({
+        open: true,
+        bookingId: id,
+        kind: isTenantStaff ? "tenant" : "clientAgent",
+        oldStartAt: oldStartIso,
+        oldEndAt: oldEndIso,
+        newStartAt: nextStartIso,
+        newEndAt: nextEndIso,
+        saving: false,
+      });
+    } catch (e) {
+      console.error("[CALENDAR_V2] eventDrop failed:", e);
+      try {
+        info?.revert?.();
+      } catch {
+        // ignore
+      }
+    }
+  }, [isTenantStaff, updateBookingTimesLocal]);
+
+  const handleEventDragStart = useCallback((info: any) => {
+    try {
+      const id = String(info?.event?.id || "");
+      if (!id) return;
+      if (moveConfirmRef.current?.open) return;
+
+      const startIso = info?.event?.start ? new Date(info.event.start).toISOString() : "";
+      const endIso = info?.event?.end ? new Date(info.event.end).toISOString() : "";
+
+      // Prefer the canonical booking times from React state (more reliable than FC internals).
+      const fromState = bookingsRef.current.find((b) => String(b?.id) === id);
+      const stateStart = fromState?.startAt ? String(fromState.startAt) : "";
+      const stateEnd = fromState?.endAt ? String(fromState.endAt) : "";
+
+      const snapStart = stateStart || startIso || String(info?.event?.extendedProps?.startAt || "");
+      const snapEnd = stateEnd || endIso || String(info?.event?.extendedProps?.endAt || "");
+      if (!snapStart || !snapEnd) return;
+
+      dragSnapshotRef.current = { id, startAt: snapStart, endAt: snapEnd, at: Date.now() };
+    } catch (e) {
+      console.error("[CALENDAR_V2] eventDragStart failed:", e);
+    }
+  }, []);
+
+  const handleEventDragStop = useCallback(
+    (info: any) => {
+      try {
+        const id = String(info?.event?.id || "");
+        if (!id) return;
+        if (moveConfirmRef.current?.open) return;
+
+        const snap = dragSnapshotRef.current && dragSnapshotRef.current.id === id ? dragSnapshotRef.current : null;
+        const stateRow = bookingsRef.current.find((b) => String(b?.id) === id) || null;
+        const oldStartAt = String(snap?.startAt || stateRow?.startAt || info?.event?.extendedProps?.startAt || "");
+        const oldEndAt = String(snap?.endAt || stateRow?.endAt || info?.event?.extendedProps?.endAt || "");
+        if (!oldStartAt || !oldEndAt) {
+          console.warn("[CALENDAR_V2] dragStop missing old times", { id, hasSnap: !!snap, hasState: !!stateRow });
+          return;
+        }
+
+        const newStartIso = info?.event?.start ? new Date(info.event.start).toISOString() : "";
+        if (!newStartIso) return;
+        const newEndIsoRaw = info?.event?.end ? new Date(info.event.end).toISOString() : "";
+
+        // Move-only duration: keep original duration if end is missing
+        const durationMs = Math.max(0, new Date(oldEndAt).getTime() - new Date(oldStartAt).getTime());
+        const newEndIso = newEndIsoRaw || new Date(new Date(newStartIso).getTime() + durationMs).toISOString();
+
+        openMoveConfirm({ id, oldStartAt, oldEndAt, newStartAt: newStartIso, newEndAt: newEndIso });
+      } catch (e) {
+        console.error("[CALENDAR_V2] eventDragStop failed:", e);
+      }
+    },
+    [openMoveConfirm]
+  );
+
+  const handleEventResize = useCallback(async (info: any) => {
+    if (!isTenantStaff) {
+      info?.revert?.();
+      return;
+    }
+    try {
+      const id = String(info?.event?.id || "");
+      if (!id) return;
+      console.debug("[CALENDAR_V2] eventResize", { id });
+
+      const nextStartIso = info?.event?.start ? new Date(info.event.start).toISOString() : "";
+      const nextEndIso = info?.event?.end ? new Date(info.event.end).toISOString() : "";
+      const oldStartIso = String(info?.oldEvent?.start ? new Date(info.oldEvent.start).toISOString() : info?.event?.extendedProps?.startAt || "");
+      const oldEndIso = String(info?.oldEvent?.end ? new Date(info.oldEvent.end).toISOString() : info?.event?.extendedProps?.endAt || "");
+      if (!nextStartIso || !nextEndIso || !oldStartIso || !oldEndIso) {
+        info?.revert?.();
+        return;
+      }
+
+      updateBookingTimesLocal(id, nextStartIso, nextEndIso);
+      lastCalendarChangeHandledRef.current = { id, startAt: nextStartIso, endAt: nextEndIso, at: Date.now() };
+      const res = await rescheduleBooking({ id, startAt: nextStartIso, endAt: nextEndIso });
+      if (!(res as any)?.success) {
+        updateBookingTimesLocal(id, oldStartIso, oldEndIso);
+        info?.revert?.();
+        flashSaveError(String((res as any)?.error || "Resize save failed."));
+        return;
+      }
+      const calendarBooking = (res as any)?.booking;
+      if (calendarBooking) {
+        const lite = toLiteFromCalendarBooking(calendarBooking);
+        setBookings((prev) => mergeBookingsById(prev, [lite]));
+      }
+    } catch (e) {
+      console.error("[CALENDAR_V2] eventResize failed:", e);
+      try {
+        info?.revert?.();
+      } catch {
+        // ignore
+      }
+    }
+  }, [isTenantStaff, updateBookingTimesLocal]);
+
+  // Fallback: some FullCalendar builds/environments can fail to emit `eventDrop` reliably.
+  // `eventChange` is a more general signal for both drop + resize.
+  const handleEventChangeFallback = useCallback((info: any) => {
+    try {
+      const id = String(info?.event?.id || "");
+      if (!id) return;
+      const startIso = info?.event?.start ? new Date(info.event.start).toISOString() : "";
+      const endIso = info?.event?.end ? new Date(info.event.end).toISOString() : "";
+      if (!startIso || !endIso) return;
+
+      const last = lastCalendarChangeHandledRef.current;
+      if (last && last.id === id && last.startAt === startIso && last.endAt === endIso && Date.now() - last.at < 1500) {
+        return; // already handled via eventDrop/eventResize
+      }
+
+      // FullCalendar provides `oldEvent` + `revert()` here as well.
+      const oldStartIso = String(info?.oldEvent?.start ? new Date(info.oldEvent.start).toISOString() : "");
+      const oldEndIso = String(info?.oldEvent?.end ? new Date(info.oldEvent.end).toISOString() : "");
+      if (!oldStartIso || !oldEndIso) return;
+
+      // If only end changed (start is same) treat as resize; else treat as move.
+      if (oldStartIso === startIso && oldEndIso !== endIso) {
+        void handleEventResize(info);
+        return;
+      }
+      if (oldStartIso !== startIso) {
+        void handleEventDrop(info);
+      }
+    } catch (e) {
+      console.error("[CALENDAR_V2] eventChange fallback failed:", e);
+    }
+  }, [handleEventDrop, handleEventResize]);
+
+  // Global fallback for trackpads: capture pointerdown on an event card, and on pointerup
+  // read the final dates from FullCalendar's API. This works even when FC drag callbacks are flaky.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onPointerUp = () => {
+      const cand = dragCandidateRef.current;
+      if (!cand) return;
+      dragCandidateRef.current = null;
+      if (moveConfirmRef.current?.open) return;
+      if (Date.now() - cand.at > 12_000) return;
+
+      try {
+        const api = calendarRef.current?.getApi?.();
+        const durationMs = Math.max(0, new Date(cand.oldEndAt).getTime() - new Date(cand.oldStartAt).getTime());
+
+        // Trackpad timing: FullCalendar may not commit the new dates until after pointerup.
+        // Retry a few times across frames/timeouts before giving up.
+        const tryRead = (): { newStartAt: string; newEndAt: string } | null => {
+          const ev = api?.getEventById?.(String(cand.id));
+          if (!ev) return null;
+          const newStartAt = ev.start ? new Date(ev.start).toISOString() : "";
+          const newEndAtRaw = ev.end ? new Date(ev.end).toISOString() : "";
+          if (!newStartAt) return null;
+          const newEndAt = newEndAtRaw || new Date(new Date(newStartAt).getTime() + durationMs).toISOString();
+          return { newStartAt, newEndAt };
+        };
+
+        const attempt = (remaining: number, delayMs?: number) => {
+          if (moveConfirmRef.current?.open) return;
+          const res = tryRead();
+          if (!res) return;
+
+          // If no change yet, retry (FC may still be settling the drop)
+          if (res.newStartAt === cand.oldStartAt && res.newEndAt === cand.oldEndAt) {
+            if (remaining <= 0) return;
+            if (delayMs != null) {
+              window.setTimeout(() => attempt(remaining - 1), delayMs);
+            } else {
+              window.requestAnimationFrame(() => attempt(remaining - 1));
+            }
+            return;
+          }
+
+          openMoveConfirm({
+            id: cand.id,
+            oldStartAt: cand.oldStartAt,
+            oldEndAt: cand.oldEndAt,
+            newStartAt: res.newStartAt,
+            newEndAt: res.newEndAt,
+          });
+        };
+
+        // 2 frames + a small timeout covers most trackpad cases.
+        attempt(2);
+        window.setTimeout(() => attempt(1), 60);
+      } catch (e) {
+        console.error("[CALENDAR_V2] pointerup fallback failed:", e);
+      }
+    };
+
+    window.addEventListener("pointerup", onPointerUp, true);
+    window.addEventListener("mouseup", onPointerUp, true);
+    return () => {
+      window.removeEventListener("pointerup", onPointerUp, true);
+      window.removeEventListener("mouseup", onPointerUp, true);
+    };
+  }, [openMoveConfirm]);
+
+  // Keep the implementation refs updated
+  useEffect(() => {
+    eventDropImplRef.current = (info: any) => void handleEventDrop(info);
+  }, [handleEventDrop]);
+  useEffect(() => {
+    eventResizeImplRef.current = (info: any) => void handleEventResize(info);
+  }, [handleEventResize]);
+  useEffect(() => {
+    eventChangeImplRef.current = (info: any) => handleEventChangeFallback(info);
+  }, [handleEventChangeFallback]);
+  useEffect(() => {
+    eventDragStartImplRef.current = (info: any) => handleEventDragStart(info);
+  }, [handleEventDragStart]);
+  useEffect(() => {
+    eventDragStopImplRef.current = (info: any) => handleEventDragStop(info);
+  }, [handleEventDragStop]);
+
+  // Stable handlers passed to FullCalendar (never change identity)
+  const onEventDrop = useCallback((info: any) => {
+    eventDropImplRef.current(info);
+  }, []);
+  const onEventResize = useCallback((info: any) => {
+    eventResizeImplRef.current(info);
+  }, []);
+  const onEventChange = useCallback((info: any) => {
+    eventChangeImplRef.current(info);
+  }, []);
+  const onEventDragStart = useCallback((info: any) => {
+    eventDragStartImplRef.current(info);
+  }, []);
+  const onEventDragStop = useCallback((info: any) => {
+    eventDragStopImplRef.current(info);
+  }, []);
 
   return (
     <div className="relative">
@@ -1305,6 +1797,10 @@ export function CalendarViewV2(props: {
           timeZone={tenantTimezone}
           height={isMobile ? "78vh" : "70vh"}
           events={calendarEvents}
+          // Drag/drop + resize (FullCalendar behaves more reliably when enabled at the calendar level)
+          editable={!isRestrictedRole || canClientPlaceBookings}
+          eventStartEditable={!isRestrictedRole || canClientPlaceBookings}
+          eventDurationEditable={isTenantStaff}
           // For timeGrid, force collisions to render side-by-side (not overlapping).
           slotEventOverlap={false}
           businessHours={calendarBusinessHours}
@@ -1318,6 +1814,12 @@ export function CalendarViewV2(props: {
           allDaySlot={false}
           selectConstraint={isRestrictedRole ? (canClientPlaceBookings ? "available" : "none") : undefined}
           eventConstraint={isRestrictedRole ? (canClientPlaceBookings ? "available" : "none") : undefined}
+          eventDragStart={onEventDragStart}
+          eventDragStop={onEventDragStop}
+          eventDrop={onEventDrop}
+          eventResize={onEventResize}
+          eventChange={onEventChange}
+          eventResizableFromStart={false}
           slotMinTime={minTime}
           slotMaxTime={maxTime}
           dateClick={async (info) => {
@@ -1408,6 +1910,35 @@ export function CalendarViewV2(props: {
               hoverDomHandlersRef.current.set(el, { enter, leave });
             }
 
+            // Pointerdown snapshot for robust drag-end detection (trackpad-safe)
+            if (!dragPointerDownHandlersRef.current.has(el)) {
+              const onDown = (e: any) => {
+                try {
+                  if (moveConfirmRef.current?.open) return;
+                  const id = String((info.event as any)?.id || "");
+                  if (!id) return;
+                  const isMasked = !!(info.event as any)?.extendedProps?.isMasked;
+                  const isPlaceholder = !!(info.event as any)?.extendedProps?.isPlaceholder;
+                  const isTemp = !!(info.event as any)?.extendedProps?.isTemp;
+                  const status = String((info.event as any)?.extendedProps?.status || "").toUpperCase();
+                  const isBlocked = status === "BLOCKED";
+                  if (isMasked || isPlaceholder || isTemp || isBlocked) return;
+
+                  const stateRow = bookingsRef.current.find((b) => String(b?.id) === id) || null;
+                  const oldStartAt = String(stateRow?.startAt || (info.event as any)?.extendedProps?.startAt || "");
+                  const oldEndAt = String(stateRow?.endAt || (info.event as any)?.extendedProps?.endAt || "");
+                  if (!oldStartAt || !oldEndAt) return;
+
+                  dragCandidateRef.current = { id, oldStartAt, oldEndAt, at: Date.now() };
+                } catch {
+                  // ignore
+                }
+              };
+              el.addEventListener("pointerdown", onDown as any, true);
+              el.addEventListener("mousedown", onDown as any, true);
+              dragPointerDownHandlersRef.current.set(el, onDown as any);
+            }
+
             // If we just created this booking, re-anchor popover to the real card edge.
             const maybeId = String((info.event as any)?.id || "");
             if (pendingAnchorBookingIdRef.current && pendingAnchorBookingIdRef.current === maybeId) {
@@ -1439,6 +1970,13 @@ export function CalendarViewV2(props: {
               el.removeEventListener("mouseleave", h.leave);
               hoverDomHandlersRef.current.delete(el);
             }
+
+            const down = dragPointerDownHandlersRef.current.get(el);
+            if (down) {
+              el.removeEventListener("pointerdown", down as any, true);
+              el.removeEventListener("mousedown", down as any, true);
+              dragPointerDownHandlersRef.current.delete(el);
+            }
           }}
           datesSet={(arg) => {
             // FullCalendar gives inclusive/exclusive range boundaries.
@@ -1453,6 +1991,9 @@ export function CalendarViewV2(props: {
             setRangeTitle(formatRangeTitle(vt, start, end));
           }}
           eventClick={(info) => {
+            // Trackpad: ignore synthetic click immediately after drag-stop.
+            if (Date.now() < suppressEventClickUntilRef.current) return;
+            if (moveConfirmRef.current?.open) return;
             const isMasked = !!info.event.extendedProps.isMasked;
             if (isMasked) return;
 
@@ -1728,6 +2269,89 @@ export function CalendarViewV2(props: {
           }}
         />
       </div>
+
+      {/* Drag confirmation modal */}
+      {moveConfirm?.open ? (
+        <>
+          <div
+            className="fixed inset-0 z-[240] bg-slate-950/20"
+            onClick={() => {
+              if (Date.now() < suppressMoveModalCloseUntilRef.current) return;
+              cancelMove();
+            }}
+          />
+          <div
+            className="fixed z-[250] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[92vw] max-w-[520px] bg-white border border-slate-100 rounded-[28px] shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6">
+              {moveConfirm.kind === "tenant" ? (
+                <>
+                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Update booking</div>
+                  <div className="mt-2 text-lg font-black text-slate-900">Would you like to update this booking?</div>
+                  <div className="mt-2 text-sm font-bold text-slate-500">Choose how you want to save this change.</div>
+                </>
+              ) : (
+                <>
+                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Change request</div>
+                  <div className="mt-2 text-lg font-black text-slate-900">Would you like to change this booking?</div>
+                  <div className="mt-2 text-sm font-bold text-slate-500">It will become unconfirmed (REQUESTED) and we’ll notify the studio.</div>
+                </>
+              )}
+            </div>
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex flex-col sm:flex-row gap-2 sm:justify-end">
+              <button
+                type="button"
+                onClick={cancelMove}
+                className="px-4 py-2 rounded-full bg-white border border-slate-200 text-slate-700 text-[11px] font-black uppercase tracking-widest hover:bg-slate-50"
+                disabled={!!moveConfirm.saving}
+              >
+                Cancel
+              </button>
+
+              {moveConfirm.kind === "tenant" ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => void confirmAndPersistMove("tenant_pencilled")}
+                    className="px-4 py-2 rounded-full bg-white border border-slate-200 text-slate-700 text-[11px] font-black uppercase tracking-widest hover:bg-slate-50"
+                    disabled={!!moveConfirm.saving}
+                  >
+                    Pencilled
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void confirmAndPersistMove("tenant_save")}
+                    className="px-4 py-2 rounded-full bg-slate-900 text-white border border-slate-900 text-[11px] font-black uppercase tracking-widest hover:opacity-90"
+                    disabled={!!moveConfirm.saving}
+                  >
+                    Save only
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void confirmAndPersistMove("tenant_send")}
+                    className="px-4 py-2 rounded-full bg-primary text-white border border-white/10 text-[11px] font-black uppercase tracking-widest hover:opacity-90"
+                    disabled={!!moveConfirm.saving}
+                    style={{ boxShadow: `0 10px 15px -3px var(--primary-soft)` }}
+                  >
+                    Yes &amp; Send
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void confirmAndPersistMove("client_confirm")}
+                  className="px-4 py-2 rounded-full bg-primary text-white border border-white/10 text-[11px] font-black uppercase tracking-widest hover:opacity-90"
+                  disabled={!!moveConfirm.saving}
+                  style={{ boxShadow: `0 10px 15px -3px var(--primary-soft)` }}
+                >
+                  Confirm
+                </button>
+              )}
+            </div>
+          </div>
+        </>
+      ) : null}
 
       {/* Desktop Hover Tooltip (instant, derived from lite card data) */}
       {hoveredEvent && !hoveredEvent.event.isPlaceholder && (
