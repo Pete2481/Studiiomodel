@@ -12,6 +12,8 @@ interface SocialCropperProps {
   onSave?: (blob: Blob) => void;
   initialTab?: "crop" | "adjust";
   mode?: "overlay" | "panel";
+  /** Split Social vs Colour without duplicating the whole component. */
+  variant?: "crop" | "adjust" | "both";
 }
 
 const PRESETS = [
@@ -31,7 +33,15 @@ const ADJUSTMENTS = [
   { id: "hue", label: "Hue", icon: Palette, min: 0, max: 360, defaultValue: 0, unit: "°" },
 ];
 
-export function SocialCropper({ imageUrl, imageName, onClose, onSave, initialTab = "crop", mode = "overlay" }: SocialCropperProps) {
+export function SocialCropper({
+  imageUrl,
+  imageName,
+  onClose,
+  onSave,
+  initialTab = "crop",
+  mode = "overlay",
+  variant = "both",
+}: SocialCropperProps) {
   const filterId = useId().replace(/:/g, "_");
   const [activeTab, setActiveTab] = useState<"crop" | "adjust">(initialTab);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -52,6 +62,17 @@ export function SocialCropper({ imageUrl, imageName, onClose, onSave, initialTab
   });
   const [luminanceTargetHex, setLuminanceTargetHex] = useState<string>("#ffffff");
   const [activeAdjId, setActiveAdjId] = useState(ADJUSTMENTS[0].id);
+
+  // If the parent is using this component as a dedicated panel (crop-only or adjust-only),
+  // force the active tab to match and hide the other mode.
+  useEffect(() => {
+    if (variant === "crop" && activeTab !== "crop") setActiveTab("crop");
+    if (variant === "adjust" && activeTab !== "adjust") setActiveTab("adjust");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [variant]);
+
+  const effectiveTab: "crop" | "adjust" =
+    variant === "crop" ? "crop" : variant === "adjust" ? "adjust" : activeTab;
 
   const onCropComplete = useCallback((_croppedArea: any, croppedAreaPixels: any) => {
     setCroppedAreaPixels(croppedAreaPixels);
@@ -326,69 +347,90 @@ export function SocialCropper({ imageUrl, imageName, onClose, onSave, initialTab
       </svg>
 
       {/* Header */}
-      <div className="flex items-center justify-between p-6 shrink-0 border-b border-white/5">
+      <div className={cn("flex items-center justify-between shrink-0 border-b border-white/5", mode === "panel" ? "p-5" : "p-6")}>
         <div className="flex items-center gap-4">
-          <button 
+          <button
             onClick={onClose}
             className="h-10 w-10 rounded-full bg-white/5 text-white flex items-center justify-center hover:bg-white/10 transition-all border border-white/5"
+            aria-label="Close"
           >
             <X className="h-5 w-5" />
           </button>
           <div>
-            <p className="text-xs font-black text-primary uppercase tracking-widest">SOCIAL EDIT</p>
-            <h3 className="text-sm font-bold text-white tracking-tight">Fine-tune your production shot</h3>
+            <p className="text-[10px] font-black text-primary uppercase tracking-widest">
+              {effectiveTab === "crop" ? "SOCIAL CROP" : "COLOUR"}
+            </p>
+            <h3 className="text-sm font-bold text-white tracking-tight">
+              {effectiveTab === "crop" ? "Crop for socials" : "Professional colour adjustments"}
+            </h3>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Tab Switcher */}
-          <div className="flex bg-white/5 p-1 rounded-full border border-white/10 mr-4">
-            <button 
-              onClick={() => setActiveTab("crop")}
-              className={cn(
-                "h-9 px-6 rounded-full text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
-                activeTab === "crop" ? "bg-white text-slate-950" : "text-white/40 hover:text-white"
-              )}
-            >
-              <CropIcon className="h-3.5 w-3.5" />
-              Crop
-            </button>
-            <button 
-              onClick={() => setActiveTab("adjust")}
-              className={cn(
-                "h-9 px-6 rounded-full text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
-                activeTab === "adjust" ? "bg-white text-slate-950" : "text-white/40 hover:text-white"
-              )}
-            >
-              <Sliders className="h-3.5 w-3.5" />
-              Adjust
-            </button>
-          </div>
+          {/* Tab Switcher (overlay only, and only when variant=both) */}
+          {mode === "overlay" && variant === "both" && (
+            <div className="flex bg-white/5 p-1 rounded-full border border-white/10 mr-2">
+              <button
+                onClick={() => setActiveTab("crop")}
+                className={cn(
+                  "h-9 px-6 rounded-full text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                  activeTab === "crop" ? "bg-white text-slate-950" : "text-white/40 hover:text-white"
+                )}
+              >
+                <CropIcon className="h-3.5 w-3.5" />
+                Crop
+              </button>
+              <button
+                onClick={() => setActiveTab("adjust")}
+                className={cn(
+                  "h-9 px-6 rounded-full text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                  activeTab === "adjust" ? "bg-white text-slate-950" : "text-white/40 hover:text-white"
+                )}
+              >
+                <Sliders className="h-3.5 w-3.5" />
+                Adjust
+              </button>
+            </div>
+          )}
 
-          <button 
-            onClick={() => generateCroppedImage('share')}
-            disabled={isGenerating}
-            className="hidden md:flex h-11 px-6 rounded-full bg-white text-slate-950 text-xs font-black uppercase tracking-widest items-center gap-2 hover:scale-105 transition-all shadow-xl disabled:opacity-50"
-          >
-            {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
-            Share
-          </button>
-          
-          <button 
-            onClick={() => generateCroppedImage('download')}
-            disabled={isGenerating}
-            className="h-11 px-6 rounded-full bg-primary text-white text-xs font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all shadow-xl disabled:opacity-50"
-          >
-            {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            Download
-          </button>
+          {/* Panel: Apply only (no share/download) */}
+          {mode === "panel" ? (
+            <button
+              onClick={() => generateCroppedImage("download")}
+              disabled={isGenerating}
+              className="h-11 px-6 rounded-full bg-primary text-white text-xs font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all shadow-xl disabled:opacity-50"
+            >
+              {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              Apply
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={() => generateCroppedImage("share")}
+                disabled={isGenerating}
+                className="hidden md:flex h-11 px-6 rounded-full bg-white text-slate-950 text-xs font-black uppercase tracking-widest items-center gap-2 hover:scale-105 transition-all shadow-xl disabled:opacity-50"
+              >
+                {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
+                Share
+              </button>
+
+              <button
+                onClick={() => generateCroppedImage("download")}
+                disabled={isGenerating}
+                className="h-11 px-6 rounded-full bg-primary text-white text-xs font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all shadow-xl disabled:opacity-50"
+              >
+                {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                Download
+              </button>
+            </>
+          )}
         </div>
       </div>
 
       <div className="flex-1 flex flex-col md:flex-row relative overflow-hidden">
         {/* Sidebar */}
         <div className="w-full md:w-72 bg-black/20 p-6 flex flex-col gap-6 shrink-0 overflow-y-auto custom-scrollbar border-r border-white/5">
-          {activeTab === "crop" ? (
+          {effectiveTab === "crop" ? (
             <div className="space-y-6">
               <div>
                 <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-4">Select Preset</p>
@@ -406,7 +448,7 @@ export function SocialCropper({ imageUrl, imageName, onClose, onSave, initialTab
                         className={cn(
                           "h-14 px-4 rounded-2xl flex items-center gap-4 transition-all border",
                           isActive 
-                            ? "bg-primary border-primary text-white shadow-lg shadow-primary/20" 
+                            ? "bg-white/10 border-primary/40 text-white shadow-lg shadow-black/30"
                             : "bg-white/5 border-white/10 text-white/60 hover:bg-white/10 hover:text-white"
                         )}
                       >
@@ -519,7 +561,7 @@ export function SocialCropper({ imageUrl, imageName, onClose, onSave, initialTab
           
           {/* Controls Overlay */}
           <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-20 w-full max-w-sm px-8 py-6 bg-black/60 backdrop-blur-xl rounded-[32px] border border-white/10 flex flex-col gap-6 shadow-2xl animate-in slide-in-from-bottom-4">
-            {activeTab === "crop" ? (
+            {effectiveTab === "crop" ? (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-black text-white uppercase tracking-[0.2em]">Zoom Level</span>
@@ -598,7 +640,7 @@ export function SocialCropper({ imageUrl, imageName, onClose, onSave, initialTab
 
             <div className="flex items-center justify-center">
                <p className="px-4 py-1.5 bg-white/5 rounded-full text-[8px] font-black text-white/40 uppercase tracking-widest border border-white/5">
-                 {activeTab === "crop" ? "Drag photo to frame your shot" : "Slide to adjust professional color"}
+                 {effectiveTab === "crop" ? "Drag photo to frame your shot" : "Slide to adjust professional color"}
                </p>
             </div>
           </div>

@@ -1818,9 +1818,10 @@ export function GalleryPublicViewer({
               >
             <SocialCropper 
                   mode="panel"
+                    variant={activeTool === "color" ? "adjust" : "crop"}
                   imageUrl={activeImageSrc}
               imageName={selectedAsset.name}
-                  initialTab={socialInitialTab}
+                    initialTab={activeTool === "color" ? "adjust" : "crop"}
                   onClose={() => setActiveTool("none")}
               onSave={(blob) => {
                     const persistUrl = URL.createObjectURL(blob);
@@ -2664,6 +2665,7 @@ export function GalleryPublicViewer({
           >
         <ProAnnotationCanvas 
               mode="panel"
+              enabledTools={["select", "pin", "boundary"]}
               imageUrl={activeImageSrc}
           logoUrl={gallery.clientBranding?.url || tenant.logoUrl}
               initialTool={annotationInitialTool}
