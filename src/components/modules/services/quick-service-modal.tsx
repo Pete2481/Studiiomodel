@@ -30,8 +30,18 @@ export function QuickServiceModal({ isOpen, onClose, onSuccess }: QuickServiceMo
         durationMinutes: formData.duration,
         description: "Quick added service",
       });
-      if (result.success && (result as any).serviceId) {
-        onSuccess({ id: (result as any).serviceId, name: formData.name, price: Number(formData.price) });
+      if (result.success && ((result as any).serviceId || (result as any).service?.id)) {
+        const svc = (result as any).service || {
+          id: (result as any).serviceId,
+          name: formData.name,
+          price: Number(formData.price),
+          durationMinutes: Number(formData.duration || 60),
+          icon: "CAMERA",
+          slotType: null,
+          clientVisible: true,
+          settings: {},
+        };
+        onSuccess(svc);
         onClose();
       } else {
         alert(result.error || "Failed to create service");

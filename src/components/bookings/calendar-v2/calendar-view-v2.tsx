@@ -166,8 +166,7 @@ export function CalendarViewV2(props: {
   const isClientOrRestrictedAgent = user?.role === "CLIENT" || (user?.role === "AGENT" && !user?.permissions?.seeAll);
   const isRestrictedRole = user?.role === "CLIENT" || user?.role === "AGENT";
   const canPlaceBookings = permissionService.can(user, "canPlaceBookings");
-  // Client portal behavior: clients can always open the booking form to request a booking.
-  const canClientPlaceBookings = user?.role === "CLIENT" ? true : canPlaceBookings;
+  const canClientPlaceBookings = canPlaceBookings;
 
   const setClientTempAt = (startIso: string, endIso: string, opts?: { slotType?: "SUNRISE" | "DUSK" | null }) => {
     if (user?.role !== "CLIENT") return;

@@ -168,21 +168,39 @@ export async function upsertService(data: any) {
       settings
     };
 
-    if (id) {
-      await (tPrisma as any).service.update({
-        where: { id },
-        data: serviceData,
-      });
-    } else {
-      await (tPrisma as any).service.create({
-        data: {
-          ...serviceData,
-        },
-      });
-    }
+    const saved = id
+      ? await (tPrisma as any).service.update({
+          where: { id },
+          data: serviceData,
+        })
+      : await (tPrisma as any).service.create({
+          data: {
+            ...serviceData,
+          },
+        });
 
+    // Ensure new/updated services appear everywhere they're referenced.
     revalidatePath("/tenant/services");
-    return { success: true };
+    revalidatePath("/tenant/calendar");
+    revalidatePath("/tenant/calendar-v2");
+    revalidatePath("/tenant/bookings");
+    revalidatePath("/tenant/invoices");
+
+    return {
+      success: true,
+      serviceId: String(saved.id),
+      service: {
+        id: String(saved.id),
+        name: String(saved.name),
+        description: String(saved.description || ""),
+        price: Number(saved.price),
+        durationMinutes: Number(saved.durationMinutes || 60),
+        icon: String(saved.icon || "CAMERA"),
+        slotType: (saved as any).slotType || null,
+        clientVisible: (saved as any).clientVisible !== false,
+        settings: (saved as any).settings || {},
+      },
+    };
   } catch (error: any) {
     console.error("UPSERT SERVICE ERROR:", error);
     return { success: false, error: error.message || "Failed to save service." };

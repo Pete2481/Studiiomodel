@@ -197,6 +197,30 @@ export function BookingPopoverV2(props: {
   const [notesOpen, setNotesOpen] = useState(false);
   const isSunLocked = form.slotType === "SUNRISE" || form.slotType === "DUSK";
 
+  const activeClientDisabledServiceIds = useMemo(() => {
+    if (!isClient) return new Set<string>();
+    const cid = String(form.clientId || user?.clientId || "");
+    const client = (localRef.clients || reference?.clients || []).find((c: any) => String(c?.id) === cid);
+    const disabled = Array.isArray(client?.disabledServices) ? client.disabledServices : [];
+    return new Set<string>(disabled.map((x: any) => String(x)));
+  }, [isClient, form.clientId, user?.clientId, localRef.clients, reference?.clients]);
+
+  const servicesForPicker = useMemo(() => {
+    const all = Array.isArray(localRef.services) ? localRef.services : [];
+    return all.filter((s: any) => {
+      // Slots-only: SUNRISE/DUSK must be booked via calendar slots, not chosen as generic services.
+      const st = String((s as any)?.slotType || "").toUpperCase();
+      if (st === "SUNRISE" || st === "DUSK") return false;
+
+      // Client portal: respect tenant/service visibility and client-level disable list.
+      if (isClient) {
+        if ((s as any)?.clientVisible === false) return false;
+        if (activeClientDisabledServiceIds.has(String((s as any)?.id))) return false;
+      }
+      return true;
+    });
+  }, [localRef.services, isClient, activeClientDisabledServiceIds]);
+
   // Client portal: enforce tenant-only feature locks in UI state.
   useEffect(() => {
     if (!open) return;
@@ -1375,12 +1399,7 @@ export function BookingPopoverV2(props: {
                           </div>
                         </div>
                         <div className="max-h-[240px] overflow-y-auto py-1">
-                          {(reference?.services || [])
-                            // Slots-only: remove SUNRISE/DUSK from the Services picker (they must be booked via calendar slots).
-                            .filter((s: any) => {
-                              const st = String((s as any)?.slotType || "").toUpperCase();
-                              return st !== "SUNRISE" && st !== "DUSK";
-                            })
+                          {servicesForPicker
                             .filter((s: any) => String(s.name || "").toLowerCase().includes(serviceSearch.toLowerCase()))
                             .sort((a: any, b: any) => {
                               const aPkg = isPackageService(a);
