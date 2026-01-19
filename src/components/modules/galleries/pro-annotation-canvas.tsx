@@ -435,24 +435,48 @@ export function ProAnnotationCanvas({
 
   const [isSaving, setIsSaving] = useState(false);
 
-  const handleSave = async () => {
-    setIsSaving(true);
-    try {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      // 1. Create an export canvas at the image's original resolution for high quality
+  const loadImage = (src: string, opts?: { timeoutMs?: number }) => {
+    const timeoutMs = Math.max(1000, Number(opts?.timeoutMs || 8000));
+    return new Promise<HTMLImageElement>((resolve, reject) => {
       const img = new Image();
       img.crossOrigin = "anonymous";
-      img.src = imageUrl;
-      
-      await new Promise((resolve) => { img.onload = resolve; });
+      let done = false;
+      const t = window.setTimeout(() => {
+        if (done) return;
+        done = true;
+        reject(new Error(`Image load timeout (${timeoutMs}ms)`));
+      }, timeoutMs);
+      img.onload = () => {
+        if (done) return;
+        done = true;
+        window.clearTimeout(t);
+        resolve(img);
+      };
+      img.onerror = () => {
+        if (done) return;
+        done = true;
+        window.clearTimeout(t);
+        reject(new Error("Image failed to load"));
+      };
+      img.src = src;
+    });
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    let saved = false;
+    try {
+      const canvas = canvasRef.current;
+      if (!canvas) throw new Error("Canvas not ready");
+
+      // 1. Create an export canvas at the image's original resolution for high quality
+      const img = await loadImage(imageUrl, { timeoutMs: 12000 });
 
       const exportCanvas = document.createElement("canvas");
       exportCanvas.width = img.width;
       exportCanvas.height = img.height;
       const ctx = exportCanvas.getContext("2d");
-      if (!ctx) return;
+      if (!ctx) throw new Error("Export canvas context not available");
 
       // 2. Draw base image
       ctx.drawImage(img, 0, 0);
@@ -514,10 +538,13 @@ export function ProAnnotationCanvas({
 
         // Draw Logo
         if (logoUrl) {
-          const logoImg = new Image();
-          logoImg.crossOrigin = "anonymous";
-          logoImg.src = logoUrl;
-          await new Promise((resolve) => { logoImg.onload = resolve; });
+          let logoImg: HTMLImageElement | null = null;
+          try {
+            logoImg = await loadImage(logoUrl, { timeoutMs: 6000 });
+          } catch (e) {
+            // Don't block export if logo fails to load (CORS/404/etc).
+            logoImg = null;
+          }
           
           const size = pin.logoSize * (w / dimensions.width);
           
@@ -527,7 +554,15 @@ export function ProAnnotationCanvas({
           ctx.shadowOffsetX = 0;
           ctx.shadowOffsetY = 2 * (w / dimensions.width);
 
-          ctx.drawImage(logoImg, lx - size/2, ly - size/2, size, size);
+          if (logoImg) {
+            ctx.drawImage(logoImg, lx - size/2, ly - size/2, size, size);
+          } else {
+            // Fallback placeholder (so users still get a usable export)
+            ctx.beginPath();
+            ctx.fillStyle = "rgba(0,0,0,0.35)";
+            ctx.arc(lx, ly, Math.max(10, size / 2), 0, Math.PI * 2);
+            ctx.fill();
+          }
           
           // Reset shadow
           ctx.shadowColor = "transparent";
@@ -577,17 +612,30 @@ export function ProAnnotationCanvas({
       }
 
       // 6. Convert to Blob
-      exportCanvas.toBlob((blob) => {
-        if (blob) {
-          onSave({ pins, paths, textPins }, blob);
-        }
-        setIsSaving(false);
-      }, "image/jpeg", 0.95);
+      const blob = await new Promise<Blob | null>((resolve) => {
+        let settled = false;
+        const t = window.setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          resolve(null);
+        }, 15000);
+        exportCanvas.toBlob((b) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(t);
+          resolve(b);
+        }, "image/jpeg", 0.95);
+      });
+
+      if (!blob) throw new Error("Export failed (blob not generated)");
+      saved = true;
+      onSave({ pins, paths, textPins }, blob);
 
     } catch (err) {
       console.error("EXPORT ERROR:", err);
+      if (!saved) onSave({ pins, paths, textPins });
+    } finally {
       setIsSaving(false);
-      onSave({ pins, paths, textPins });
     }
   };
 
