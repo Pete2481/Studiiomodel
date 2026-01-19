@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { 
   Zap, 
   Sun, 
@@ -154,34 +154,45 @@ export function AISuiteDrawer({
   };
 
   // Allow parent toolbar buttons to deep-link into a specific preset/mode.
+  const lastHandledRequestNonceRef = useRef<number>(-1);
   useEffect(() => {
     if (!isOpen) return;
     if (!requestedAction) return;
+    // Only handle each toolbar request once (prevents re-running when remainingEdits updates).
+    const nonce = typeof requestedActionNonce === "number" ? requestedActionNonce : 0;
+    if (lastHandledRequestNonceRef.current === nonce) return;
+    // If we already have a result on-screen, don’t auto-run again.
+    if (resultUrl || isProcessing) return;
     // If locked, trigger the same unlock flow used elsewhere.
     if (!isUnlocked || remainingEdits <= 0) {
       onRequireUnlock?.();
+      lastHandledRequestNonceRef.current = nonce;
       return;
     }
     if (requestedAction === "day_to_dusk") {
+      lastHandledRequestNonceRef.current = nonce;
       void runPreset(presetPrompts.dayToDusk);
       return;
     }
     if (requestedAction === "remove_furniture") {
+      lastHandledRequestNonceRef.current = nonce;
       void runPreset(presetPrompts.removeAllFurniture);
       return;
     }
     if (requestedAction === "replace_furniture") {
       setShowAdvanced(false);
       setShowReplaceStyles(true);
+      lastHandledRequestNonceRef.current = nonce;
       return;
     }
     if (requestedAction === "advanced_prompt") {
       setShowReplaceStyles(false);
       setShowAdvanced(true);
+      lastHandledRequestNonceRef.current = nonce;
       return;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, requestedAction, requestedActionNonce, isUnlocked, remainingEdits]);
+  }, [isOpen, requestedAction, requestedActionNonce, resultUrl, isProcessing, isUnlocked, remainingEdits]);
 
   const handleSaveToStorage = async () => {
     if (!resultUrl || !dbxPath || !tenantId || !activeTask) return;
