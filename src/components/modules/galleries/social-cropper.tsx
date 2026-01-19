@@ -10,6 +10,8 @@ interface SocialCropperProps {
   imageName: string;
   onClose: () => void;
   onSave?: (blob: Blob) => void;
+  initialTab?: "crop" | "adjust";
+  mode?: "overlay" | "panel";
 }
 
 const PRESETS = [
@@ -29,9 +31,9 @@ const ADJUSTMENTS = [
   { id: "hue", label: "Hue", icon: Palette, min: 0, max: 360, defaultValue: 0, unit: "°" },
 ];
 
-export function SocialCropper({ imageUrl, imageName, onClose, onSave }: SocialCropperProps) {
+export function SocialCropper({ imageUrl, imageName, onClose, onSave, initialTab = "crop", mode = "overlay" }: SocialCropperProps) {
   const filterId = useId().replace(/:/g, "_");
-  const [activeTab, setActiveTab] = useState<"crop" | "adjust">("crop");
+  const [activeTab, setActiveTab] = useState<"crop" | "adjust">(initialTab);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [aspect, setAspect] = useState(PRESETS[0].ratio);
@@ -256,7 +258,13 @@ export function SocialCropper({ imageUrl, imageName, onClose, onSave }: SocialCr
   };
 
   return (
-    <div className="absolute inset-0 z-[100] flex flex-col bg-slate-950/95 backdrop-blur-md animate-in fade-in duration-500">
+    <div
+      className={cn(
+        mode === "overlay"
+          ? "absolute inset-0 z-[100] flex flex-col bg-slate-950/95 backdrop-blur-md animate-in fade-in duration-500"
+          : "h-full w-full flex flex-col bg-slate-950/95"
+      )}
+    >
       {/* SVG filter for targeted luminance (preview) */}
       <svg width="0" height="0" aria-hidden="true" className="absolute">
         <filter id={filterId} colorInterpolationFilters="sRGB">

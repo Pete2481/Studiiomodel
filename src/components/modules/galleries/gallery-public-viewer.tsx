@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import dynamic from "next/dynamic";
@@ -33,7 +33,13 @@ import {
   FileText,
   MapPin,
   BoxSelect,
-  Film
+  Film,
+  Moon,
+  Square,
+  Sofa,
+  Trash2,
+  Wand2,
+  Sliders
 } from "lucide-react";
 import { cn, formatDropboxUrl, cleanDropboxLink } from "@/lib/utils";
 import { getGalleryAssets } from "@/app/actions/storage";
@@ -120,13 +126,33 @@ export function GalleryPublicViewer({
   const [aiSuiteUnlockError, setAiSuiteUnlockError] = useState<string | null>(null);
   // AI suite is prompt-only (no masking) per product requirement
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
-  const [isChoiceModalOpen, setIsChoiceModalOpen] = useState(false);
+  // Choice modal removed in favor of a Lightroom-style top toolbar
   const [isAnnotationOpen, setIsAnnotationOpen] = useState(false);
   const [annotationData, setAnnotationData] = useState<any>(null);
   const [isAiSocialVideoOpen, setIsAiSocialVideoOpen] = useState(false);
   const [aiSocialVideoError, setAiSocialVideoError] = useState<string | null>(null);
   const [isAiSocialVideoGenerating, setIsAiSocialVideoGenerating] = useState(false);
-  const [postUnlockAction, setPostUnlockAction] = useState<null | "ai_social_video">(null);
+  const [postUnlockAction, setPostUnlockAction] = useState<null | "ai_social_video" | "ai_day_to_dusk" | "ai_remove_furniture" | "ai_replace_furniture" | "ai_advanced_prompt">(null);
+  const [aiRequestedAction, setAiRequestedAction] = useState<null | "day_to_dusk" | "remove_furniture" | "replace_furniture" | "advanced_prompt">(null);
+  const [aiRequestedNonce, setAiRequestedNonce] = useState(0);
+  const [socialInitialTab, setSocialInitialTab] = useState<"crop" | "adjust">("crop");
+  const [annotationInitialTool, setAnnotationInitialTool] = useState<"select" | "pin" | "boundary" | "text">("select");
+
+  type EditorTool = "none" | "social" | "color" | "pin" | "boundary" | "ai" | "request";
+  const [activeTool, setActiveTool] = useState<EditorTool>("none");
+
+  type ImageVersion = {
+    id: string;
+    label: string;
+    tool: EditorTool;
+    kind: "url" | "blob";
+    src: string; // URL or objectURL for blob
+    blob?: Blob;
+    createdAt: number;
+  };
+  const [versionsByAssetId, setVersionsByAssetId] = useState<Record<string, ImageVersion[]>>({});
+  const [activeVersionIdByAssetId, setActiveVersionIdByAssetId] = useState<Record<string, string>>({});
+  const blobUrlRegistryRef = useRef<Set<string>>(new Set());
   const [bannerFailed, setBannerFailed] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
   const [showRefreshToast, setShowRefreshToast] = useState(false);
@@ -189,6 +215,51 @@ export function GalleryPublicViewer({
     setAiSocialVideoError(null);
     setIsAiSocialVideoOpen(true);
   };
+
+  const openLockedAiTool = (action: "day_to_dusk" | "remove_furniture" | "replace_furniture" | "advanced_prompt") => {
+    // Gate behind existing per-gallery AI Suite unlock/quota
+    if (!aiSuiteUnlocked || aiSuiteRemainingEdits <= 0) {
+      setAiSuiteTermsAccepted(false);
+      setPostUnlockAction(
+        action === "day_to_dusk"
+          ? "ai_day_to_dusk"
+          : action === "remove_furniture"
+            ? "ai_remove_furniture"
+            : action === "replace_furniture"
+              ? "ai_replace_furniture"
+              : "ai_advanced_prompt"
+      );
+      setIsAiSuiteUnlockOpen(true);
+      return;
+    }
+    setAiRequestedAction(action);
+    setAiRequestedNonce((n) => n + 1);
+    setIsRequestingEdit(false);
+    setActiveTool("ai");
+    setIsAISuiteOpen(true);
+  };
+
+  const TOOLBAR = useMemo(() => {
+    return {
+      unlocked: [
+        { id: "social", label: "Social Editor", icon: Instagram, onClick: () => { setIsRequestingEdit(false); setIsAISuiteOpen(false); setSocialInitialTab("crop"); setActiveTool("social"); setIsSocialCropperOpen(false); } },
+        { id: "color", label: "Colour", icon: Sliders, onClick: () => { setIsRequestingEdit(false); setIsAISuiteOpen(false); setSocialInitialTab("adjust"); setActiveTool("color"); setIsSocialCropperOpen(false); } },
+        { id: "pin", label: "Drop-pin", icon: MapPin, onClick: () => { setIsRequestingEdit(false); setIsAISuiteOpen(false); setAnnotationInitialTool("pin"); setActiveTool("pin"); setIsAnnotationOpen(false); } },
+        { id: "boundary", label: "Boundary", icon: Square, onClick: () => { setIsRequestingEdit(false); setIsAISuiteOpen(false); setAnnotationInitialTool("boundary"); setActiveTool("boundary"); setIsAnnotationOpen(false); } },
+        { id: "revision", label: "Request Revision", icon: PenTool, onClick: () => { setIsAISuiteOpen(false); setActiveTool("request"); setIsRequestingEdit(true); } },
+      ],
+      locked: [
+        { id: "day_to_dusk", label: "Day → Dusk", icon: Moon, onClick: () => openLockedAiTool("day_to_dusk") },
+        { id: "remove", label: "Remove Furniture", icon: Trash2, onClick: () => openLockedAiTool("remove_furniture") },
+        { id: "replace", label: "Replace Furniture", icon: Sofa, onClick: () => openLockedAiTool("replace_furniture") },
+        { id: "advanced", label: "Advanced Prompt", icon: Wand2, onClick: () => openLockedAiTool("advanced_prompt") },
+      ],
+      comingSoon: [
+        { id: "ai_video", label: "AI Social Video", icon: Film },
+      ],
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiSuiteUnlocked, aiSuiteRemainingEdits]);
 
   const toggleSelectImage = (item: any) => {
     const key = getAssetKey(item);
@@ -569,6 +640,65 @@ export function GalleryPublicViewer({
       return url;
     }
   };
+
+  // --- Unified workspace: non-destructive versions (per selected asset) ---
+  const ensureOriginalVersion = useCallback(
+    (asset: any) => {
+      const key = getAssetKey(asset);
+      if (!key) return;
+      setVersionsByAssetId((prev) => {
+        if (prev[key]?.length) return prev;
+        const original: ImageVersion = {
+          id: "original",
+          label: "Original",
+          tool: "none",
+          kind: "url",
+          src: getImageUrl(asset.url, "w2048h1536"),
+          createdAt: Date.now(),
+        };
+        return { ...prev, [key]: [original] };
+      });
+      setActiveVersionIdByAssetId((prev) => (prev[key] ? prev : { ...prev, [key]: "original" }));
+    },
+    [getImageUrl]
+  );
+
+  const addVersion = useCallback(
+    (asset: any, v: Omit<ImageVersion, "createdAt">) => {
+      const key = getAssetKey(asset);
+      if (!key) return;
+      if (v.kind === "blob" && typeof v.src === "string" && v.src.startsWith("blob:")) {
+        blobUrlRegistryRef.current.add(v.src);
+      }
+      setVersionsByAssetId((prev) => {
+        const existing = prev[key] || [];
+        const next = [...existing, { ...v, createdAt: Date.now() }];
+        return { ...prev, [key]: next };
+      });
+      setActiveVersionIdByAssetId((prev) => ({ ...prev, [key]: v.id }));
+    },
+    []
+  );
+
+  const activeAssetKey = selectedAsset ? getAssetKey(selectedAsset) : "";
+  const versionsForSelected = activeAssetKey ? versionsByAssetId[activeAssetKey] || [] : [];
+  const activeVersionId = activeAssetKey ? activeVersionIdByAssetId[activeAssetKey] || "original" : "original";
+  const activeVersion = versionsForSelected.find((v) => v.id === activeVersionId) || versionsForSelected[0];
+  const activeImageSrc = activeVersion?.src || (selectedAsset ? getImageUrl(selectedAsset.url, "w2048h1536") : "");
+
+  useEffect(() => {
+    if (selectedAsset) ensureOriginalVersion(selectedAsset);
+  }, [selectedAsset, ensureOriginalVersion]);
+
+  // Cleanup blob object URLs on unmount (best-effort)
+  useEffect(() => {
+    return () => {
+      for (const url of blobUrlRegistryRef.current) {
+        try { URL.revokeObjectURL(url); } catch {}
+      }
+      blobUrlRegistryRef.current.clear();
+    };
+  }, []);
 
   // Downloads are visible to everyone (Public & Logged In)
   const canDownload = true;
@@ -983,15 +1113,15 @@ export function GalleryPublicViewer({
                 {/* Progressive banner (V2) */}
                 {progressiveBanner ? (
                   <>
-                    <Image
+                <Image 
                       src={bannerFailed ? fallbackSrc : lowSrc}
-                      alt={gallery.title}
-                      fill
-                      priority
-                      className="object-cover"
-                      sizes="(max-width: 1280px) 100vw, 1280px"
-                      onError={() => setBannerFailed(true)}
-                    />
+                  alt={gallery.title}
+                  fill
+                  priority
+                  className="object-cover"
+                  sizes="(max-width: 1280px) 100vw, 1280px"
+                  onError={() => setBannerFailed(true)}
+                />
                     {/* High-res layer crossfades in after it loads */}
                     {!bannerFailed && (
                       <HighResBannerLayer
@@ -1272,10 +1402,9 @@ export function GalleryPublicViewer({
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setSelectedAsset(item);
-                                  setIsChoiceModalOpen(true);
                                 }}
                                 className="h-9 w-9 rounded-xl bg-white/20 backdrop-blur-md text-white flex items-center justify-center hover:bg-white hover:text-slate-900 transition-all"
-                                title="Edit Image"
+                                title="Open Editor"
                               >
                                 <Pencil className="h-4 w-4" />
                               </button>
@@ -1328,7 +1457,7 @@ export function GalleryPublicViewer({
                       ))}
                     </div>
                   ) : (
-                    <Loader2 className="h-6 w-6 animate-spin text-slate-200" />
+                  <Loader2 className="h-6 w-6 animate-spin text-slate-200" />
                   )}
                 </div>
               )}
@@ -1409,6 +1538,9 @@ export function GalleryPublicViewer({
                 onClick={() => {
                   setSelectedAsset(null);
                   setIsAssetLoading(false);
+                  setActiveTool("none");
+                  setIsAISuiteOpen(false);
+                  setIsRequestingEdit(false);
                 }}
                 className="h-10 w-10 rounded-full bg-white/5 text-white flex items-center justify-center hover:bg-white/10 transition-all border border-white/5"
               >
@@ -1430,7 +1562,6 @@ export function GalleryPublicViewer({
             </div>
 
             <div className="flex items-center gap-3">
-              {!isRequestingEdit && !isAISuiteOpen && (
                 <>
                   {gallery.isCopyPublished && gallery.aiCopy && (
                     <button 
@@ -1444,13 +1575,86 @@ export function GalleryPublicViewer({
 
                   {!isShared && (
                     <>
+                      {/* Lightroom-style toolbar (replaces the choice modal) */}
+                      <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-2 py-1 overflow-x-auto max-w-[62vw]">
+                        {TOOLBAR.unlocked.map((t) => (
                       <button 
-                        onClick={() => setIsChoiceModalOpen(true)}
-                        className="h-10 px-6 rounded-full bg-primary text-white text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all shadow-lg shadow-primary/20"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                        Edit Image
+                            key={t.id}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              (t as any).onClick?.();
+                            }}
+                            className="relative shrink-0 h-10 px-4 rounded-full bg-white/5 hover:bg-white/10 text-white text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all"
+                            title={t.label}
+                            aria-label={t.label}
+                          >
+                            <t.icon className="h-3.5 w-3.5" />
+                            <span className="hidden md:inline">{t.label}</span>
                       </button>
+                        ))}
+
+                        {TOOLBAR.locked.map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              (t as any).onClick?.();
+                            }}
+                            className="relative shrink-0 h-10 px-4 rounded-full bg-white/5 hover:bg-white/10 text-white/70 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all border border-white/10"
+                            title={t.label}
+                            aria-label={t.label}
+                          >
+                            <t.icon className="h-3.5 w-3.5" />
+                            <span className="hidden md:inline">{t.label}</span>
+                            <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-slate-900 border border-white/10 flex items-center justify-center">
+                              <Lock className="h-3 w-3 text-white/80" />
+                            </span>
+                          </button>
+                        ))}
+
+                        {TOOLBAR.comingSoon.map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            disabled
+                            className="relative shrink-0 h-10 px-4 rounded-full bg-white/5 text-white/30 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all border border-white/10 cursor-not-allowed"
+                            title={`${t.label} (coming soon)`}
+                            aria-label={`${t.label} (coming soon)`}
+                          >
+                            <t.icon className="h-3.5 w-3.5" />
+                            <span className="hidden md:inline">{t.label}</span>
+                            <span className="absolute -top-1 -right-1 px-2 py-0.5 rounded-full bg-slate-900 border border-white/10 text-[8px] font-black uppercase tracking-widest text-white/60">
+                              Soon
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+
+                      {versionsForSelected.length > 1 && activeAssetKey && (
+                        <div className="hidden lg:flex items-center gap-2 max-w-[340px] overflow-x-auto no-scrollbar">
+                          {versionsForSelected.map((v) => (
+                            <button
+                              key={v.id}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveVersionIdByAssetId((prev) => ({ ...prev, [activeAssetKey]: v.id }));
+                              }}
+                              className={cn(
+                                "shrink-0 h-10 px-4 rounded-full text-[10px] font-black uppercase tracking-widest transition-all border",
+                                v.id === activeVersionId
+                                  ? "bg-white text-slate-900 border-white shadow-lg"
+                                  : "bg-white/5 text-white/70 border-white/10 hover:bg-white/10"
+                              )}
+                              title={v.label}
+                            >
+                              {v.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
 
                       <button 
                         onClick={(e) => handleToggleFavorite(e, selectedAsset)}
@@ -1469,7 +1673,31 @@ export function GalleryPublicViewer({
                   {canDownload && (
                     <button 
                       onClick={() => {
-                        setDownloadAssets([selectedAsset]);
+                        if (activeVersion && activeVersion.id !== "original") {
+                          if (activeVersion.kind === "blob" && activeVersion.blob) {
+                            const downloadUrl = URL.createObjectURL(activeVersion.blob);
+                            const vAsset = {
+                              ...selectedAsset,
+                              id: `version-${selectedAsset.id}-${activeVersion.id}`,
+                              name: `${activeVersion.label}-${selectedAsset.name}`,
+                              isMarkup: true,
+                              markupBlob: activeVersion.blob,
+                              url: downloadUrl,
+                            };
+                            setDownloadAssets([vAsset]);
+                          } else {
+                            const vAsset = {
+                              ...selectedAsset,
+                              id: `version-${selectedAsset.id}-${activeVersion.id}`,
+                              name: `${activeVersion.label}-${selectedAsset.name}`,
+                              path: undefined,
+                              url: activeVersion.src,
+                            };
+                            setDownloadAssets([vAsset]);
+                          }
+                        } else {
+                          setDownloadAssets([selectedAsset]);
+                        }
                         setIsDownloadManagerOpen(true);
                       }}
                       className="h-10 px-6 rounded-full bg-white text-slate-900 text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all"
@@ -1479,12 +1707,10 @@ export function GalleryPublicViewer({
                     </button>
                   )}
                 </>
-              )}
             </div>
           </div>
 
             <div className="flex-1 relative flex items-center justify-center p-8">
-              {!isRequestingEdit && !isAISuiteOpen && (
                 <button 
                   className={cn(
                     "absolute left-6 h-14 w-14 rounded-full bg-white/5 text-white flex items-center justify-center hover:bg-white/10 transition-all border border-white/5 group z-20",
@@ -1509,15 +1735,17 @@ export function GalleryPublicViewer({
                     <ChevronLeft className="h-8 w-8 group-hover:scale-110 transition-transform" />
                   )}
                 </button>
-              )}
               
               <div className={cn(
                 "relative group/main transition-all duration-500 ease-in-out",
-                isRequestingEdit ? "lg:mr-[1000px]" : isAISuiteOpen ? "lg:mr-[480px]" : "lg:mr-0"
+                (activeTool === "request" || activeTool === "pin" || activeTool === "boundary") ? "lg:mr-[1000px]"
+                  : activeTool === "ai" ? "lg:mr-[480px]"
+                  : (activeTool === "social" || activeTool === "color") ? "lg:mr-[520px]"
+                  : "lg:mr-0"
               )}>
                 <img 
                   ref={imgRef}
-                  src={getImageUrl(selectedAsset.url, "w1024h768")} 
+                  src={activeImageSrc || getImageUrl(selectedAsset.url, "w1024h768")} 
                   alt={selectedAsset.name}
                   onLoad={() => {
                     setIsAssetLoading(false);
@@ -1530,7 +1758,7 @@ export function GalleryPublicViewer({
                   className="max-h-[85vh] max-w-full object-contain rounded-xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.8)]"
                 />
                 
-                {!isRequestingEdit && !isAISuiteOpen && (
+                {activeTool === "none" && (
                   <div className="absolute bottom-8 left-1/2 -translate-x-1/2 px-4 py-2 bg-black/40 backdrop-blur-md rounded-full border border-white/10 opacity-0 group-hover/main:opacity-100 transition-opacity text-center">
                     <p className="text-[9px] font-black text-white/80 uppercase tracking-widest flex items-center gap-2">
                       <Monitor className="h-3 w-3" />
@@ -1541,7 +1769,6 @@ export function GalleryPublicViewer({
                 )}
               </div>
 
-              {!isRequestingEdit && !isAISuiteOpen && (
                 <button 
                   className={cn(
                     "absolute right-6 h-14 w-14 rounded-full bg-white/5 text-white flex items-center justify-center hover:bg-white/10 transition-all border border-white/5 group z-20",
@@ -1566,29 +1793,48 @@ export function GalleryPublicViewer({
                     <ChevronRight className="h-8 w-8 group-hover:scale-110 transition-transform" />
                   )}
                 </button>
-              )}
             </div>
 
-          {/* Social Cropper Overlay - Still needs selectedAsset, but moved for cleaner hierarchy */}
-          {isSocialCropperOpen && selectedAsset && (
+          {/* Unified Tool Panel: Social / Colour (non-destructive versions) */}
+          {(activeTool === "social" || activeTool === "color") && selectedAsset && (
+            <div className="absolute inset-0 z-[60] flex items-center justify-end p-4 md:p-8 bg-transparent pointer-events-none animate-in fade-in duration-200">
+              <div
+                className="w-full max-w-[520px] bg-slate-950 rounded-[32px] shadow-2xl overflow-hidden flex flex-col h-full max-h-[850px] animate-in slide-in-from-right duration-500 pointer-events-auto border border-white/10"
+                onClick={(e) => e.stopPropagation()}
+              >
             <SocialCropper 
-              imageUrl={getImageUrl(selectedAsset.url, "w2048h1536")}
+                  mode="panel"
+                  imageUrl={activeImageSrc}
               imageName={selectedAsset.name}
-              onClose={() => setIsSocialCropperOpen(false)}
+                  initialTab={socialInitialTab}
+                  onClose={() => setActiveTool("none")}
               onSave={(blob) => {
-                setIsSocialCropperOpen(false);
+                    const persistUrl = URL.createObjectURL(blob);
+                    const downloadUrl = URL.createObjectURL(blob);
+                    addVersion(selectedAsset, {
+                      id: `social-${Date.now()}`,
+                      label: activeTool === "color" ? "Colour" : "Social",
+                      tool: activeTool,
+                      kind: "blob",
+                      src: persistUrl,
+                      blob,
+                    });
+                    // Optional: also open a download flow immediately
                 const editedAsset = {
                   ...selectedAsset,
                   id: `social-${selectedAsset.id}`,
-                  name: `Social-${selectedAsset.name}`,
-                  isMarkup: true, // Triggers DownloadManager to use markupBlob
+                      name: `${activeTool === "color" ? "Colour" : "Social"}-${selectedAsset.name}`,
+                      isMarkup: true,
                   markupBlob: blob,
-                  url: URL.createObjectURL(blob)
+                      url: downloadUrl,
                 };
                 setDownloadAssets([editedAsset]);
                 setIsDownloadManagerOpen(true);
+                    setActiveTool("none");
               }}
             />
+              </div>
+            </div>
           )}
 
           {isAISuiteOpen && selectedAsset && (
@@ -1596,9 +1842,10 @@ export function GalleryPublicViewer({
               isOpen={isAISuiteOpen}
               onClose={() => {
                 setIsAISuiteOpen(false);
+                setActiveTool("none");
               }}
               galleryId={gallery.id}
-              assetUrl={getImageUrl(selectedAsset.url, "w2048h1536")}
+              assetUrl={activeVersion?.kind === "blob" ? getImageUrl(selectedAsset.url, "w2048h1536") : activeImageSrc}
               assetName={selectedAsset.name}
               dbxPath={selectedAsset.path}
               tenantId={gallery.tenantId}
@@ -1609,8 +1856,16 @@ export function GalleryPublicViewer({
                 setIsAiSuiteUnlockOpen(true);
               }}
               onAiSuiteUpdate={(next) => setAiSuiteState((prev: any) => ({ ...(prev || {}), ...(next || {}) }))}
+              requestedAction={aiRequestedAction || undefined}
+              requestedActionNonce={aiRequestedNonce}
               onComplete={(newUrl) => {
-                // Future: We could update the asset in the gallery
+                addVersion(selectedAsset, {
+                  id: `ai-${Date.now()}`,
+                  label: "AI Result",
+                  tool: "ai",
+                  kind: "url",
+                  src: newUrl,
+                });
               }}
             />
           )}
@@ -1813,6 +2068,24 @@ export function GalleryPublicViewer({
                             setPostUnlockAction(null);
                             // Let the modal close before opening the picker
                             setTimeout(() => openAiSocialVideo(), 50);
+                          } else if (postUnlockAction) {
+                            const map: Record<string, any> = {
+                              ai_day_to_dusk: "day_to_dusk",
+                              ai_remove_furniture: "remove_furniture",
+                              ai_replace_furniture: "replace_furniture",
+                              ai_advanced_prompt: "advanced_prompt",
+                            };
+                            const next = map[String(postUnlockAction)];
+                            setPostUnlockAction(null);
+                            if (next) {
+                              setAiRequestedAction(next);
+                              setAiRequestedNonce((n) => n + 1);
+                              // Let the modal close before opening the drawer
+                              setTimeout(() => {
+                                setActiveTool("ai");
+                                setIsAISuiteOpen(true);
+                              }, 50);
+                            }
                           }
                         } else {
                           if (res.error === "AI_DISABLED") {
@@ -1912,6 +2185,7 @@ export function GalleryPublicViewer({
                     type="button"
                     onClick={() => {
                       setIsRequestingEdit(false);
+                      setActiveTool("none");
                       setDrawingData(null);
                       setEditNote("");
                       setSelectedTagIds([]);
@@ -2366,189 +2640,58 @@ export function GalleryPublicViewer({
         </div>
       )}
 
-      {/* Choice Modal Overlay */}
-      {isChoiceModalOpen && selectedAsset && (
-        <div 
-          className="fixed inset-0 z-[200] bg-slate-950/80 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-500"
-          onClick={() => setIsChoiceModalOpen(false)}
-        >
-          <div 
-            className="w-full max-w-6xl bg-white rounded-[48px] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in duration-500"
+      {/* Choice Modal removed (toolbar is always visible in the viewer header) */}
+
+      {(activeTool === "pin" || activeTool === "boundary") && selectedAsset && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-end p-4 md:p-8 bg-transparent pointer-events-none animate-in fade-in duration-200">
+          <div
+            className="w-full max-w-5xl bg-slate-950 rounded-[32px] shadow-2xl overflow-hidden flex flex-col h-full max-h-[850px] animate-in slide-in-from-right duration-500 pointer-events-auto border border-white/10"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
-            <div className="p-8 border-b border-slate-100 flex items-center justify-between">
-              <div className="space-y-1">
-                <p className="text-[10px] font-black text-primary uppercase tracking-widest">Image Processing</p>
-                <h3 className="text-2xl font-bold text-slate-900 tracking-tight">What would you like to do?</h3>
-              </div>
-              <button 
-                onClick={() => setIsChoiceModalOpen(false)}
-                className="h-12 w-12 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center hover:bg-slate-100 transition-all active:scale-95"
-              >
-                <X className="h-6 w-6" />
-              </button>
-            </div>
-
-            {/* Grid of Choices */}
-            <div className="p-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
-              {/* Professional Studio Edit (PREMIUM) */}
-              <button 
-                onClick={() => {
-                  setIsChoiceModalOpen(false);
-                  setIsRequestingEdit(true);
-                }}
-                className="group p-8 rounded-[32px] border-2 border-slate-100 bg-white hover:border-primary/30 hover:bg-primary/[0.02] transition-all flex flex-col items-center text-center gap-6"
-              >
-                <span className="text-[10px] font-black uppercase tracking-widest text-rose-500">PREMIUM</span>
-                <div className="h-16 w-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <PenTool className="h-8 w-8" />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-center gap-2">
-                    <p className="text-sm font-black text-slate-900 uppercase tracking-widest">Studio Edit</p>
-                    <span className="px-2 py-0.5 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest rounded-md">COST</span>
-                  </div>
-                  <p className="text-xs font-medium text-slate-400 leading-relaxed">
-                    Manual production crew revisions.
-                  </p>
-                </div>
-              </button>
-
-              {/* AI Edit Suite (PREMIUM) */}
-              <button 
-                onClick={() => {
-                  setIsChoiceModalOpen(false);
-                  setIsAISuiteOpen(true);
-                  if (!aiSuiteUnlocked || aiSuiteRemainingEdits <= 0) {
-                    setAiSuiteTermsAccepted(false);
-                    setIsAiSuiteUnlockOpen(true);
-                  }
-                }}
-                className="group p-8 rounded-[32px] border-2 border-slate-100 bg-white hover:border-emerald-500/30 hover:bg-emerald-500/[0.02] transition-all flex flex-col items-center text-center gap-6"
-              >
-                <span className="text-[10px] font-black uppercase tracking-widest text-rose-500">PREMIUM</span>
-                <div className="h-16 w-16 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <Zap className="h-8 w-8 fill-current" />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-center gap-2">
-                    <p className="text-sm font-black text-slate-900 uppercase tracking-widest">AI Suite</p>
-                    <span className="px-2 py-0.5 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest rounded-md">COST</span>
-                  </div>
-                  <p className="text-xs font-medium text-slate-400 leading-relaxed">
-                    Instant automated AI enhancements.
-                  </p>
-                </div>
-              </button>
-
-              {/* AI Social Video (PREMIUM) */}
-              <button
-                type="button"
-                disabled
-                className="group p-8 rounded-[32px] border-2 border-slate-100 bg-white transition-all flex flex-col items-center text-center gap-6 opacity-60 cursor-not-allowed"
-                aria-disabled="true"
-              >
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">PREMIUM</span>
-                <div className="h-16 w-16 rounded-2xl bg-slate-900/10 text-slate-900 flex items-center justify-center">
-                  <Film className="h-8 w-8" />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-center gap-2">
-                    <p className="text-sm font-black text-slate-900 uppercase tracking-widest">AI Social Video</p>
-                    <span className="px-2 py-0.5 bg-slate-700 text-white text-[9px] font-black uppercase tracking-widest rounded-md">COMING SOON</span>
-                  </div>
-                  <p className="text-xs font-medium text-slate-400 leading-relaxed">
-                    Turn 3–5 photos into a short moving video (vertical).
-                  </p>
-                </div>
-              </button>
-
-              {/* Pro Annotations (FREE) */}
-              <button 
-                onClick={() => {
-                  setIsChoiceModalOpen(false);
-                  setIsAnnotationOpen(true);
-                }}
-                className="group p-8 rounded-[32px] border-2 border-slate-100 bg-white hover:border-blue-500/30 hover:bg-blue-500/[0.02] transition-all flex flex-col items-center text-center gap-6"
-              >
-                <div className="h-16 w-16 rounded-2xl bg-blue-500/10 text-blue-500 flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <MapPin className="h-8 w-8" />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-center gap-2">
-                    <p className="text-sm font-black text-slate-900 uppercase tracking-widest">Pro Markup</p>
-                    <span className="px-2 py-0.5 bg-emerald-500 text-white text-[9px] font-black uppercase tracking-widest rounded-md">FREE</span>
-                  </div>
-                  <p className="text-xs font-medium text-slate-400 leading-relaxed">
-                    Add logo drop-pins & property boundaries.
-                  </p>
-                </div>
-              </button>
-
-              {/* Social Media Cropper & Editor */}
-              <button 
-                onClick={() => {
-                  setIsChoiceModalOpen(false);
-                  setIsSocialCropperOpen(true);
-                }}
-                className="group p-8 rounded-[32px] border-2 border-slate-100 bg-white hover:border-sky-500/30 hover:bg-sky-500/[0.02] transition-all flex flex-col items-center text-center gap-6"
-              >
-                <div className="h-16 w-16 rounded-2xl bg-sky-500/10 text-sky-500 flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <Instagram className="h-8 w-8" />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-center gap-2">
-                    <p className="text-sm font-black text-slate-900 uppercase tracking-widest">Social Edit</p>
-                    <span className="px-2 py-0.5 bg-emerald-500 text-white text-[9px] font-black uppercase tracking-widest rounded-md">FREE</span>
-                  </div>
-                  <p className="text-xs font-medium text-slate-400 leading-relaxed">
-                    Crop and color adjust for social media.
-                  </p>
-                </div>
-              </button>
-            </div>
-
-            {/* Footer Tip */}
-            <div className="p-6 bg-slate-50 border-t border-slate-100 flex items-center justify-center gap-3">
-              <Info className="h-4 w-4 text-slate-400" />
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                All studio and AI edits are tracked and invoiced based on your agency agreement.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isAnnotationOpen && selectedAsset && (
         <ProAnnotationCanvas 
-          imageUrl={getImageUrl(selectedAsset.url, "w2048h1536")}
+              mode="panel"
+              imageUrl={activeImageSrc}
           logoUrl={gallery.clientBranding?.url || tenant.logoUrl}
+              initialTool={annotationInitialTool}
           onSave={(data, blob) => {
             setAnnotationData(data);
-            setIsAnnotationOpen(false);
             
             if (blob) {
-              // Create a special asset for the marked-up image
+                  const persistUrl = URL.createObjectURL(blob);
+                  const downloadUrl = URL.createObjectURL(blob);
+                  addVersion(selectedAsset, {
+                    id: `markup-${Date.now()}`,
+                    label: activeTool === "boundary" ? "Boundary" : "Pin Drop",
+                    tool: activeTool,
+                    kind: "blob",
+                    src: persistUrl,
+                    blob,
+                  });
+
+                  // Optional: also open a download flow immediately
               const markedUpAsset = {
                 ...selectedAsset,
                 id: `markup-${selectedAsset.id}`,
                 name: `MarkedUp-${selectedAsset.name}`,
                 isMarkup: true,
                 markupBlob: blob,
-                url: URL.createObjectURL(blob)
+                    url: downloadUrl,
               };
               setDownloadAssets([markedUpAsset]);
               setIsDownloadManagerOpen(true);
+                  setActiveTool("none");
             } else {
               // Fallback to standard edit request if no blob generated
               setIsRequestingEdit(true);
+                  setActiveTool("request");
             }
           }}
           onCancel={() => {
-            setIsAnnotationOpen(false);
+                setActiveTool("none");
           }}
         />
+          </div>
+        </div>
       )}
     </div>
   );

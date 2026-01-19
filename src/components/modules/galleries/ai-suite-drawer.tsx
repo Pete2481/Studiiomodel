@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { 
   Zap, 
   Sun, 
@@ -37,6 +37,10 @@ interface AISuiteDrawerProps {
   onRequireUnlock?: () => void;
   onAiSuiteUpdate?: (aiSuite: { unlocked?: boolean; remainingEdits?: number; unlockBlockId?: string | null }) => void;
   onComplete?: (newUrl: string) => void;
+  /** Optional: request a specific tool/preset from the parent toolbar. */
+  requestedAction?: "day_to_dusk" | "remove_furniture" | "replace_furniture" | "advanced_prompt";
+  /** Bump this when requestedAction changes to ensure the drawer reacts even if the action repeats. */
+  requestedActionNonce?: number;
 }
 
 export function AISuiteDrawer({ 
@@ -51,7 +55,9 @@ export function AISuiteDrawer({
   remainingEdits,
   onRequireUnlock,
   onAiSuiteUpdate,
-  onComplete
+  onComplete,
+  requestedAction,
+  requestedActionNonce
 }: AISuiteDrawerProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
@@ -146,6 +152,36 @@ export function AISuiteDrawer({
     setShowReplaceStyles(false);
     await runWithPrompt(p);
   };
+
+  // Allow parent toolbar buttons to deep-link into a specific preset/mode.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!requestedAction) return;
+    // If locked, trigger the same unlock flow used elsewhere.
+    if (!isUnlocked || remainingEdits <= 0) {
+      onRequireUnlock?.();
+      return;
+    }
+    if (requestedAction === "day_to_dusk") {
+      void runPreset(presetPrompts.dayToDusk);
+      return;
+    }
+    if (requestedAction === "remove_furniture") {
+      void runPreset(presetPrompts.removeAllFurniture);
+      return;
+    }
+    if (requestedAction === "replace_furniture") {
+      setShowAdvanced(false);
+      setShowReplaceStyles(true);
+      return;
+    }
+    if (requestedAction === "advanced_prompt") {
+      setShowReplaceStyles(false);
+      setShowAdvanced(true);
+      return;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, requestedAction, requestedActionNonce, isUnlocked, remainingEdits]);
 
   const handleSaveToStorage = async () => {
     if (!resultUrl || !dbxPath || !tenantId || !activeTask) return;

@@ -54,13 +54,22 @@ interface ProAnnotationCanvasProps {
   logoUrl?: string;
   onSave: (data: any, blob?: Blob) => void;
   onCancel: () => void;
+  initialTool?: "select" | "pin" | "boundary" | "text";
+  mode?: "overlay" | "panel";
 }
 
-export function ProAnnotationCanvas({ imageUrl, logoUrl, onSave, onCancel }: ProAnnotationCanvasProps) {
+export function ProAnnotationCanvas({
+  imageUrl,
+  logoUrl,
+  onSave,
+  onCancel,
+  initialTool = "select",
+  mode = "overlay",
+}: ProAnnotationCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
-  const [tool, setTool] = useState<"select" | "pin" | "boundary" | "text">("select");
+  const [tool, setTool] = useState<"select" | "pin" | "boundary" | "text">(initialTool);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [isImageLoaded, setIsImageLoaded] = useState(false);
   const [pins, setPins] = useState<LogoPin[]>([]);
@@ -82,8 +91,9 @@ export function ProAnnotationCanvas({ imageUrl, logoUrl, onSave, onCancel }: Pro
         const paddingH = 48; 
         const paddingV = 160; 
         
-        const cW = window.innerWidth - paddingH;
-        const cH = window.innerHeight - paddingV;
+        const bounds = container.getBoundingClientRect();
+        const cW = (mode === "panel" ? bounds.width : window.innerWidth) - paddingH;
+        const cH = (mode === "panel" ? bounds.height : window.innerHeight) - paddingV;
         
         if (cW <= 0 || cH <= 0) return;
 
@@ -112,11 +122,19 @@ export function ProAnnotationCanvas({ imageUrl, logoUrl, onSave, onCancel }: Pro
       };
 
       updateDimensions();
-      window.addEventListener('resize', updateDimensions);
-      return () => window.removeEventListener('resize', updateDimensions);
+      window.addEventListener("resize", updateDimensions);
+      return () => window.removeEventListener("resize", updateDimensions);
     };
     img.src = imageUrl;
-  }, [imageUrl]);
+  }, [imageUrl, mode]);
+
+  // Allow parent to open directly into a specific mode (pin vs boundary)
+  useEffect(() => {
+    setTool(initialTool);
+    setSelectedId(null);
+    setEditingTextId(null);
+    setDragging(null);
+  }, [initialTool]);
 
   // Redraw loop
   useEffect(() => {
@@ -566,7 +584,13 @@ export function ProAnnotationCanvas({ imageUrl, logoUrl, onSave, onCancel }: Pro
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-slate-950/95 backdrop-blur-xl p-4 md:p-8 animate-in fade-in duration-500 overflow-hidden">
+    <div
+      className={cn(
+        mode === "overlay"
+          ? "fixed inset-0 z-[200] flex flex-col items-center justify-center bg-slate-950/95 backdrop-blur-xl p-4 md:p-8 animate-in fade-in duration-500 overflow-hidden"
+          : "h-full w-full flex flex-col items-center justify-center bg-slate-950/95 p-4 md:p-6 overflow-hidden"
+      )}
+    >
       <div className="flex flex-col w-full h-full max-w-7xl gap-4 md:gap-6">
         {/* Toolbar */}
         <div className="flex items-center justify-between bg-white/10 backdrop-blur-md rounded-2xl border border-white/10 p-2 shrink-0 shadow-2xl">
