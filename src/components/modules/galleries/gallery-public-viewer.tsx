@@ -1585,11 +1585,32 @@ export function GalleryPublicViewer({
                               e.stopPropagation();
                               (t as any).onClick?.();
                             }}
-                            className="relative shrink-0 h-10 px-4 rounded-full bg-white/5 hover:bg-white/10 text-white text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all"
+                            className={cn(
+                              "relative shrink-0 h-10 px-4 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all border",
+                              // Active tool glow (Photoshop-style)
+                              (t.id === "social" && activeTool === "social") ||
+                                (t.id === "color" && activeTool === "color") ||
+                                (t.id === "pin" && activeTool === "pin") ||
+                                (t.id === "boundary" && activeTool === "boundary") ||
+                                (t.id === "revision" && activeTool === "request")
+                                ? "bg-emerald-500/15 border-emerald-400/40 text-white shadow-[0_0_0_1px_rgba(16,185,129,0.25),0_0_24px_rgba(16,185,129,0.18)]"
+                                : "bg-white/5 hover:bg-white/10 text-white/90 border-white/10"
+                            )}
                             title={t.label}
                             aria-label={t.label}
                           >
-                            <t.icon className="h-3.5 w-3.5" />
+                            <t.icon
+                              className={cn(
+                                "h-3.5 w-3.5",
+                                (t.id === "pin" && activeTool === "pin") ||
+                                  (t.id === "boundary" && activeTool === "boundary") ||
+                                  (t.id === "social" && activeTool === "social") ||
+                                  (t.id === "color" && activeTool === "color") ||
+                                  (t.id === "revision" && activeTool === "request")
+                                  ? "text-emerald-200"
+                                  : "text-white/80"
+                              )}
+                            />
                             <span className="hidden md:inline">{t.label}</span>
                       </button>
                         ))}
@@ -1597,6 +1618,12 @@ export function GalleryPublicViewer({
                         {TOOLBAR.locked.map((t) => (
                           (() => {
                             const aiReady = aiSuiteUnlocked && aiSuiteRemainingEdits > 0;
+                            const aiSelected =
+                              activeTool === "ai" &&
+                              ((t.id === "day_to_dusk" && aiRequestedAction === "day_to_dusk") ||
+                                (t.id === "remove" && aiRequestedAction === "remove_furniture") ||
+                                (t.id === "replace" && aiRequestedAction === "replace_furniture") ||
+                                (t.id === "advanced" && aiRequestedAction === "advanced_prompt"));
                             return (
                           <button
                             key={t.id}
@@ -1607,6 +1634,7 @@ export function GalleryPublicViewer({
                             }}
                             className={cn(
                               "relative shrink-0 h-10 px-4 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all border",
+                              aiSelected && "shadow-[0_0_0_1px_rgba(16,185,129,0.25),0_0_24px_rgba(16,185,129,0.18)]",
                               aiReady
                                 ? "bg-emerald-500/10 hover:bg-emerald-500/20 text-white border-emerald-500/25"
                                 : "bg-white/5 hover:bg-white/10 text-white/70 border-white/10"
@@ -2658,21 +2686,22 @@ export function GalleryPublicViewer({
       {/* Choice Modal removed (toolbar is always visible in the viewer header) */}
 
       {(activeTool === "pin" || activeTool === "boundary") && selectedAsset && (
-        <div className="absolute inset-0 z-[60] flex items-center justify-end p-4 md:p-8 bg-transparent pointer-events-none animate-in fade-in duration-200">
+        // NOTE: Must be fixed and above the lightbox (which is z-[100]), otherwise it renders behind it.
+        <div className="fixed inset-0 z-[140] flex items-center justify-end p-4 md:p-8 bg-transparent pointer-events-none animate-in fade-in duration-200">
           <div
             className="w-full max-w-5xl bg-slate-950 rounded-[32px] shadow-2xl overflow-hidden flex flex-col h-full max-h-[850px] animate-in slide-in-from-right duration-500 pointer-events-auto border border-white/10"
             onClick={(e) => e.stopPropagation()}
           >
-        <ProAnnotationCanvas 
+            <ProAnnotationCanvas 
               mode="panel"
               enabledTools={["select", "pin", "boundary"]}
               imageUrl={activeImageSrc}
-          logoUrl={gallery.clientBranding?.url || tenant.logoUrl}
+              logoUrl={gallery.clientBranding?.url || tenant.logoUrl}
               initialTool={annotationInitialTool}
-          onSave={(data, blob) => {
-            setAnnotationData(data);
-            
-            if (blob) {
+              onSave={(data, blob) => {
+                setAnnotationData(data);
+                
+                if (blob) {
                   const persistUrl = URL.createObjectURL(blob);
                   const downloadUrl = URL.createObjectURL(blob);
                   addVersion(selectedAsset, {
@@ -2685,27 +2714,27 @@ export function GalleryPublicViewer({
                   });
 
                   // Optional: also open a download flow immediately
-              const markedUpAsset = {
-                ...selectedAsset,
-                id: `markup-${selectedAsset.id}`,
-                name: `MarkedUp-${selectedAsset.name}`,
-                isMarkup: true,
-                markupBlob: blob,
+                  const markedUpAsset = {
+                    ...selectedAsset,
+                    id: `markup-${selectedAsset.id}`,
+                    name: `MarkedUp-${selectedAsset.name}`,
+                    isMarkup: true,
+                    markupBlob: blob,
                     url: downloadUrl,
-              };
-              setDownloadAssets([markedUpAsset]);
-              setIsDownloadManagerOpen(true);
+                  };
+                  setDownloadAssets([markedUpAsset]);
+                  setIsDownloadManagerOpen(true);
                   setActiveTool("none");
-            } else {
-              // Fallback to standard edit request if no blob generated
-              setIsRequestingEdit(true);
+                } else {
+                  // Fallback to standard edit request if no blob generated
+                  setIsRequestingEdit(true);
                   setActiveTool("request");
-            }
-          }}
-          onCancel={() => {
+                }
+              }}
+              onCancel={() => {
                 setActiveTool("none");
-          }}
-        />
+              }}
+            />
           </div>
         </div>
       )}
