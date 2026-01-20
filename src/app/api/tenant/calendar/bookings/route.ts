@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getTenantPrisma } from "@/lib/tenant-guard";
+import { cached, tenantTag } from "@/lib/server-cache";
 
 // Range-based calendar bookings fetch (fast initial load + background prefetch)
 export async function GET(req: Request) {
@@ -24,33 +25,40 @@ export async function GET(req: Request) {
 
   // Fetch only what the calendar needs for rendering (details are opened via drawer).
   // IMPORTANT: Use overlap logic so events that span into the range still show (parity with old 120-day fetch).
-  const dbBookings = await tPrisma.booking.findMany({
-    where: {
-      deletedAt: null,
-      startAt: { lt: endAt },
-      endAt: { gt: startAt },
-    },
-    select: {
-      id: true,
-      title: true,
-      startAt: true,
-      endAt: true,
-      status: true,
-      propertyStatus: true,
-      clientId: true,
-      agentId: true,
-      isPlaceholder: true,
-      slotType: true,
-      internalNotes: true,
-      clientNotes: true,
-      client: { select: { id: true, name: true, businessName: true } },
-      property: { select: { id: true, name: true } },
-      services: { select: { serviceId: true, service: { select: { name: true } } } },
-      assignments: { select: { teamMemberId: true, teamMember: { select: { id: true, displayName: true, avatarUrl: true } } } },
-    },
-  });
-
+  const tenantId = String(session.user.tenantId || "");
   const { role, teamMemberId, clientId, agentId } = sessionUser;
+
+  const dbBookings = await cached(
+    "api:calendarBookings",
+    [tenantId, String(role || ""), String(teamMemberId || ""), String(clientId || ""), String(agentId || ""), startAt.toISOString(), endAt.toISOString()],
+    async () =>
+      await tPrisma.booking.findMany({
+        where: {
+          deletedAt: null,
+          startAt: { lt: endAt },
+          endAt: { gt: startAt },
+        },
+        select: {
+          id: true,
+          title: true,
+          startAt: true,
+          endAt: true,
+          status: true,
+          propertyStatus: true,
+          clientId: true,
+          agentId: true,
+          isPlaceholder: true,
+          slotType: true,
+          internalNotes: true,
+          clientNotes: true,
+          client: { select: { id: true, name: true, businessName: true } },
+          property: { select: { id: true, name: true } },
+          services: { select: { serviceId: true, service: { select: { name: true } } } },
+          assignments: { select: { teamMemberId: true, teamMember: { select: { id: true, displayName: true, avatarUrl: true } } } },
+        },
+      }),
+    { revalidateSeconds: 30, tags: [tenantTag(tenantId), `tenant:${tenantId}:calendar`] },
+  );
 
   const bookings = (dbBookings as any[])
     .map((b: any) => {

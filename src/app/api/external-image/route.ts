@@ -47,7 +47,7 @@ export async function GET(req: Request) {
     };
 
     // Default: proxy bytes as-is
-    if (profile !== "print") {
+    if (profile !== "print" && profile !== "hd") {
       const contentType = upstream.headers.get("content-type") || "application/octet-stream";
       return new Response(asArrayBuffer(sourceBytes), {
         status: 200,
@@ -58,10 +58,12 @@ export async function GET(req: Request) {
       });
     }
 
-    // Print profile: ensure a high-quality JPG that is >= 2MB
-    const MIN_BYTES = 2 * 1024 * 1024;
+    // Print/HD profiles: ensure a high-quality JPG with a large pixel dimension for crisp zoom.
+    // - print: >= 2MB
+    // - hd: >= 4MB (more aggressive), and prefer larger long-edge targets
+    const MIN_BYTES = profile === "hd" ? 4 * 1024 * 1024 : 2 * 1024 * 1024;
     const MAX_LONG_EDGE = 8000;
-    const TARGET_LONG_EDGES = [5000, 6500, 8000];
+    const TARGET_LONG_EDGES = profile === "hd" ? [6500, 8000] : [5000, 6500, 8000];
 
     const img = sharp(sourceBytes, { failOn: "none" });
     const meta = await img.metadata();

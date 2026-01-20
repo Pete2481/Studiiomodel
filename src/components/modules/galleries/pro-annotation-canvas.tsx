@@ -51,16 +51,33 @@ interface TextPin {
 
 interface ProAnnotationCanvasProps {
   imageUrl: string;
+  /**
+   * Optional higher-resolution source URL used ONLY for exporting the final JPEG.
+   * This lets the UI preview stay fast while exports keep original pixel dimensions.
+   */
+  exportImageUrl?: string;
   logoUrl?: string;
   onSave: (data: any, blob?: Blob) => void;
   onCancel: () => void;
+  initialTool?: "select" | "pin" | "boundary" | "text";
+  mode?: "overlay" | "panel";
+  enabledTools?: Array<"select" | "pin" | "boundary" | "text">;
 }
 
-export function ProAnnotationCanvas({ imageUrl, logoUrl, onSave, onCancel }: ProAnnotationCanvasProps) {
+export function ProAnnotationCanvas({
+  imageUrl,
+  exportImageUrl,
+  logoUrl,
+  onSave,
+  onCancel,
+  initialTool = "select",
+  mode = "overlay",
+  enabledTools,
+}: ProAnnotationCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
-  const [tool, setTool] = useState<"select" | "pin" | "boundary" | "text">("select");
+  const [tool, setTool] = useState<"select" | "pin" | "boundary" | "text">(initialTool);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [isImageLoaded, setIsImageLoaded] = useState(false);
   const [pins, setPins] = useState<LogoPin[]>([]);
@@ -82,8 +99,9 @@ export function ProAnnotationCanvas({ imageUrl, logoUrl, onSave, onCancel }: Pro
         const paddingH = 48; 
         const paddingV = 160; 
         
-        const cW = window.innerWidth - paddingH;
-        const cH = window.innerHeight - paddingV;
+        const bounds = container.getBoundingClientRect();
+        const cW = (mode === "panel" ? bounds.width : window.innerWidth) - paddingH;
+        const cH = (mode === "panel" ? bounds.height : window.innerHeight) - paddingV;
         
         if (cW <= 0 || cH <= 0) return;
 
@@ -112,11 +130,25 @@ export function ProAnnotationCanvas({ imageUrl, logoUrl, onSave, onCancel }: Pro
       };
 
       updateDimensions();
-      window.addEventListener('resize', updateDimensions);
-      return () => window.removeEventListener('resize', updateDimensions);
+      window.addEventListener("resize", updateDimensions);
+      return () => window.removeEventListener("resize", updateDimensions);
     };
     img.src = imageUrl;
-  }, [imageUrl]);
+  }, [imageUrl, mode]);
+
+  // Allow parent to open directly into a specific mode (pin vs boundary)
+  useEffect(() => {
+    const allowed = enabledTools && enabledTools.length ? enabledTools : (["select", "pin", "boundary", "text"] as const);
+    const next = (allowed as readonly string[]).includes(initialTool) ? initialTool : (allowed[0] as any);
+    setTool(next as any);
+    setSelectedId(null);
+    setEditingTextId(null);
+    setDragging(null);
+  }, [initialTool, enabledTools]);
+
+  const allowedTools = enabledTools && enabledTools.length ? enabledTools : ["select", "pin", "boundary", "text"];
+  const selectedPin = selectedId ? pins.find((p) => p.id === selectedId) : null;
+  const selectedPath = selectedId ? paths.find((p) => p.id === selectedId) : null;
 
   // Redraw loop
   useEffect(() => {
@@ -409,24 +441,48 @@ export function ProAnnotationCanvas({ imageUrl, logoUrl, onSave, onCancel }: Pro
 
   const [isSaving, setIsSaving] = useState(false);
 
-  const handleSave = async () => {
-    setIsSaving(true);
-    try {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      // 1. Create an export canvas at the image's original resolution for high quality
+  const loadImage = (src: string, opts?: { timeoutMs?: number }) => {
+    const timeoutMs = Math.max(1000, Number(opts?.timeoutMs || 8000));
+    return new Promise<HTMLImageElement>((resolve, reject) => {
       const img = new Image();
       img.crossOrigin = "anonymous";
-      img.src = imageUrl;
-      
-      await new Promise((resolve) => { img.onload = resolve; });
+      let done = false;
+      const t = window.setTimeout(() => {
+        if (done) return;
+        done = true;
+        reject(new Error(`Image load timeout (${timeoutMs}ms)`));
+      }, timeoutMs);
+      img.onload = () => {
+        if (done) return;
+        done = true;
+        window.clearTimeout(t);
+        resolve(img);
+      };
+      img.onerror = () => {
+        if (done) return;
+        done = true;
+        window.clearTimeout(t);
+        reject(new Error("Image failed to load"));
+      };
+      img.src = src;
+    });
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    let saved = false;
+    try {
+      const canvas = canvasRef.current;
+      if (!canvas) throw new Error("Canvas not ready");
+
+      // 1. Create an export canvas at the image's original resolution for high quality
+      const img = await loadImage(exportImageUrl || imageUrl, { timeoutMs: 12000 });
 
       const exportCanvas = document.createElement("canvas");
       exportCanvas.width = img.width;
       exportCanvas.height = img.height;
       const ctx = exportCanvas.getContext("2d");
-      if (!ctx) return;
+      if (!ctx) throw new Error("Export canvas context not available");
 
       // 2. Draw base image
       ctx.drawImage(img, 0, 0);
@@ -488,10 +544,13 @@ export function ProAnnotationCanvas({ imageUrl, logoUrl, onSave, onCancel }: Pro
 
         // Draw Logo
         if (logoUrl) {
-          const logoImg = new Image();
-          logoImg.crossOrigin = "anonymous";
-          logoImg.src = logoUrl;
-          await new Promise((resolve) => { logoImg.onload = resolve; });
+          let logoImg: HTMLImageElement | null = null;
+          try {
+            logoImg = await loadImage(logoUrl, { timeoutMs: 6000 });
+          } catch (e) {
+            // Don't block export if logo fails to load (CORS/404/etc).
+            logoImg = null;
+          }
           
           const size = pin.logoSize * (w / dimensions.width);
           
@@ -501,7 +560,15 @@ export function ProAnnotationCanvas({ imageUrl, logoUrl, onSave, onCancel }: Pro
           ctx.shadowOffsetX = 0;
           ctx.shadowOffsetY = 2 * (w / dimensions.width);
 
-          ctx.drawImage(logoImg, lx - size/2, ly - size/2, size, size);
+          if (logoImg) {
+            ctx.drawImage(logoImg, lx - size/2, ly - size/2, size, size);
+          } else {
+            // Fallback placeholder (so users still get a usable export)
+            ctx.beginPath();
+            ctx.fillStyle = "rgba(0,0,0,0.35)";
+            ctx.arc(lx, ly, Math.max(10, size / 2), 0, Math.PI * 2);
+            ctx.fill();
+          }
           
           // Reset shadow
           ctx.shadowColor = "transparent";
@@ -551,74 +618,91 @@ export function ProAnnotationCanvas({ imageUrl, logoUrl, onSave, onCancel }: Pro
       }
 
       // 6. Convert to Blob
-      exportCanvas.toBlob((blob) => {
-        if (blob) {
-          onSave({ pins, paths, textPins }, blob);
-        }
-        setIsSaving(false);
-      }, "image/jpeg", 0.95);
+      const blob = await new Promise<Blob | null>((resolve) => {
+        let settled = false;
+        const t = window.setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          resolve(null);
+        }, 15000);
+        exportCanvas.toBlob((b) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(t);
+          resolve(b);
+        }, "image/jpeg", 0.95);
+      });
+
+      if (!blob) throw new Error("Export failed (blob not generated)");
+      saved = true;
+      onSave({ pins, paths, textPins }, blob);
 
     } catch (err) {
       console.error("EXPORT ERROR:", err);
+      if (!saved) onSave({ pins, paths, textPins });
+    } finally {
       setIsSaving(false);
-      onSave({ pins, paths, textPins });
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-slate-950/95 backdrop-blur-xl p-4 md:p-8 animate-in fade-in duration-500 overflow-hidden">
+    <div
+      className={cn(
+        mode === "overlay"
+          ? "fixed inset-0 z-[200] flex flex-col items-center justify-center bg-slate-950/95 backdrop-blur-xl p-4 md:p-8 animate-in fade-in duration-500 overflow-hidden"
+          : "h-full w-full flex flex-col items-center justify-center bg-slate-950/95 p-4 md:p-6 overflow-hidden"
+      )}
+    >
       <div className="flex flex-col w-full h-full max-w-7xl gap-4 md:gap-6">
         {/* Toolbar */}
         <div className="flex items-center justify-between bg-white/10 backdrop-blur-md rounded-2xl border border-white/10 p-2 shrink-0 shadow-2xl">
           <div className="flex items-center gap-2">
             <button onClick={onCancel} className="h-10 px-4 rounded-xl text-white/60 hover:text-white hover:bg-white/10 transition-all text-xs font-bold flex items-center gap-2">
-              <X className="h-4 w-4" /> Cancel
+              <X className="h-4 w-4" /> Close
             </button>
-            <div className="w-px h-6 bg-white/10 mx-2" />
-            <ToolbarButton active={tool === "select"} onClick={() => setTool("select")} icon={<MousePointer2 className="h-4 w-4" />} title="Select & Move" />
-            <ToolbarButton active={tool === "pin"} onClick={() => setTool("pin")} icon={<MapPin className="h-4 w-4" />} title="Add Logo Pin" />
-            <ToolbarButton active={tool === "text"} onClick={() => setTool("text")} icon={<Type className="h-4 w-4" />} title="Add Text Label" />
-            <ToolbarButton active={tool === "boundary"} onClick={() => setTool("boundary")} icon={<PenTool className="h-4 w-4" />} title="Draw Boundary" />
-            
-            {selectedId && (
+
+            {/* Overlay mode keeps the tool buttons up top; panel mode moves controls to the side */}
+            {mode === "overlay" && (
               <>
                 <div className="w-px h-6 bg-white/10 mx-2" />
-                <button onClick={handleDelete} className="h-10 w-10 rounded-xl flex items-center justify-center text-rose-400 hover:bg-rose-500/10 transition-all">
-                  <Trash2 className="h-4 w-4" />
-                </button>
-                {paths.find(p => p.id === selectedId && !p.isClosed) && (
-                  <button onClick={handleClosePath} className="h-10 px-4 rounded-xl bg-blue-500 text-white text-[10px] font-black uppercase tracking-widest">
-                    Close Shape
-                  </button>
+                {allowedTools.includes("select") && (
+                  <ToolbarButton active={tool === "select"} onClick={() => setTool("select")} icon={<MousePointer2 className="h-4 w-4" />} title="Select & Move" />
+                )}
+                {allowedTools.includes("pin") && (
+                  <ToolbarButton active={tool === "pin"} onClick={() => setTool("pin")} icon={<MapPin className="h-4 w-4" />} title="Add Logo Pin" />
+                )}
+                {allowedTools.includes("text") && (
+                  <ToolbarButton active={tool === "text"} onClick={() => setTool("text")} icon={<Type className="h-4 w-4" />} title="Add Text Label" />
+                )}
+                {allowedTools.includes("boundary") && (
+                  <ToolbarButton active={tool === "boundary"} onClick={() => setTool("boundary")} icon={<PenTool className="h-4 w-4" />} title="Draw Boundary" />
                 )}
               </>
             )}
           </div>
 
           <div className="flex items-center gap-4 px-4">
-            <p className="text-[10px] font-black text-white/40 uppercase tracking-widest hidden sm:block">
-              Professional Annotation Suite
-            </p>
-            <button 
-              onClick={handleSave} 
+            <button
+              onClick={handleSave}
               disabled={isSaving}
               className="h-10 px-6 rounded-xl bg-white text-slate-950 text-xs font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all shadow-xl disabled:opacity-50"
             >
               {isSaving ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Preparing Download...
+                  <Loader2 className="h-4 w-4 animate-spin" /> Preparing...
                 </>
               ) : (
                 <>
-                  <Check className="h-4 w-4" /> Save & Download
+                  <Check className="h-4 w-4" /> Apply
                 </>
               )}
             </button>
           </div>
         </div>
 
-        {/* Drawing Area */}
-        <div ref={containerRef} className="flex-1 relative rounded-[32px] overflow-hidden bg-slate-900/50 border border-white/5 flex items-center justify-center">
+        {/* Drawing Area + Side Controls (panel mode) */}
+        <div className={cn("flex-1 flex gap-4 overflow-hidden", mode === "panel" ? "flex-col lg:flex-row" : "flex-col")}>
+          <div ref={containerRef} className="flex-1 relative rounded-[32px] overflow-hidden bg-slate-900/50 border border-white/5 flex items-center justify-center">
           {!isImageLoaded && (
             <div className="flex flex-col items-center gap-3">
               <Loader2 className="h-8 w-8 text-white/20 animate-spin" />
@@ -732,6 +816,148 @@ export function ProAnnotationCanvas({ imageUrl, logoUrl, onSave, onCancel }: Pro
               </div>
             ))}
           </div>
+        </div>
+
+          {mode === "panel" && (
+            <div className="w-full lg:w-[320px] shrink-0 rounded-[32px] bg-white/5 border border-white/10 p-6 overflow-y-auto custom-scrollbar">
+              <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-4">Tools</p>
+              <div className="grid grid-cols-3 gap-2">
+                {allowedTools.includes("select") && (
+                  <button
+                    type="button"
+                    onClick={() => setTool("select")}
+                    className={cn(
+                      "h-11 rounded-2xl border text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all",
+                      tool === "select" ? "bg-white text-slate-950 border-white" : "bg-white/0 text-white/70 border-white/10 hover:bg-white/5"
+                    )}
+                  >
+                    <MousePointer2 className="h-4 w-4" />
+                  </button>
+                )}
+                {allowedTools.includes("pin") && (
+                  <button
+                    type="button"
+                    onClick={() => setTool("pin")}
+                    className={cn(
+                      "h-11 rounded-2xl border text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all",
+                      tool === "pin" ? "bg-white text-slate-950 border-white" : "bg-white/0 text-white/70 border-white/10 hover:bg-white/5"
+                    )}
+                  >
+                    <MapPin className="h-4 w-4" />
+                  </button>
+                )}
+                {allowedTools.includes("boundary") && (
+                  <button
+                    type="button"
+                    onClick={() => setTool("boundary")}
+                    className={cn(
+                      "h-11 rounded-2xl border text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all",
+                      tool === "boundary" ? "bg-white text-slate-950 border-white" : "bg-white/0 text-white/70 border-white/10 hover:bg-white/5"
+                    )}
+                  >
+                    <PenTool className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+
+              <div className="mt-6 space-y-5">
+                <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">Selected</p>
+
+                {!selectedId && (
+                  <div className="p-4 rounded-2xl border border-white/10 bg-black/20 text-white/60 text-xs font-bold leading-relaxed">
+                    {tool === "pin"
+                      ? "Click on the photo to drop a pin. Then drag the logo/pin to position."
+                      : tool === "boundary"
+                        ? "Click to place boundary points. Select the path to adjust."
+                        : "Select an element to adjust its styling."}
+                  </div>
+                )}
+
+                {(!!selectedPin || !!selectedPath) && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">Colour</span>
+                      <input
+                        type="color"
+                        value={(selectedPin?.color || selectedPath?.color || "#ffffff") as any}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          if (selectedPin) {
+                            setPins((prev) => prev.map((p) => (p.id === selectedPin.id ? { ...p, color: next } : p)));
+                          }
+                          if (selectedPath) {
+                            setPaths((prev) => prev.map((p) => (p.id === selectedPath.id ? { ...p, color: next } : p)));
+                          }
+                        }}
+                        className="h-10 w-10 rounded-xl border border-white/10 bg-white/5 p-0 overflow-hidden cursor-pointer"
+                        aria-label="Color"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">Line width</span>
+                        <span className="text-[10px] font-black text-white/70">{selectedPin?.lineWidth ?? selectedPath?.lineWidth ?? 2}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={1}
+                        max={10}
+                        step={1}
+                        value={(selectedPin?.lineWidth ?? selectedPath?.lineWidth ?? 2) as any}
+                        onChange={(e) => {
+                          const next = Number(e.target.value);
+                          if (selectedPin) setPins((prev) => prev.map((p) => (p.id === selectedPin.id ? { ...p, lineWidth: next } : p)));
+                          if (selectedPath) setPaths((prev) => prev.map((p) => (p.id === selectedPath.id ? { ...p, lineWidth: next } : p)));
+                        }}
+                        className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary"
+                      />
+                    </div>
+
+                    {!!selectedPin && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">Logo size</span>
+                          <span className="text-[10px] font-black text-white/70">{selectedPin.logoSize}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={30}
+                          max={140}
+                          step={1}
+                          value={selectedPin.logoSize as any}
+                          onChange={(e) => {
+                            const next = Number(e.target.value);
+                            setPins((prev) => prev.map((p) => (p.id === selectedPin.id ? { ...p, logoSize: next } : p)));
+                          }}
+                          className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary"
+                        />
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleDelete}
+                        className="flex-1 h-11 rounded-2xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-200 font-black text-[10px] uppercase tracking-widest"
+                      >
+                        Delete
+                      </button>
+                      {selectedPath && !selectedPath.isClosed && (
+                        <button
+                          type="button"
+                          onClick={handleClosePath}
+                          className="flex-1 h-11 rounded-2xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-100 font-black text-[10px] uppercase tracking-widest"
+                        >
+                          Close shape
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

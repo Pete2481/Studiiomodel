@@ -5,6 +5,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { getTemporaryLink } from "./storage";
+import sharp from "sharp";
 
 export type AITaskType =
   | "sky_replacement"
@@ -18,10 +19,20 @@ const AUTO_REMOVE_ALL_ITEMS_PROMPT =
   "Remove ALL furniture and ALL movable items from this room (couches, chairs, tables, rugs/mats, lamps, plants, decor, wall art/frames, clutter). Leave the room completely empty. Preserve the room exactly: walls, doors, windows, trims, ceiling, floor materials and colors, lighting direction, camera angle, and perspective. Do not change architectural features. Professional real estate photography, high resolution.";
 const ROOM_EDITOR_GUARDRAILS =
   "Preserve the room EXACTLY: walls, ceiling, floor, doors, windows, trims, built-ins, colors, materials, lighting direction, camera angle, and perspective. Do not change architecture. Do not add new objects unless explicitly requested. Photorealistic, professional real estate photography, high resolution.";
+const DUSK_LIGHTING_ONLY_GUARDRAILS =
+  "LIGHTING-ONLY EDIT. Preserve the photo EXACTLY (like-for-like). Do NOT change any objects or geometry. " +
+  "Do NOT open/close blinds or curtains. Do NOT change window contents, reflections, or interior staging. " +
+  "Do NOT change landscaping/grass/trees, fences, bricks, roof tiles, driveway texture, vehicles, signs, or any natural environment. " +
+  "Do NOT add/remove objects. Do NOT alter perspective, framing, lens distortion, or sharpness/texture. " +
+  "Only change the sky color and overall lighting/color temperature to look like early dusk/golden hour. " +
+  "CRITICAL: Keep exposure like-for-like with the original daytime photo: bright and clear, no crushed shadows, no heavy darkening. " +
+  "Lift shadows as needed so grass/roof/brick remain clearly visible. Add gentle warm interior/exterior light glow without making the scene dark.";
 
 interface AIProcessResult {
   success: boolean;
   outputUrl?: string;
+  upscaled?: boolean;
+  upscaleSkippedReason?: string;
   error?: string;
 }
 
@@ -139,7 +150,11 @@ export async function processImageWithAI(
         model = "reve/edit-fast";
         input = {
           image: publicImageUrl,
-          prompt: "Transform this daytime photo into a beautiful early dusk / golden hour scene. Keep the overall image bright and clear, not too dark. Replace the sky with a stunning golden hour sky featuring soft pink, orange, and golden hues. Make the interior and architectural lights glow softly and warmly, ensuring the house remains the well-lit focal point with professional real estate lighting.",
+          prompt:
+            `${DUSK_LIGHTING_ONLY_GUARDRAILS}\n\n` +
+            `GOAL:\n` +
+            (prompt ||
+              "Transform this daytime photo into a beautiful early dusk / golden hour scene. Match the original exposure (bright and clear; NOT dark). Replace the sky with a stunning golden hour sky featuring soft pink, orange, and golden hues. Make existing interior and architectural lights glow softly and warmly (do not change blinds/curtains), ensuring the house remains the well-lit focal point with professional real estate lighting."),
         };
         break;
 
@@ -273,8 +288,41 @@ export async function processImageWithAI(
     }
 
     // --- HD UPSCALING STEP ---
-    const upscaleScale = taskType === "room_editor" ? 4 : 2;
-    console.log(`[AI_EDIT] Upscaling output to HD using nightmareai/real-esrgan (scale=${upscaleScale}) for URL length: ${outputUrl.length}`);
+    // Best-quality / like-for-like guardrail:
+    // ML upscalers (ESRGAN) can hallucinate textures (grass/roof/brick) on exterior photos.
+    // To avoid ruining details, only run the ML upscaler for room-style edits where it's safest.
+    if (taskType !== "room_editor") {
+      return {
+        success: true,
+        outputUrl: String(outputUrl),
+        upscaled: false,
+        upscaleSkippedReason: "disabled_for_task",
+      };
+    }
+
+    const upscaleScale = 4;
+
+    // Optional guardrail: skip expensive upscaling if the output is already huge.
+    // We keep this best-effort and never block the workflow if it fails.
+    try {
+      const res = await fetch(String(outputUrl), { cache: "no-store" });
+      if (res.ok) {
+        const bytes = Buffer.from(await res.arrayBuffer());
+        const meta = await sharp(bytes, { failOn: "none" }).metadata();
+        const w = Number(meta.width || 0);
+        const h = Number(meta.height || 0);
+        const longEdge = Math.max(w, h);
+        const SKIP_LONG_EDGE = 5600;
+        if (longEdge && longEdge >= SKIP_LONG_EDGE) {
+          console.log(`[AI_EDIT] Upscale skipped (already large): ${w}x${h} (longEdge=${longEdge})`);
+          return { success: true, outputUrl: String(outputUrl), upscaled: false, upscaleSkippedReason: "already_large" };
+        }
+      }
+    } catch (e) {
+      // Non-blocking: if we can't fetch/inspect, proceed with upscaling attempt.
+    }
+
+    console.log(`[AI_EDIT] Upscaling output to HD using nightmareai/real-esrgan (scale=${upscaleScale})`);
     try {
       const upscaleOutput: any = await replicate.run(
         "nightmareai/real-esrgan:b3ef194191d13140337468c916c2c5b96dd0cb06dffc032a022a31807f6a5ea8",
@@ -289,16 +337,16 @@ export async function processImageWithAI(
       
       const finalUrl = await extractUrl(upscaleOutput);
       if (finalUrl) {
-        console.log(`[AI_EDIT] HD Upscale complete: ${finalUrl?.substring(0, 100)}...`);
-        return { success: true, outputUrl: String(finalUrl) };
+        console.log(`[AI_EDIT] HD Upscale complete: ${String(finalUrl).substring(0, 100)}...`);
+        return { success: true, outputUrl: String(finalUrl), upscaled: true };
       }
     } catch (upscaleError) {
       console.error("[AI_EDIT_UPSCALER_ERROR]:", upscaleError);
       // Fallback to original output if upscaler fails
-      return { success: true, outputUrl: String(outputUrl) };
+      return { success: true, outputUrl: String(outputUrl), upscaled: false, upscaleSkippedReason: "upscaler_failed" };
     }
 
-    return { success: true, outputUrl: String(outputUrl) };
+    return { success: true, outputUrl: String(outputUrl), upscaled: false, upscaleSkippedReason: "no_upscale_url" };
   } catch (error: any) {
     console.error("[AI_EDIT_ERROR]:", error);
     

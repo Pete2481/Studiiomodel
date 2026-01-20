@@ -43,7 +43,7 @@ function clampInt(n: any, min: number, max: number) {
 
 async function getAiSuiteGlobalLimits(): Promise<AiSuiteGlobalLimits> {
   // Stored in a dedicated SystemConfig row (`id="aiSuite"`) using the Json field `welcomeEmailBlocks`.
-  const cfg = await prisma.systemConfig.upsert({
+  const cfg = await (prisma as any).systemConfig.upsert({
     where: { id: "aiSuite" },
     update: {},
     create: {
@@ -487,6 +487,70 @@ export async function runAiSuiteRoomEditor(args: {
   await incrementTenantAiSuiteUsage(gallery.tenantId, {
     model: "google/nano-banana",
     estimatedUsdDelta: 0.35,
+  });
+
+  return { success: true as const, outputUrl: String(result.outputUrl), aiSuite: nextAiSuite };
+}
+
+export async function runAiSuiteTask(args: {
+  galleryId: string;
+  assetUrl: string;
+  taskType: "day_to_dusk" | "sky_replacement" | "object_removal" | "virtual_staging";
+  prompt?: string;
+  dbxPath?: string;
+}) {
+  const session = await auth();
+  if (!session) return { success: false as const, error: "Unauthorized" };
+
+  const { galleryId, assetUrl, taskType, prompt, dbxPath } = args;
+  const gallery = await prisma.gallery.findUnique({
+    where: { id: galleryId },
+    select: { id: true, tenantId: true, clientId: true, metadata: true },
+  });
+  if (!gallery) return { success: false as const, error: "Gallery not found" };
+
+  const aiSuite = readAiSuiteMeta(gallery.metadata);
+  const remaining = aiSuite.remainingEdits ?? 0;
+  const unlocked = !!aiSuite.unlocked;
+
+  if (!unlocked) return { success: false as const, error: "AI_SUITE_LOCKED", aiSuite };
+  if (remaining <= 0) return { success: false as const, error: "AI_SUITE_LIMIT", aiSuite };
+
+  const unlockBlockId = aiSuite.unlockBlockId;
+  if (!unlockBlockId) return { success: false as const, error: "AI_SUITE_LOCKED", aiSuite };
+
+  const tenantAi = await getTenantAiSuiteSettings(gallery.tenantId);
+  if (!tenantAi.enabled && aiSuite.unlockType !== "trial") {
+    return { success: false as const, error: "AI_DISABLED", aiSuite };
+  }
+
+  const nextAiSuite: AiSuiteMeta = { ...aiSuite, remainingEdits: remaining - 1 };
+  await prisma.gallery.update({
+    where: { id: galleryId },
+    data: { metadata: writeAiSuiteMeta(gallery.metadata, nextAiSuite) },
+  });
+
+  try {
+    await ensureAiSuiteUnlockEditRequest({
+      tenantId: gallery.tenantId,
+      galleryId,
+      clientId: gallery.clientId || null,
+      requestedById: (session.user as any)?.id || null,
+      unlockBlockId,
+      mode: "backfill",
+    });
+  } catch (e) {
+    console.error("[AI_SUITE_BILLING] Failed to ensure unlock charge EditRequest:", e);
+  }
+
+  const result = await processImageWithAI(assetUrl, taskType as any, prompt, dbxPath, gallery.tenantId);
+  if (!result.success) {
+    return { success: false as const, error: result.error || "AI processing failed", aiSuite: nextAiSuite };
+  }
+
+  await incrementTenantAiSuiteUsage(gallery.tenantId, {
+    model: "reve/edit-fast",
+    estimatedUsdDelta: 0.20,
   });
 
   return { success: true as const, outputUrl: String(result.outputUrl), aiSuite: nextAiSuite };

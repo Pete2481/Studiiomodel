@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { getTenantPrisma } from "@/lib/tenant-guard";
 import { prisma } from "@/lib/prisma";
 import { google } from "googleapis";
+import sharp from "sharp";
 
 async function getGoogleDriveClient(tenantId: string) {
   const tPrisma = await getTenantPrisma(tenantId);
@@ -176,7 +177,38 @@ export async function saveAIResultToGoogleDrive({
     // 2. Download result
     const response = await fetch(resultUrl);
     if (!response.ok) throw new Error("Failed to download AI result");
-    const buffer = await response.arrayBuffer();
+    const sourceBytes = Buffer.from(await response.arrayBuffer());
+
+    // For exterior-style AI (dusk/sky), avoid ML upscalers but ensure high pixel dimensions for zoom.
+    let uploadBytes: Buffer = sourceBytes;
+    if (taskType === "day_to_dusk" || taskType === "sky_replacement") {
+      try {
+        const img = sharp(sourceBytes, { failOn: "none" });
+        const meta = await img.metadata();
+        const w = Number(meta.width || 0);
+        const h = Number(meta.height || 0);
+        const longEdge = Math.max(w, h);
+        const TARGET_LONG_EDGE = 6500;
+        const MAX_LONG_EDGE = 8000;
+        const effectiveTarget = Math.min(TARGET_LONG_EDGE, MAX_LONG_EDGE);
+
+        const needsUpscale = !!longEdge && longEdge < effectiveTarget;
+        const scale = needsUpscale ? effectiveTarget / longEdge : 1;
+        const newW = w ? Math.min(Math.round(w * scale), MAX_LONG_EDGE) : null;
+        const newH = h ? Math.min(Math.round(h * scale), MAX_LONG_EDGE) : null;
+
+        const pipeline =
+          needsUpscale && newW && newH
+            ? img.resize(newW, newH, { fit: "fill", kernel: sharp.kernel.lanczos3 })
+            : img;
+
+        uploadBytes = await pipeline
+          .jpeg({ quality: 95, chromaSubsampling: "4:4:4", mozjpeg: true })
+          .toBuffer();
+      } catch {
+        uploadBytes = sourceBytes;
+      }
+    }
 
     // 3. Determine new name
     const originalName = originalFile.data.name || "image.jpg";
@@ -196,7 +228,7 @@ export async function saveAIResultToGoogleDrive({
       },
       media: {
         mimeType: "image/jpeg",
-        body: Buffer.from(buffer),
+        body: uploadBytes,
       },
     });
 

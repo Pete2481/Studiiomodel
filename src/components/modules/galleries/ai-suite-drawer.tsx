@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { 
   Zap, 
   Sun, 
@@ -20,7 +20,7 @@ import { CameraLoader } from "@/components/ui/camera-loader";
 import { AITaskType } from "@/app/actions/ai-edit";
 import { saveAIResult } from "@/app/actions/storage";
 import dynamic from "next/dynamic";
-import { runAiSuiteRoomEditor } from "@/app/actions/ai-suite";
+import { runAiSuiteRoomEditor, runAiSuiteTask } from "@/app/actions/ai-suite";
 
 const DownloadManager = dynamic(() => import("./download-manager").then(m => m.DownloadManager), { ssr: false });
 
@@ -37,6 +37,10 @@ interface AISuiteDrawerProps {
   onRequireUnlock?: () => void;
   onAiSuiteUpdate?: (aiSuite: { unlocked?: boolean; remainingEdits?: number; unlockBlockId?: string | null }) => void;
   onComplete?: (newUrl: string) => void;
+  /** Optional: request a specific tool/preset from the parent toolbar. */
+  requestedAction?: "day_to_dusk" | "remove_furniture" | "replace_furniture" | "advanced_prompt";
+  /** Bump this when requestedAction changes to ensure the drawer reacts even if the action repeats. */
+  requestedActionNonce?: number;
 }
 
 export function AISuiteDrawer({ 
@@ -51,7 +55,9 @@ export function AISuiteDrawer({
   remainingEdits,
   onRequireUnlock,
   onAiSuiteUpdate,
-  onComplete
+  onComplete,
+  requestedAction,
+  requestedActionNonce
 }: AISuiteDrawerProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
@@ -63,6 +69,10 @@ export function AISuiteDrawer({
   const [isDownloadOpen, setIsDownloadOpen] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showReplaceStyles, setShowReplaceStyles] = useState(false);
+  const hdResultUrl =
+    resultUrl && typeof resultUrl === "string" && resultUrl.startsWith("http")
+      ? `/api/external-image?url=${encodeURIComponent(resultUrl)}&profile=hd`
+      : resultUrl;
   // Single tool: prompt-only room editing with Nano-Banana
   const tool = {
     id: "room_editor" as AITaskType,
@@ -132,6 +142,47 @@ export function AISuiteDrawer({
       "Remove ALL furniture and ALL movable items from this room (couches, chairs, tables, rugs/mats, lamps, plants, decor, wall art/frames, clutter). Leave the room completely empty. Do not change the room itself. Photorealistic.",
   } as const;
 
+  const runDusk = async () => {
+    if (!isUnlocked || remainingEdits <= 0) {
+      onRequireUnlock?.();
+      setError(remainingEdits <= 0 ? "AI Suite limit reached. Unlock another 15 edits to continue." : "Unlock AI Suite to run edits.");
+      return;
+    }
+
+    setIsProcessing(true);
+    setError(null);
+    setActiveTask("day_to_dusk");
+
+    try {
+      const result = await runAiSuiteTask({
+        galleryId,
+        assetUrl,
+        taskType: "day_to_dusk",
+        prompt: presetPrompts.dayToDusk,
+        dbxPath,
+      });
+
+      if (result.success && result.outputUrl) {
+        setResultUrl(result.outputUrl);
+        onAiSuiteUpdate?.(result.aiSuite as any);
+      } else {
+        if ((result as any).error === "AI_DISABLED") {
+          setError("AI Suite is currently disabled for this studio. Please ask the platform admin to enable AI for your workspace.");
+        } else if ((result as any).error === "AI_SUITE_LOCKED" || (result as any).error === "AI_SUITE_LIMIT") {
+          onAiSuiteUpdate?.((result as any).aiSuite);
+          onRequireUnlock?.();
+        }
+        if ((result as any).error !== "AI_DISABLED") {
+          setError((result as any).error || "AI processing failed. Please try again.");
+        }
+      }
+    } catch {
+      setError("An unexpected error occurred.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const furnitureStyles = [
     { id: "rattan", label: "Rattan", prompt: "Replace ALL furniture with high-end rattan furniture (coastal luxury). Keep room unchanged otherwise. Photorealistic." },
     { id: "modern", label: "Modern", prompt: "Replace ALL furniture with modern luxury furniture (clean lines, neutral tones). Keep room unchanged otherwise. Photorealistic." },
@@ -146,6 +197,47 @@ export function AISuiteDrawer({
     setShowReplaceStyles(false);
     await runWithPrompt(p);
   };
+
+  // Allow parent toolbar buttons to deep-link into a specific preset/mode.
+  const lastHandledRequestNonceRef = useRef<number>(-1);
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!requestedAction) return;
+    // Only handle each toolbar request once (prevents re-running when remainingEdits updates).
+    const nonce = typeof requestedActionNonce === "number" ? requestedActionNonce : 0;
+    if (lastHandledRequestNonceRef.current === nonce) return;
+    // If we already have a result on-screen, don’t auto-run again.
+    if (resultUrl || isProcessing) return;
+    // If locked, trigger the same unlock flow used elsewhere.
+    if (!isUnlocked || remainingEdits <= 0) {
+      onRequireUnlock?.();
+      lastHandledRequestNonceRef.current = nonce;
+      return;
+    }
+    if (requestedAction === "day_to_dusk") {
+      lastHandledRequestNonceRef.current = nonce;
+      void runDusk();
+      return;
+    }
+    if (requestedAction === "remove_furniture") {
+      lastHandledRequestNonceRef.current = nonce;
+      void runPreset(presetPrompts.removeAllFurniture);
+      return;
+    }
+    if (requestedAction === "replace_furniture") {
+      setShowAdvanced(false);
+      setShowReplaceStyles(true);
+      lastHandledRequestNonceRef.current = nonce;
+      return;
+    }
+    if (requestedAction === "advanced_prompt") {
+      setShowReplaceStyles(false);
+      setShowAdvanced(true);
+      lastHandledRequestNonceRef.current = nonce;
+      return;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, requestedAction, requestedActionNonce, resultUrl, isProcessing, isUnlocked, remainingEdits]);
 
   const handleSaveToStorage = async () => {
     if (!resultUrl || !dbxPath || !tenantId || !activeTask) return;
@@ -227,6 +319,26 @@ export function AISuiteDrawer({
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar">
+          {/* Context Preview (keeps orientation when the panel is open) */}
+          {!resultUrl && !!assetUrl && (
+            <div className="mx-8 mt-8">
+              <div className="relative aspect-[4/3] rounded-[32px] overflow-hidden border border-white/10 bg-slate-900/60">
+                <img
+                  src={assetUrl}
+                  alt={assetName}
+                  className="h-full w-full object-cover opacity-90"
+                  onError={(e) => {
+                    try {
+                      (e.currentTarget as any).style.opacity = "0.2";
+                    } catch {
+                      // ignore
+                    }
+                  }}
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-transparent" />
+              </div>
+            </div>
+          )}
           {error && (
             <div className="mx-8 mt-8 p-6 rounded-[32px] bg-rose-500/10 border border-rose-500/20 flex flex-col gap-3 text-rose-500 animate-in zoom-in-95">
               <div className="flex items-center gap-3 font-bold text-xs">
@@ -415,7 +527,7 @@ export function AISuiteDrawer({
                   AI Enhancement Complete
                 </p>
                 <div className="relative aspect-[4/3] rounded-[40px] overflow-hidden border border-white/10 bg-slate-900 shadow-2xl shadow-primary/10">
-                  <img src={resultUrl} alt="AI Result" className="h-full w-full object-cover" />
+                  <img src={hdResultUrl || resultUrl || ""} alt="AI Result" className="h-full w-full object-cover" />
                 </div>
               </div>
 
