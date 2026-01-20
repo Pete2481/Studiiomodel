@@ -3,8 +3,8 @@ import { redirect } from "next/navigation";
 import { checkSubscriptionStatus } from "@/lib/tenant-guard";
 import { prisma } from "@/lib/prisma";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
-import { SidebarSkeleton } from "@/components/layout/sidebar-skeleton";
 import { Suspense } from "react";
+import { PageLoader } from "@/components/ui/page-loader";
 
 export default async function DashboardLayout({
   children,
@@ -86,30 +86,15 @@ async function ShellDataWrapper({
 // This is what the user sees for the first 100ms while the DB is hit
 function DashboardShellPlaceholder({ user }: { user: any }) {
   return (
-    <div className="flex min-h-screen bg-slate-50">
-      {/* Ghost Sidebar */}
-      <aside className="w-24 lg:w-72 border-r border-slate-200 bg-white hidden lg:block">
-        <SidebarSkeleton isCollapsed={false} />
-      </aside>
-      
-      {/* Ghost Main Content */}
-      <main className="flex-1 min-w-0">
-        <header className="h-20 bg-white/80 border-b border-slate-200 px-10 flex items-center justify-between backdrop-blur-md">
-          <div className="h-6 w-48 bg-slate-100 rounded animate-pulse" />
-          <div className="flex gap-4">
-            <div className="h-10 w-32 bg-slate-100 rounded-xl animate-pulse" />
-            <div className="h-10 w-10 bg-slate-100 rounded-full animate-pulse" />
-          </div>
-        </header>
-        <div className="p-10 max-w-[1600px] mx-auto space-y-12">
-          <div className="h-32 w-full bg-slate-100 rounded-[40px] animate-pulse" />
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            {[1, 2, 3, 4].map(i => (
-              <div key={i} className="h-40 bg-slate-100 rounded-[40px] animate-pulse" />
-            ))}
-          </div>
-        </div>
-      </main>
-    </div>
+    <DashboardShell
+      user={user}
+      workspaceName="Loading…"
+      workspaceSlug={undefined}
+      logoUrl={undefined}
+      brandColor={undefined}
+      isActionLocked={false}
+    >
+      <PageLoader message="Loading your workspace…" />
+    </DashboardShell>
   );
 }

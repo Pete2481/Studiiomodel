@@ -8,6 +8,7 @@ import { Hint } from "@/components/ui";
 import { MetricCards, type MetricSummary } from "@/components/dashboard/metric-cards";
 import { DashboardGalleries } from "@/components/dashboard/dashboard-galleries";
 import { BookingList, type BookingListBooking } from "@/components/dashboard/booking-list";
+import { CameraLoader } from "@/components/ui/camera-loader";
 
 type DashboardSummaryPayload = {
   success: boolean;
@@ -161,9 +162,20 @@ export function DashboardSummaryClient({
   }, [tenantId]);
 
   const isActionLocked = !!data?.isActionLocked;
+  const showInitialOverlay = loading && !data;
 
   return (
-    <div className="grid gap-8 md:gap-12 w-full">
+    <div className="relative grid gap-8 md:gap-12 w-full">
+      {showInitialOverlay ? (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 backdrop-blur-sm rounded-[32px]">
+          <div className="flex flex-col items-center gap-6">
+            <CameraLoader size="sm" color="var(--primary)" className="text-primary" />
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 animate-pulse">
+              Loading dashboard…
+            </p>
+          </div>
+        </div>
+      ) : null}
       {data?.metrics ? <MetricCards metrics={data.metrics} /> : <MetricCardsSkeleton />}
 
       {data?.featuredGalleries ? (
