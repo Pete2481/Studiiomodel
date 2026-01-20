@@ -1724,6 +1724,8 @@ export function GalleryPublicViewer({
                               name: `${activeVersion.label}-${selectedAsset.name}`,
                               isMarkup: true,
                               markupBlob: activeVersion.blob,
+                              originalPath: selectedAsset.path,
+                              originalName: selectedAsset.name,
                               url: downloadUrl,
                             };
                             setDownloadAssets([vAsset]);
@@ -1732,8 +1734,10 @@ export function GalleryPublicViewer({
                               ...selectedAsset,
                               id: `version-${selectedAsset.id}-${activeVersion.id}`,
                               name: `${activeVersion.label}-${selectedAsset.name}`,
-                              path: undefined,
                               url: activeVersion.src,
+                              originalPath: selectedAsset.path,
+                              originalName: selectedAsset.name,
+                              isAiResult: activeVersion.tool === "ai",
                             };
                             setDownloadAssets([vAsset]);
                           }
@@ -1869,6 +1873,8 @@ export function GalleryPublicViewer({
                       name: `${activeTool === "color" ? "Colour" : "Social"}-${selectedAsset.name}`,
                       isMarkup: true,
                   markupBlob: blob,
+                      originalPath: selectedAsset.path,
+                      originalName: selectedAsset.name,
                       url: downloadUrl,
                 };
                 setDownloadAssets([editedAsset]);
@@ -2736,6 +2742,7 @@ export function GalleryPublicViewer({
                     isMarkup: true,
                     markupBlob: blob,
                     originalName: selectedAsset.name,
+                    originalPath: selectedAsset.path,
                     url: downloadUrl,
                   };
                   setDownloadAssets([markedUpAsset]);

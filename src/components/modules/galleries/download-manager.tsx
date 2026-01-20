@@ -65,11 +65,14 @@ export function DownloadManager({
       const asset = assets[0];
 
       // Markup save path: upload the generated blob back to Dropbox next to original.
-      if (asset?.isMarkup && asset?.markupBlob && asset?.path && tenantId) {
+      const originalPath = String(asset?.originalPath || asset?.path || "");
+      const originalName = String(asset?.originalName || asset?.name || "");
+
+      if (asset?.isMarkup && asset?.markupBlob && originalPath && tenantId) {
         const fd = new FormData();
         fd.set("tenantId", String(tenantId));
-        fd.set("originalPath", String(asset.path || ""));
-        fd.set("originalName", String(asset.originalName || asset.name || "Markup.jpg"));
+        fd.set("originalPath", originalPath);
+        fd.set("originalName", originalName);
         fd.set("file", new File([asset.markupBlob], String(asset.name || "Markup.jpg"), { type: "image/jpeg" }));
 
         const res = await fetch(`/api/dropbox/upload-markup-sibling/${galleryId}`, {
@@ -88,6 +91,27 @@ export function DownloadManager({
       }
 
       // AI save path (existing behavior)
+      if (asset?.isAiResult && tenantId && originalPath && typeof asset?.url === "string" && asset.url.startsWith("http")) {
+        const res: any = await saveAIResultSiblingToDropbox({
+          tenantId: String(tenantId),
+          galleryId,
+          resultUrl: String(asset.url),
+          originalPath,
+          originalName,
+        });
+        if (res?.success) {
+          setSaveStatus("saved");
+          setSavePath(String(res?.path || res?.name || ""));
+          return res;
+        }
+        setSaveStatus("error");
+        setSaveError(String(res?.error || "Save failed"));
+        if (String(res?.code || "") === "MISSING_SCOPE") {
+          setSaveReconnectUrl("/api/auth/dropbox");
+        }
+        return res;
+      }
+
       if (!aiSaveToDropbox) return null;
       const res: any = await saveAIResultSiblingToDropbox({
         tenantId: aiSaveToDropbox.tenantId,
@@ -294,7 +318,11 @@ export function DownloadManager({
               )}
 
               {/* Save to Dropbox Toggle (single AI result only) */}
-              {(assets.length === 1 && ((!!aiSaveToDropbox) || (!!tenantId && !!assets[0]?.isMarkup && !!assets[0]?.markupBlob && !!assets[0]?.path))) && (
+              {(assets.length === 1 && (
+                (!!aiSaveToDropbox) ||
+                (!!tenantId && !!assets[0]?.isMarkup && !!assets[0]?.markupBlob && !!(assets[0]?.originalPath || assets[0]?.path)) ||
+                (!!tenantId && !!assets[0]?.isAiResult && !!(assets[0]?.originalPath || assets[0]?.path) && typeof assets[0]?.url === "string" && assets[0].url.startsWith("http"))
+              )) && (
                 <div
                   className="p-5 rounded-[24px] bg-sky-50/50 border border-sky-100 flex items-center justify-between group cursor-pointer"
                   onClick={() => setSaveToDropbox(!saveToDropbox)}
@@ -349,7 +377,11 @@ export function DownloadManager({
               )}
 
               {/* Save Only button (single AI result + toggle enabled) */}
-              {(assets.length === 1 && ((!!aiSaveToDropbox) || (!!tenantId && !!assets[0]?.isMarkup && !!assets[0]?.markupBlob && !!assets[0]?.path))) && saveToDropbox && (
+              {(assets.length === 1 && (
+                (!!aiSaveToDropbox) ||
+                (!!tenantId && !!assets[0]?.isMarkup && !!assets[0]?.markupBlob && !!(assets[0]?.originalPath || assets[0]?.path)) ||
+                (!!tenantId && !!assets[0]?.isAiResult && !!(assets[0]?.originalPath || assets[0]?.path) && typeof assets[0]?.url === "string" && assets[0].url.startsWith("http"))
+              )) && saveToDropbox && (
                 <button
                   onClick={async () => {
                     await runSaveToDropbox();
