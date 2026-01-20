@@ -20,7 +20,7 @@ import { CameraLoader } from "@/components/ui/camera-loader";
 import { AITaskType } from "@/app/actions/ai-edit";
 import { saveAIResult } from "@/app/actions/storage";
 import dynamic from "next/dynamic";
-import { runAiSuiteRoomEditor } from "@/app/actions/ai-suite";
+import { runAiSuiteRoomEditor, runAiSuiteTask } from "@/app/actions/ai-suite";
 
 const DownloadManager = dynamic(() => import("./download-manager").then(m => m.DownloadManager), { ssr: false });
 
@@ -138,6 +138,47 @@ export function AISuiteDrawer({
       "Remove ALL furniture and ALL movable items from this room (couches, chairs, tables, rugs/mats, lamps, plants, decor, wall art/frames, clutter). Leave the room completely empty. Do not change the room itself. Photorealistic.",
   } as const;
 
+  const runDusk = async () => {
+    if (!isUnlocked || remainingEdits <= 0) {
+      onRequireUnlock?.();
+      setError(remainingEdits <= 0 ? "AI Suite limit reached. Unlock another 15 edits to continue." : "Unlock AI Suite to run edits.");
+      return;
+    }
+
+    setIsProcessing(true);
+    setError(null);
+    setActiveTask("day_to_dusk");
+
+    try {
+      const result = await runAiSuiteTask({
+        galleryId,
+        assetUrl,
+        taskType: "day_to_dusk",
+        prompt: presetPrompts.dayToDusk,
+        dbxPath,
+      });
+
+      if (result.success && result.outputUrl) {
+        setResultUrl(result.outputUrl);
+        onAiSuiteUpdate?.(result.aiSuite as any);
+      } else {
+        if ((result as any).error === "AI_DISABLED") {
+          setError("AI Suite is currently disabled for this studio. Please ask the platform admin to enable AI for your workspace.");
+        } else if ((result as any).error === "AI_SUITE_LOCKED" || (result as any).error === "AI_SUITE_LIMIT") {
+          onAiSuiteUpdate?.((result as any).aiSuite);
+          onRequireUnlock?.();
+        }
+        if ((result as any).error !== "AI_DISABLED") {
+          setError((result as any).error || "AI processing failed. Please try again.");
+        }
+      }
+    } catch {
+      setError("An unexpected error occurred.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const furnitureStyles = [
     { id: "rattan", label: "Rattan", prompt: "Replace ALL furniture with high-end rattan furniture (coastal luxury). Keep room unchanged otherwise. Photorealistic." },
     { id: "modern", label: "Modern", prompt: "Replace ALL furniture with modern luxury furniture (clean lines, neutral tones). Keep room unchanged otherwise. Photorealistic." },
@@ -171,7 +212,7 @@ export function AISuiteDrawer({
     }
     if (requestedAction === "day_to_dusk") {
       lastHandledRequestNonceRef.current = nonce;
-      void runPreset(presetPrompts.dayToDusk);
+      void runDusk();
       return;
     }
     if (requestedAction === "remove_furniture") {
