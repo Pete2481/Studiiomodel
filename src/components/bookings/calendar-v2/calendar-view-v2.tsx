@@ -11,7 +11,7 @@ import { permissionService } from "@/lib/permission-service";
 import { BookingPopoverV2 } from "./booking-popover-v2";
 import { deleteBooking, rescheduleBooking, upsertBooking } from "@/app/actions/booking-upsert";
 import dynamic from "next/dynamic";
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Settings } from "lucide-react";
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Loader2, Plus, Settings } from "lucide-react";
 import { getSunTimesForLatLonRange } from "@/app/actions/weather";
 
 const BusinessHoursModal = dynamic(() => import("../business-hours-modal").then((m) => m.BusinessHoursModal), { ssr: false });
@@ -155,6 +155,28 @@ export function CalendarViewV2(props: {
   const [popoverAnchor, setPopoverAnchor] = useState<{ left: number; top: number; right: number; bottom: number; width: number; height: number } | null>(null);
   const [popoverRestore, setPopoverRestore] = useState<{ key: number; form: any } | null>(null);
   const [saveErrorMsg, setSaveErrorMsg] = useState<string | null>(null);
+
+  // Track in-flight background saves (per-booking) so the card can show a spinner.
+  const [savingByBookingId, setSavingByBookingId] = useState<Record<string, boolean>>({});
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const setBookingSaving = (id: string, saving: boolean) => {
+    const key = String(id || "");
+    if (!key) return;
+    if (!isMountedRef.current) return;
+    setSavingByBookingId((prev) => {
+      const next = { ...(prev || {}) };
+      if (saving) next[key] = true;
+      else delete next[key];
+      return next;
+    });
+  };
 
   type PendingMoveConfirm = {
     open: boolean;
@@ -1261,43 +1283,68 @@ export function CalendarViewV2(props: {
     [isTenantStaff, updateBookingTimesLocal]
   );
 
-  const confirmAndPersistMove = async (mode: "tenant_send" | "tenant_save" | "tenant_pencilled" | "client_confirm") => {
+  const confirmAndPersistMove = (mode: "tenant_send" | "tenant_save" | "tenant_pencilled" | "client_confirm") => {
     if (!moveConfirm?.bookingId) return;
-    const bookingId = String(moveConfirm.bookingId);
-    setMoveConfirm((cur) => (cur ? { ...cur, saving: true } : cur));
 
-    const status = mode === "tenant_pencilled" ? "PENCILLED" : mode === "client_confirm" ? "REQUESTED" : undefined;
-    const res = await rescheduleBooking({
-      id: bookingId,
-      startAt: moveConfirm.newStartAt,
-      endAt: moveConfirm.newEndAt,
-      status,
-    });
+    // Snapshot everything needed before closing UI (instant UX).
+    const snapshot = {
+      bookingId: String(moveConfirm.bookingId),
+      oldStartAt: String(moveConfirm.oldStartAt),
+      oldEndAt: String(moveConfirm.oldEndAt),
+      newStartAt: String(moveConfirm.newStartAt),
+      newEndAt: String(moveConfirm.newEndAt),
+    };
+    const revert = moveRevertRef.current;
 
-    if (!(res as any)?.success) {
-      updateBookingTimesLocal(bookingId, moveConfirm.oldStartAt, moveConfirm.oldEndAt);
-      try {
-        moveRevertRef.current?.();
-      } catch {
-        // ignore
-      }
-      moveRevertRef.current = null;
-      setMoveConfirm(null);
-      flashSaveError(String((res as any)?.error || "Save failed. Please try again."));
-      return;
-    }
-
-    const calendarBooking = (res as any)?.booking;
-    if (calendarBooking) {
-      const lite = toLiteFromCalendarBooking(calendarBooking);
-      setBookings((prev) => mergeBookingsById(prev, [lite]));
-    }
-
-    if (mode === "tenant_send") void sendBookingEmail(bookingId, "BOOKING_UPDATED");
-    if (mode === "client_confirm") void sendBookingEmail(bookingId, "BOOKING_CHANGE_REQUESTED");
-
+    // Close modal immediately
     moveRevertRef.current = null;
     setMoveConfirm(null);
+
+    // Show spinner on the booking card while saving in the background.
+    setBookingSaving(snapshot.bookingId, true);
+
+    void (async () => {
+      try {
+        const status =
+          mode === "tenant_pencilled"
+            ? "PENCILLED"
+            : mode === "client_confirm"
+              ? "REQUESTED"
+              : undefined;
+
+        const res = await rescheduleBooking({
+          id: snapshot.bookingId,
+          startAt: snapshot.newStartAt,
+          endAt: snapshot.newEndAt,
+          status,
+        });
+
+        if (!(res as any)?.success) {
+          // Revert local view + FullCalendar drag state if save fails.
+          updateBookingTimesLocal(snapshot.bookingId, snapshot.oldStartAt, snapshot.oldEndAt);
+          try {
+            revert?.();
+          } catch {
+            // ignore
+          }
+          if (isMountedRef.current) {
+            flashSaveError(String((res as any)?.error || "Save failed. Please try again."));
+          }
+          return;
+        }
+
+        const calendarBooking = (res as any)?.booking;
+        if (calendarBooking && isMountedRef.current) {
+          const lite = toLiteFromCalendarBooking(calendarBooking);
+          setBookings((prev) => mergeBookingsById(prev, [lite]));
+        }
+
+        if (mode === "tenant_send") void sendBookingEmail(snapshot.bookingId, "BOOKING_UPDATED");
+        if (mode === "client_confirm") void sendBookingEmail(snapshot.bookingId, "BOOKING_CHANGE_REQUESTED");
+      } finally {
+        setBookingSaving(snapshot.bookingId, false);
+      }
+    })();
   };
 
   const handleEventDrop = useCallback(async (info: any) => {
@@ -2161,6 +2208,7 @@ export function CalendarViewV2(props: {
           eventContent={(eventInfo) => {
             if (eventInfo.event.display === "background") return null;
 
+            const bookingId = String(eventInfo.event.id || "");
             const isMasked = !!eventInfo.event.extendedProps.isMasked;
             const isPlaceholder = !!eventInfo.event.extendedProps.isPlaceholder;
             const status = String(eventInfo.event.extendedProps.status || "REQUESTED").toUpperCase();
@@ -2169,6 +2217,7 @@ export function CalendarViewV2(props: {
             const isSunSlot = isPlaceholder && (slotType === "SUNRISE" || slotType === "DUSK") && String(eventInfo.event.id || "").startsWith("sun-slot-");
             const config = getStatusConfig(status, isMasked);
             const gradient = !isPlaceholder ? getStatusGradient(status, isMasked) : "none";
+            const isSavingThis = !!savingByBookingId[bookingId];
 
             const teamAvatars = (eventInfo.event.extendedProps.teamAvatars || []) as string[];
             const teamCount = Number(eventInfo.event.extendedProps.teamCount || 0);
@@ -2208,7 +2257,13 @@ export function CalendarViewV2(props: {
 
                 {/* Status dot */}
                 {!isPlaceholder && (
-                  <div className={cn("absolute right-2 top-2 md:right-3 md:top-3 h-2 w-2 md:h-2.5 md:w-2.5 rounded-full", config.dot, "hidden sm:block")} />
+                  isSavingThis ? (
+                    <div className="absolute right-2 top-2 md:right-3 md:top-3 h-7 w-7 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center">
+                      <Loader2 className="h-4 w-4 animate-spin text-slate-600" />
+                    </div>
+                  ) : (
+                    <div className={cn("absolute right-2 top-2 md:right-3 md:top-3 h-2 w-2 md:h-2.5 md:w-2.5 rounded-full", config.dot, "hidden sm:block")} />
+                  )
                 )}
 
                 {/* Team avatars + +N */}
