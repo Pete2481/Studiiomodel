@@ -168,7 +168,7 @@ export function DownloadManager({
           // If this is an external (AI) URL without a Dropbox path, proxy it through our server
           const isExternalUrl = typeof asset.url === "string" && asset.url.startsWith("http") && !asset.path;
           const downloadUrl = isExternalUrl
-            ? `/api/external-image?url=${encodeURIComponent(asset.url)}${resolution === "original" ? "&profile=print" : ""}`
+            ? `/api/external-image?url=${encodeURIComponent(asset.url)}${resolution === "original" ? "&profile=hd" : ""}`
             : `/api/dropbox/download/${galleryId}?path=${encodeURIComponent(asset.path)}&sharedLink=${encodeURIComponent(sharedLink || "")}&applyBranding=${applyBranding}`;
 
           const response = await fetch(downloadUrl);

@@ -5,6 +5,7 @@ import { getTenantPrisma } from "@/lib/tenant-guard";
 import { prisma } from "@/lib/prisma";
 import { cleanDropboxLink } from "@/lib/utils";
 import path from "path";
+import sharp from "sharp";
 
 /**
  * Refreshes the Dropbox access token using the refresh token.
@@ -545,7 +546,39 @@ export async function saveAIResultToDropbox({
     // 1. Download the image from the AI URL
     const imageResponse = await fetch(resultUrl);
     if (!imageResponse.ok) throw new Error("Failed to download AI result");
-    const imageBlob = await imageResponse.arrayBuffer();
+    const imageBytes = Buffer.from(await imageResponse.arrayBuffer());
+
+    // 1b. For exterior-style AI (dusk/sky), avoid ML upscalers but ensure high pixel dimensions for zoom.
+    // This is deterministic (Lanczos resize + high-quality JPEG) and should not hallucinate textures.
+    let uploadBytes: Buffer = imageBytes;
+    if (taskType === "day_to_dusk" || taskType === "sky_replacement") {
+      try {
+        const img = sharp(imageBytes, { failOn: "none" });
+        const meta = await img.metadata();
+        const w = Number(meta.width || 0);
+        const h = Number(meta.height || 0);
+        const longEdge = Math.max(w, h);
+        const TARGET_LONG_EDGE = 6500;
+        const MAX_LONG_EDGE = 8000;
+        const effectiveTarget = Math.min(TARGET_LONG_EDGE, MAX_LONG_EDGE);
+
+        const needsUpscale = !!longEdge && longEdge < effectiveTarget;
+        const scale = needsUpscale ? effectiveTarget / longEdge : 1;
+        const newW = w ? Math.min(Math.round(w * scale), MAX_LONG_EDGE) : null;
+        const newH = h ? Math.min(Math.round(h * scale), MAX_LONG_EDGE) : null;
+
+        const pipeline = needsUpscale && newW && newH
+          ? img.resize(newW, newH, { fit: "fill", kernel: sharp.kernel.lanczos3 })
+          : img;
+
+        uploadBytes = await pipeline
+          .jpeg({ quality: 95, chromaSubsampling: "4:4:4", mozjpeg: true })
+          .toBuffer();
+      } catch (e) {
+        // non-blocking: fall back to original bytes
+        uploadBytes = imageBytes;
+      }
+    }
 
     // 2. Determine target path
     // Original: /Production/House/Kitchen.jpg -> Target: /Production/House/Kitchen_AI_Sky.jpg
@@ -572,7 +605,8 @@ export async function saveAIResultToDropbox({
             mute: false
           })
         },
-        body: imageBlob
+        // Node runtime supports Buffer bodies; cast keeps TS happy under DOM fetch typings.
+        body: uploadBytes as any
       });
     };
 

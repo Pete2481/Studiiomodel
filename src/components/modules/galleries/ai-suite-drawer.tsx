@@ -69,6 +69,10 @@ export function AISuiteDrawer({
   const [isDownloadOpen, setIsDownloadOpen] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showReplaceStyles, setShowReplaceStyles] = useState(false);
+  const hdResultUrl =
+    resultUrl && typeof resultUrl === "string" && resultUrl.startsWith("http")
+      ? `/api/external-image?url=${encodeURIComponent(resultUrl)}&profile=hd`
+      : resultUrl;
   // Single tool: prompt-only room editing with Nano-Banana
   const tool = {
     id: "room_editor" as AITaskType,
@@ -523,7 +527,7 @@ export function AISuiteDrawer({
                   AI Enhancement Complete
                 </p>
                 <div className="relative aspect-[4/3] rounded-[40px] overflow-hidden border border-white/10 bg-slate-900 shadow-2xl shadow-primary/10">
-                  <img src={resultUrl} alt="AI Result" className="h-full w-full object-cover" />
+                  <img src={hdResultUrl || resultUrl || ""} alt="AI Result" className="h-full w-full object-cover" />
                 </div>
               </div>
 
