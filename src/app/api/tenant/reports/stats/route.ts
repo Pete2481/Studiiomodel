@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getTenantPrisma } from "@/lib/tenant-guard";
+import { cached, tenantTag } from "@/lib/server-cache";
 import {
   startOfMonth,
   endOfMonth,
@@ -33,7 +34,6 @@ export async function GET(req: Request) {
   const periodStart = view === "month" ? startOfMonth(baseDate) : startOfWeek(baseDate, { weekStartsOn: 1 });
   const periodEnd = view === "month" ? endOfMonth(baseDate) : endOfWeek(baseDate, { weekStartsOn: 1 });
 
-  const tPrisma = await getTenantPrisma();
   const user = session.user as any;
   const tenantId = session.user.tenantId as string;
   const canViewAll = user.role === "TENANT_ADMIN" || user.role === "ADMIN";
@@ -56,56 +56,67 @@ export async function GET(req: Request) {
   const yearStart = startOfYear(periodStart);
   const yearEnd = endOfYear(periodStart);
 
+  // Cache per-tenant + scope + selected period (short TTL).
+  const tPrisma = await getTenantPrisma();
+  const scopeKey = `${String(user.role || "")}:${String(user.clientId || "")}:${String(user.agentId || "")}`;
+  const cacheKey = `${view}:${format(periodStart, "yyyy-MM-dd")}`;
+
   // Fetch only what we need (range-scoped), not entire history.
-  const [tenant, invoicesInYear, invoicesOutstanding, completedJobsInPeriod] = await Promise.all([
-    tPrisma.tenant.findUnique({
-      where: { id: tenantId },
-      select: { id: true, settings: true },
-    }),
-    tPrisma.invoice.findMany({
-      where: {
-        ...invoiceScope,
-        issuedAt: { gte: yearStart, lte: yearEnd },
-      },
-      select: {
-        id: true,
-        clientId: true,
-        status: true,
-        issuedAt: true,
-        paidAt: true,
-        paidAmount: true,
-        discount: true,
-        taxRate: true,
-        lineItems: {
-          select: {
-            quantity: true,
-            unitPrice: true,
-            description: true,
-            service: { select: { name: true } },
+  const [tenant, invoicesInYear, invoicesOutstanding, completedJobsInPeriod] = await cached(
+    "api:reportsStats",
+    [tenantId, scopeKey, cacheKey],
+    async () =>
+      await Promise.all([
+        (tPrisma as any).tenant.findUnique({
+          where: { id: tenantId },
+          select: { id: true, settings: true },
+        }),
+        (tPrisma as any).invoice.findMany({
+          where: {
+            ...invoiceScope,
+            issuedAt: { gte: yearStart, lte: yearEnd },
           },
-        },
-      },
-    }),
-    tPrisma.invoice.findMany({
-      where: {
-        deletedAt: null,
-        status: { in: ["SENT", "OVERDUE"] },
-        ...(invoiceScope.clientId ? { clientId: invoiceScope.clientId } : {}),
-      },
-      select: {
-        paidAmount: true,
-        discount: true,
-        taxRate: true,
-        lineItems: { select: { quantity: true, unitPrice: true } },
-      },
-    }),
-    tPrisma.gallery.count({
-      where: {
-        ...galleryScope,
-        deliveredAt: { gte: periodStart, lte: periodEnd },
-      },
-    }),
-  ]);
+          select: {
+            id: true,
+            clientId: true,
+            status: true,
+            issuedAt: true,
+            paidAt: true,
+            paidAmount: true,
+            discount: true,
+            taxRate: true,
+            lineItems: {
+              select: {
+                quantity: true,
+                unitPrice: true,
+                description: true,
+                service: { select: { name: true } },
+              },
+            },
+          },
+        }),
+        (tPrisma as any).invoice.findMany({
+          where: {
+            deletedAt: null,
+            status: { in: ["SENT", "OVERDUE"] },
+            ...(invoiceScope.clientId ? { clientId: invoiceScope.clientId } : {}),
+          },
+          select: {
+            paidAmount: true,
+            discount: true,
+            taxRate: true,
+            lineItems: { select: { quantity: true, unitPrice: true } },
+          },
+        }),
+        (tPrisma as any).gallery.count({
+          where: {
+            ...galleryScope,
+            deliveredAt: { gte: periodStart, lte: periodEnd },
+          },
+        }),
+      ]),
+    { revalidateSeconds: 60, tags: [tenantTag(tenantId), `tenant:${tenantId}:reports`] },
+  );
 
   const invoices = invoicesInYear as any[];
 

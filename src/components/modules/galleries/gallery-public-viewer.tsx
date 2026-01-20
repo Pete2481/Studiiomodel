@@ -900,7 +900,7 @@ export function GalleryPublicViewer({
   };
 
   const handleSubmitEditRequest = async () => {
-    if (selectedTagIds.length === 0 && !editNote && videoTimestamp === null && videoComments.length === 0 && !annotationData) {
+    if (selectedTagIds.length === 0 && !editNote && videoTimestamp === null && videoComments.length === 0 && !annotationData && !drawingData) {
       alert("Please select at least one tag, add a note, or create markups.");
       return;
     }
@@ -1576,7 +1576,7 @@ export function GalleryPublicViewer({
                   {!isShared && (
                     <>
                       {/* Lightroom-style toolbar (replaces the choice modal) */}
-                      <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-2 py-1 overflow-x-auto max-w-[62vw]">
+                      <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-2 py-1 max-w-[62vw] overflow-x-auto flex-nowrap rounded-full md:max-w-none md:overflow-visible md:flex-wrap md:rounded-2xl">
                         {TOOLBAR.unlocked.map((t) => (
                       <button 
                             key={t.id}
@@ -2249,7 +2249,7 @@ export function GalleryPublicViewer({
                   {/* Left Column: Visual Marking (Drawing) */}
                   <div className="w-full lg:w-[38%] p-5 md:p-6 border-b lg:border-b-0 lg:border-r border-slate-50 overflow-y-auto custom-scrollbar">
                     <div className="space-y-4">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center justify-between">
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center justify-between">
                         Visual Marking (Optional)
                         {drawingData && (
                           <button 
@@ -2257,7 +2257,7 @@ export function GalleryPublicViewer({
                             onClick={() => setIsDrawingMode(true)}
                             className="text-primary hover:underline text-[9px] font-black"
                           >
-                            EDIT DRAWING
+                            EDIT MARKUP
                           </button>
                         )}
                       </label>
@@ -2265,28 +2265,75 @@ export function GalleryPublicViewer({
                       {drawingData ? (
                         <div 
                           onClick={() => setIsDrawingMode(true)}
-                          className="aspect-square rounded-2xl bg-slate-50 border border-slate-100 overflow-hidden relative group cursor-pointer"
+                          className="aspect-square rounded-2xl bg-slate-50 border border-slate-200 overflow-hidden relative group cursor-pointer"
                         >
-                          <img src={getImageUrl(selectedAsset.url, "w1024h768")} className="h-full w-full object-contain opacity-40" alt="Preview" />
-                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
-                              <PenTool className="h-5 w-5" />
-                            </div>
-                            <span className="text-[9px] font-black text-primary uppercase tracking-widest">Drawing Attached</span>
+                          <img
+                            src={getImageUrl(selectedAsset.url, "w1024h768")}
+                            className="absolute inset-0 h-full w-full object-contain"
+                            alt="Marked preview"
+                          />
+
+                          {/* Overlay the user's saved markups so they remain visible while typing notes */}
+                          {Array.isArray(drawingData) && (
+                            <svg
+                              className="absolute inset-0 h-full w-full"
+                              viewBox="0 0 1 1"
+                              preserveAspectRatio="none"
+                            >
+                              {drawingData
+                                .filter((d: any) => d?.type === "path" && d?.tool !== "eraser" && Array.isArray(d?.points) && d.points.length >= 2)
+                                .map((d: any, idx: number) => {
+                                  const pts = d.points as { x: number; y: number }[];
+                                  const pathD = `M ${pts[0].x} ${pts[0].y} ` + pts.slice(1).map((p) => `L ${p.x} ${p.y}`).join(" ");
+                                  return (
+                                    <path
+                                      key={`p-${idx}`}
+                                      d={pathD}
+                                      fill="none"
+                                      stroke="rgba(255, 0, 0, 0.9)"
+                                      strokeWidth={0.008}
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    />
+                                  );
+                                })}
+                              {drawingData
+                                .filter((d: any) => d?.type === "text" && typeof d?.content === "string")
+                                .map((d: any) => (
+                                  <text
+                                    key={`t-${d.id || `${d.x}-${d.y}`}`}
+                                    x={Number(d.x) || 0}
+                                    y={Number(d.y) || 0}
+                                    fill="rgba(255, 0, 0, 0.95)"
+                                    fontSize={0.045}
+                                    fontWeight={800}
+                                    dominantBaseline="middle"
+                                    textAnchor="middle"
+                                  >
+                                    {String(d.content).slice(0, 40)}
+                                  </text>
+                                ))}
+                            </svg>
+                          )}
+
+                          <div className="absolute inset-0 flex items-end justify-end p-3">
+                            <span className="px-3 py-1 rounded-full bg-white/90 border border-slate-200 text-[9px] font-black uppercase tracking-widest text-slate-900 shadow-sm">
+                              Markup Attached
+                            </span>
                           </div>
                         </div>
                       ) : (
                         <button 
                           type="button"
                           onClick={() => setIsDrawingMode(true)}
-                          className="w-full aspect-square rounded-2xl border-2 border-dashed border-slate-100 hover:border-primary/30 hover:bg-primary/[0.02] transition-all flex flex-col items-center justify-center gap-3 group"
+                          className="w-full aspect-square rounded-2xl border-2 border-dashed border-slate-200 hover:border-primary/40 hover:bg-primary/[0.02] transition-all flex flex-col items-center justify-center gap-3 group"
                         >
                           <div className="h-12 w-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:text-primary group-hover:bg-primary/10 transition-all">
                             <PenTool className="h-5 w-5" />
                           </div>
                           <div className="text-center">
                             <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Draw on Photo</p>
-                            <p className="text-[9px] font-medium text-slate-400 mt-1 max-w-[180px] mx-auto">
+                            <p className="text-[9px] font-medium text-slate-500 mt-1 max-w-[180px] mx-auto">
                               Circle specific areas you want our editors to focus on.
                             </p>
                           </div>
@@ -2300,7 +2347,7 @@ export function GalleryPublicViewer({
                     <div className="flex-1 overflow-y-auto p-5 md:p-6 space-y-6 custom-scrollbar">
                       {/* Edit Tags (Multi-select) */}
                       <div className="space-y-4">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Edit Type</label>
+                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Select Edit Type</label>
                         <div className="grid grid-cols-2 gap-2">
                           {editTags.map((tag: any) => {
                             const isSelected = selectedTagIds.includes(tag.id);
@@ -2337,12 +2384,12 @@ export function GalleryPublicViewer({
 
                       {/* Note */}
                       <div className="space-y-3">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Additional Instructions</label>
+                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Additional Instructions</label>
                         <textarea 
                           value={editNote}
                           onChange={(e) => setEditNote(e.target.value)}
                           placeholder="e.g. Please remove the car and also the green bin on the left..."
-                          className="w-full h-28 rounded-2xl border border-slate-200 p-4 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-none"
+                          className="w-full h-28 rounded-2xl border border-slate-200 p-4 text-sm text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-none"
                         />
                       </div>
                     </div>
@@ -2358,7 +2405,7 @@ export function GalleryPublicViewer({
                         <button 
                           type="button"
                           onClick={handleSubmitEditRequest}
-                          disabled={isSubmittingEdit || (selectedTagIds.length === 0 && !editNote)}
+                          disabled={isSubmittingEdit || (selectedTagIds.length === 0 && !editNote && !drawingData && !annotationData)}
                           className="h-12 w-full rounded-2xl bg-slate-900 text-white font-bold flex items-center justify-center gap-2 hover:scale-[1.02] transition-all shadow-xl disabled:opacity-50 disabled:hover:scale-100"
                         >
                           {isSubmittingEdit ? (

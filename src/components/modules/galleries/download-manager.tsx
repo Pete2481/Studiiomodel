@@ -165,11 +165,17 @@ export function DownloadManager({
         if (asset.isMarkup && asset.markupBlob) {
           blob = asset.markupBlob;
         } else {
-          // If this is an external (AI) URL without a Dropbox path, proxy it through our server
-          const isExternalUrl = typeof asset.url === "string" && asset.url.startsWith("http") && !asset.path;
-          const downloadUrl = isExternalUrl
-            ? `/api/external-image?url=${encodeURIComponent(asset.url)}${resolution === "original" ? "&profile=hd" : ""}`
-            : `/api/dropbox/download/${galleryId}?path=${encodeURIComponent(asset.path)}&sharedLink=${encodeURIComponent(sharedLink || "")}&applyBranding=${applyBranding}`;
+        // If this is an external (AI) URL, proxy it through our server.
+        // NOTE: AI result "version" assets may carry `path` for originalPath saving context,
+        // but the bytes should still come from the AI URL for downloads.
+        const isExternalUrl =
+          typeof asset.url === "string" &&
+          asset.url.startsWith("http") &&
+          (!!asset.isAiResult || !asset.path);
+
+        const downloadUrl = isExternalUrl
+          ? `/api/external-image?url=${encodeURIComponent(asset.url)}${resolution === "original" ? "&profile=hd" : ""}`
+          : `/api/dropbox/download/${galleryId}?path=${encodeURIComponent(asset.path)}&sharedLink=${encodeURIComponent(sharedLink || "")}&applyBranding=${applyBranding}`;
 
           const response = await fetch(downloadUrl);
 

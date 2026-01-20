@@ -24,7 +24,9 @@ const DUSK_LIGHTING_ONLY_GUARDRAILS =
   "Do NOT open/close blinds or curtains. Do NOT change window contents, reflections, or interior staging. " +
   "Do NOT change landscaping/grass/trees, fences, bricks, roof tiles, driveway texture, vehicles, signs, or any natural environment. " +
   "Do NOT add/remove objects. Do NOT alter perspective, framing, lens distortion, or sharpness/texture. " +
-  "Only change the sky color and overall lighting/color temperature to look like early dusk/golden hour with realistic exposure and gentle warm interior/exterior light glow.";
+  "Only change the sky color and overall lighting/color temperature to look like early dusk/golden hour. " +
+  "CRITICAL: Keep exposure like-for-like with the original daytime photo: bright and clear, no crushed shadows, no heavy darkening. " +
+  "Lift shadows as needed so grass/roof/brick remain clearly visible. Add gentle warm interior/exterior light glow without making the scene dark.";
 
 interface AIProcessResult {
   success: boolean;
@@ -152,7 +154,7 @@ export async function processImageWithAI(
             `${DUSK_LIGHTING_ONLY_GUARDRAILS}\n\n` +
             `GOAL:\n` +
             (prompt ||
-              "Transform this daytime photo into a beautiful early dusk / golden hour scene. Keep the overall image bright and clear, not too dark. Replace the sky with a stunning golden hour sky featuring soft pink, orange, and golden hues. Make existing interior and architectural lights glow softly and warmly (do not change blinds/curtains), ensuring the house remains the well-lit focal point with professional real estate lighting."),
+              "Transform this daytime photo into a beautiful early dusk / golden hour scene. Match the original exposure (bright and clear; NOT dark). Replace the sky with a stunning golden hour sky featuring soft pink, orange, and golden hues. Make existing interior and architectural lights glow softly and warmly (do not change blinds/curtains), ensuring the house remains the well-lit focal point with professional real estate lighting."),
         };
         break;
 
