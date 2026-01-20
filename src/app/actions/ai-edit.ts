@@ -19,6 +19,12 @@ const AUTO_REMOVE_ALL_ITEMS_PROMPT =
   "Remove ALL furniture and ALL movable items from this room (couches, chairs, tables, rugs/mats, lamps, plants, decor, wall art/frames, clutter). Leave the room completely empty. Preserve the room exactly: walls, doors, windows, trims, ceiling, floor materials and colors, lighting direction, camera angle, and perspective. Do not change architectural features. Professional real estate photography, high resolution.";
 const ROOM_EDITOR_GUARDRAILS =
   "Preserve the room EXACTLY: walls, ceiling, floor, doors, windows, trims, built-ins, colors, materials, lighting direction, camera angle, and perspective. Do not change architecture. Do not add new objects unless explicitly requested. Photorealistic, professional real estate photography, high resolution.";
+const DUSK_LIGHTING_ONLY_GUARDRAILS =
+  "LIGHTING-ONLY EDIT. Preserve the photo EXACTLY (like-for-like). Do NOT change any objects or geometry. " +
+  "Do NOT open/close blinds or curtains. Do NOT change window contents, reflections, or interior staging. " +
+  "Do NOT change landscaping/grass/trees, fences, bricks, roof tiles, driveway texture, vehicles, signs, or any natural environment. " +
+  "Do NOT add/remove objects. Do NOT alter perspective, framing, lens distortion, or sharpness/texture. " +
+  "Only change the sky color and overall lighting/color temperature to look like early dusk/golden hour with realistic exposure and gentle warm interior/exterior light glow.";
 
 interface AIProcessResult {
   success: boolean;
@@ -142,7 +148,11 @@ export async function processImageWithAI(
         model = "reve/edit-fast";
         input = {
           image: publicImageUrl,
-          prompt: "Transform this daytime photo into a beautiful early dusk / golden hour scene. Keep the overall image bright and clear, not too dark. Replace the sky with a stunning golden hour sky featuring soft pink, orange, and golden hues. Make the interior and architectural lights glow softly and warmly, ensuring the house remains the well-lit focal point with professional real estate lighting.",
+          prompt:
+            `${DUSK_LIGHTING_ONLY_GUARDRAILS}\n\n` +
+            `GOAL:\n` +
+            (prompt ||
+              "Transform this daytime photo into a beautiful early dusk / golden hour scene. Keep the overall image bright and clear, not too dark. Replace the sky with a stunning golden hour sky featuring soft pink, orange, and golden hues. Make existing interior and architectural lights glow softly and warmly (do not change blinds/curtains), ensuring the house remains the well-lit focal point with professional real estate lighting."),
         };
         break;
 
