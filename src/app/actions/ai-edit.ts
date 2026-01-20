@@ -5,6 +5,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { getTemporaryLink } from "./storage";
+import sharp from "sharp";
 
 export type AITaskType =
   | "sky_replacement"
@@ -22,6 +23,8 @@ const ROOM_EDITOR_GUARDRAILS =
 interface AIProcessResult {
   success: boolean;
   outputUrl?: string;
+  upscaled?: boolean;
+  upscaleSkippedReason?: string;
   error?: string;
 }
 
@@ -273,8 +276,29 @@ export async function processImageWithAI(
     }
 
     // --- HD UPSCALING STEP ---
-    const upscaleScale = taskType === "room_editor" ? 4 : 2;
-    console.log(`[AI_EDIT] Upscaling output to HD using nightmareai/real-esrgan (scale=${upscaleScale}) for URL length: ${outputUrl.length}`);
+    const upscaleScale = 4;
+
+    // Optional guardrail: skip expensive upscaling if the output is already huge.
+    // We keep this best-effort and never block the workflow if it fails.
+    try {
+      const res = await fetch(String(outputUrl), { cache: "no-store" });
+      if (res.ok) {
+        const bytes = Buffer.from(await res.arrayBuffer());
+        const meta = await sharp(bytes, { failOn: "none" }).metadata();
+        const w = Number(meta.width || 0);
+        const h = Number(meta.height || 0);
+        const longEdge = Math.max(w, h);
+        const SKIP_LONG_EDGE = 5600;
+        if (longEdge && longEdge >= SKIP_LONG_EDGE) {
+          console.log(`[AI_EDIT] Upscale skipped (already large): ${w}x${h} (longEdge=${longEdge})`);
+          return { success: true, outputUrl: String(outputUrl), upscaled: false, upscaleSkippedReason: "already_large" };
+        }
+      }
+    } catch (e) {
+      // Non-blocking: if we can't fetch/inspect, proceed with upscaling attempt.
+    }
+
+    console.log(`[AI_EDIT] Upscaling output to HD using nightmareai/real-esrgan (scale=${upscaleScale})`);
     try {
       const upscaleOutput: any = await replicate.run(
         "nightmareai/real-esrgan:b3ef194191d13140337468c916c2c5b96dd0cb06dffc032a022a31807f6a5ea8",
@@ -289,16 +313,16 @@ export async function processImageWithAI(
       
       const finalUrl = await extractUrl(upscaleOutput);
       if (finalUrl) {
-        console.log(`[AI_EDIT] HD Upscale complete: ${finalUrl?.substring(0, 100)}...`);
-        return { success: true, outputUrl: String(finalUrl) };
+        console.log(`[AI_EDIT] HD Upscale complete: ${String(finalUrl).substring(0, 100)}...`);
+        return { success: true, outputUrl: String(finalUrl), upscaled: true };
       }
     } catch (upscaleError) {
       console.error("[AI_EDIT_UPSCALER_ERROR]:", upscaleError);
       // Fallback to original output if upscaler fails
-      return { success: true, outputUrl: String(outputUrl) };
+      return { success: true, outputUrl: String(outputUrl), upscaled: false, upscaleSkippedReason: "upscaler_failed" };
     }
 
-    return { success: true, outputUrl: String(outputUrl) };
+    return { success: true, outputUrl: String(outputUrl), upscaled: false, upscaleSkippedReason: "no_upscale_url" };
   } catch (error: any) {
     console.error("[AI_EDIT_ERROR]:", error);
     
