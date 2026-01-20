@@ -130,6 +130,7 @@ export default async function SharedGalleryPage({
   // Serialize data for client component
   const serializedGallery = {
     id: String(gallery.id),
+    tenantId: String(gallery.tenantId),
     title: String(gallery.title),
     property: String(gallery.property?.name || "TBC"),
     client: String(gallery.client?.businessName || gallery.client?.name || "Client"),

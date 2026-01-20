@@ -2649,7 +2649,7 @@ export function GalleryPublicViewer({
           {isDownloadManagerOpen && (
             <DownloadManager 
               galleryId={gallery.id}
-              tenantId={tenant.id}
+              tenantId={tenant?.id || gallery?.tenantId}
               assets={downloadAssets}
               sharedLink={gallery.metadata?.dropboxLink}
               onClose={() => {
