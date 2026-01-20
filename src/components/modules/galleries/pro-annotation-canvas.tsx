@@ -51,6 +51,11 @@ interface TextPin {
 
 interface ProAnnotationCanvasProps {
   imageUrl: string;
+  /**
+   * Optional higher-resolution source URL used ONLY for exporting the final JPEG.
+   * This lets the UI preview stay fast while exports keep original pixel dimensions.
+   */
+  exportImageUrl?: string;
   logoUrl?: string;
   onSave: (data: any, blob?: Blob) => void;
   onCancel: () => void;
@@ -61,6 +66,7 @@ interface ProAnnotationCanvasProps {
 
 export function ProAnnotationCanvas({
   imageUrl,
+  exportImageUrl,
   logoUrl,
   onSave,
   onCancel,
@@ -470,7 +476,7 @@ export function ProAnnotationCanvas({
       if (!canvas) throw new Error("Canvas not ready");
 
       // 1. Create an export canvas at the image's original resolution for high quality
-      const img = await loadImage(imageUrl, { timeoutMs: 12000 });
+      const img = await loadImage(exportImageUrl || imageUrl, { timeoutMs: 12000 });
 
       const exportCanvas = document.createElement("canvas");
       exportCanvas.width = img.width;

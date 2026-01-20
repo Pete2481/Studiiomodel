@@ -2643,6 +2643,7 @@ export function GalleryPublicViewer({
           {isDownloadManagerOpen && (
             <DownloadManager 
               galleryId={gallery.id}
+              tenantId={tenant.id}
               assets={downloadAssets}
               sharedLink={gallery.metadata?.dropboxLink}
               onClose={() => {
@@ -2696,7 +2697,21 @@ export function GalleryPublicViewer({
               mode="panel"
               enabledTools={["select", "pin", "boundary"]}
               imageUrl={activeImageSrc}
-              logoUrl={gallery.clientBranding?.url || tenant.logoUrl}
+              exportImageUrl={
+                selectedAsset?.path
+                  ? `/api/dropbox/download/${gallery.id}?path=${encodeURIComponent(selectedAsset.path)}&sharedLink=${encodeURIComponent(String(gallery.metadata?.dropboxLink || ""))}&applyBranding=false`
+                  : activeImageSrc
+              }
+              logoUrl={
+                (() => {
+                  const raw = (gallery.clientBranding?.url || tenant.logoUrl || "").toString();
+                  if (!raw) return undefined;
+                  if (raw.includes("dropbox.com") || raw.includes("dropboxusercontent.com")) {
+                    return `/api/logo-proxy?url=${encodeURIComponent(raw)}`;
+                  }
+                  return raw;
+                })()
+              }
               initialTool={annotationInitialTool}
               onSave={(data, blob) => {
                 setAnnotationData(data);
@@ -2720,6 +2735,7 @@ export function GalleryPublicViewer({
                     name: `MarkedUp-${selectedAsset.name}`,
                     isMarkup: true,
                     markupBlob: blob,
+                    originalName: selectedAsset.name,
                     url: downloadUrl,
                   };
                   setDownloadAssets([markedUpAsset]);

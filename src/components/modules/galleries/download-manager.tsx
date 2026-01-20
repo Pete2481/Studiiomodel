@@ -9,6 +9,7 @@ import { saveAIResultSiblingToDropbox } from "@/app/actions/dropbox";
 
 interface DownloadManagerProps {
   galleryId: string;
+  tenantId?: string;
   assets: any[];
   onClose: () => void;
   sharedLink?: string;
@@ -29,9 +30,17 @@ interface DownloadManagerProps {
   } | null;
 }
 
-type DownloadResolution = 'original' | 'web' | 'social';
+type DownloadResolution = "original" | "web" | "social";
 
-export function DownloadManager({ galleryId, assets, onClose, sharedLink, clientBranding, aiSaveToDropbox }: DownloadManagerProps) {
+export function DownloadManager({
+  galleryId,
+  tenantId,
+  assets,
+  onClose,
+  sharedLink,
+  clientBranding,
+  aiSaveToDropbox,
+}: DownloadManagerProps) {
   const [status, setStatus] = useState<'idle' | 'processing' | 'zipping' | 'complete' | 'error'>('idle');
   const [progress, setProgress] = useState(0);
   const [currentFile, setCurrentFile] = useState("");
@@ -44,7 +53,7 @@ export function DownloadManager({ galleryId, assets, onClose, sharedLink, client
   const [saveReconnectUrl, setSaveReconnectUrl] = useState<string | null>(null);
 
   const runSaveToDropbox = React.useCallback(async () => {
-    if (!saveToDropbox || !aiSaveToDropbox || assets.length !== 1) return null;
+    if (!saveToDropbox || assets.length !== 1) return null;
     if (saveStatus === "saving" || saveStatus === "saved") return null;
 
     setSaveStatus("saving");
@@ -53,6 +62,33 @@ export function DownloadManager({ galleryId, assets, onClose, sharedLink, client
     setSaveReconnectUrl(null);
 
     try {
+      const asset = assets[0];
+
+      // Markup save path: upload the generated blob back to Dropbox next to original.
+      if (asset?.isMarkup && asset?.markupBlob && asset?.path && tenantId) {
+        const fd = new FormData();
+        fd.set("tenantId", String(tenantId));
+        fd.set("originalPath", String(asset.path || ""));
+        fd.set("originalName", String(asset.originalName || asset.name || "Markup.jpg"));
+        fd.set("file", new File([asset.markupBlob], String(asset.name || "Markup.jpg"), { type: "image/jpeg" }));
+
+        const res = await fetch(`/api/dropbox/upload-markup-sibling/${galleryId}`, {
+          method: "POST",
+          body: fd,
+        });
+        const json: any = await res.json().catch(() => null);
+        if (res.ok && json?.success) {
+          setSaveStatus("saved");
+          setSavePath(String(json?.path || json?.name || ""));
+          return json;
+        }
+        setSaveStatus("error");
+        setSaveError(String(json?.error || "Save failed"));
+        return json;
+      }
+
+      // AI save path (existing behavior)
+      if (!aiSaveToDropbox) return null;
       const res: any = await saveAIResultSiblingToDropbox({
         tenantId: aiSaveToDropbox.tenantId,
         galleryId: aiSaveToDropbox.galleryId,
@@ -78,7 +114,7 @@ export function DownloadManager({ galleryId, assets, onClose, sharedLink, client
       setSaveError(String(e?.message || "Save failed"));
       return null;
     }
-  }, [aiSaveToDropbox, assets.length, saveStatus, saveToDropbox]);
+  }, [aiSaveToDropbox, assets, galleryId, saveStatus, saveToDropbox, tenantId]);
 
   const startDownload = async (resolution: DownloadResolution) => {
     setStatus('processing');
@@ -89,8 +125,8 @@ export function DownloadManager({ galleryId, assets, onClose, sharedLink, client
     const folder = zip.folder(`studiio-${resolution}-assets`);
 
     try {
-      // Optional: Save AI result back to Dropbox (single AI only), without blocking download.
-      if (saveToDropbox && aiSaveToDropbox && assets.length === 1) {
+      // Optional: Save result back to Dropbox (single asset only), without blocking download.
+      if (saveToDropbox && assets.length === 1) {
         // fire-and-forget
         void runSaveToDropbox();
       }
@@ -258,7 +294,7 @@ export function DownloadManager({ galleryId, assets, onClose, sharedLink, client
               )}
 
               {/* Save to Dropbox Toggle (single AI result only) */}
-              {!!aiSaveToDropbox && assets.length === 1 && (
+              {(assets.length === 1 && ((!!aiSaveToDropbox) || (!!tenantId && !!assets[0]?.isMarkup && !!assets[0]?.markupBlob && !!assets[0]?.path))) && (
                 <div
                   className="p-5 rounded-[24px] bg-sky-50/50 border border-sky-100 flex items-center justify-between group cursor-pointer"
                   onClick={() => setSaveToDropbox(!saveToDropbox)}
@@ -275,7 +311,7 @@ export function DownloadManager({ galleryId, assets, onClose, sharedLink, client
                     <div>
                       <p className="text-[11px] font-black text-sky-600 uppercase tracking-widest">Save to Dropbox</p>
                       <p className="text-xs font-bold text-slate-900">
-                        Save AI result back into the folder (Original only)
+                        Save back into the folder (Original only)
                       </p>
                       <p className="text-[10px] font-bold text-slate-400 mt-1">
                         {saveStatus === "saved"
@@ -313,7 +349,7 @@ export function DownloadManager({ galleryId, assets, onClose, sharedLink, client
               )}
 
               {/* Save Only button (single AI result + toggle enabled) */}
-              {!!aiSaveToDropbox && assets.length === 1 && saveToDropbox && (
+              {(assets.length === 1 && ((!!aiSaveToDropbox) || (!!tenantId && !!assets[0]?.isMarkup && !!assets[0]?.markupBlob && !!assets[0]?.path))) && saveToDropbox && (
                 <button
                   onClick={async () => {
                     await runSaveToDropbox();
