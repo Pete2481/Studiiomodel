@@ -276,6 +276,18 @@ export async function processImageWithAI(
     }
 
     // --- HD UPSCALING STEP ---
+    // Best-quality / like-for-like guardrail:
+    // ML upscalers (ESRGAN) can hallucinate textures (grass/roof/brick) on exterior photos.
+    // To avoid ruining details, only run the ML upscaler for room-style edits where it's safest.
+    if (taskType !== "room_editor") {
+      return {
+        success: true,
+        outputUrl: String(outputUrl),
+        upscaled: false,
+        upscaleSkippedReason: "disabled_for_task",
+      };
+    }
+
     const upscaleScale = 4;
 
     // Optional guardrail: skip expensive upscaling if the output is already huge.
