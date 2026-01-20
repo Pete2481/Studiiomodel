@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { ReactNode, useState, useEffect, useMemo, Suspense } from "react";
+import { ReactNode, useState, useEffect, useMemo, useRef, Suspense } from "react";
+import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent } from "react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { NavSection } from "@/lib/nav-config";
@@ -53,6 +54,7 @@ import { ProgressBar } from "./progress-bar";
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import { formatDropboxUrl } from "@/lib/utils";
+import { NavigationIntentOverlay } from "./navigation-intent-overlay";
 
 const QuickActionModals = dynamic(() => import("./modals/quick-action-modals"), {
   loading: () => null,
@@ -119,6 +121,9 @@ export function DashboardShell(props: DashboardShellProps) {
       <Suspense fallback={null}>
         <ProgressBar />
       </Suspense>
+      <Suspense fallback={null}>
+        <NavigationIntentOverlay />
+      </Suspense>
       <NavigationPrefetcher />
       <GuideProvider>
         <DashboardShellContent {...props} />
@@ -172,12 +177,43 @@ function DashboardShellContent({
     "Operations": true,
     "Studio Setup": true
   });
+  const pointerNavHrefRef = useRef<string | null>(null);
 
   const toggleExpand = (label: string) => {
     setExpandedItems(prev => ({
       ...prev,
       [label]: !prev[label]
     }));
+  };
+
+  const shouldHandlePointerNav = (e: ReactPointerEvent, href: string) => {
+    // Only handle primary button/finger taps (avoid right-click, new-tab modifiers, etc.)
+    // Also avoid hijacking non-internal links.
+    if (e.button !== 0) return false;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return false;
+    if (!href || href.startsWith("http")) return false;
+    return true;
+  };
+
+  const handleNavPointerDown = (e: ReactPointerEvent, href: string) => {
+    if (!shouldHandlePointerNav(e, href)) return;
+    // Trigger nav on pointer-down so touch feels instant (click can come later).
+    pointerNavHrefRef.current = href;
+    setIsMobileMenuOpen(false);
+    router.push(href);
+  };
+
+  const handleNavClick = (e: ReactMouseEvent, href: string) => {
+    // If we already navigated on pointer-down, suppress the subsequent click navigation.
+    if (pointerNavHrefRef.current === href) {
+      e.preventDefault();
+      // Clear on next tick so other links aren't affected.
+      setTimeout(() => {
+        if (pointerNavHrefRef.current === href) pointerNavHrefRef.current = null;
+      }, 0);
+      return;
+    }
+    setIsMobileMenuOpen(false);
   };
 
   // Fetch Spark Counts in background
@@ -319,9 +355,10 @@ function DashboardShellContent({
                           <Link
                             key={sub.href}
                             href={sub.href}
-                            onClick={() => setIsMobileMenuOpen(false)}
+                            onPointerDown={(e) => handleNavPointerDown(e, sub.href)}
+                            onClick={(e) => handleNavClick(e, sub.href)}
                             className={cn(
-                              "flex items-center justify-between px-3 py-2 rounded-lg text-[12px] font-medium transition-colors group",
+                              "flex items-center justify-between px-3 py-2 rounded-lg text-[12px] font-medium transition-colors group active:scale-[0.99]",
                               isSubActive 
                                 ? "text-primary bg-primary/5" 
                                 : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
@@ -351,9 +388,10 @@ function DashboardShellContent({
               >
                 <Link
                   href={item.href}
-                  onClick={() => setIsMobileMenuOpen(false)}
+                  onPointerDown={(e) => handleNavPointerDown(e, item.href)}
+                  onClick={(e) => handleNavClick(e, item.href)}
                   className={cn(
-                    "group flex items-center rounded-xl px-3 py-2.5 text-[13px] font-semibold transition-all duration-200",
+                    "group flex items-center rounded-xl px-3 py-2.5 text-[13px] font-semibold transition-all duration-200 active:scale-[0.99]",
                     isActive 
                       ? "bg-primary text-white shadow-lg" 
                       : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
