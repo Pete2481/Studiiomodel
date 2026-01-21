@@ -19,6 +19,12 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Invalid start/end" }, { status: 400 });
   }
 
+  // Safety: widen by +/- 1 day to avoid timezone/week-window misses.
+  // (FullCalendar can provide week ranges that are exclusive/inclusive and may
+  // shift when business hours/hidden days or timezone boundaries apply.)
+  const rangeStart = new Date(startAt.getTime() - 24 * 60 * 60 * 1000);
+  const rangeEnd = new Date(endAt.getTime() + 24 * 60 * 60 * 1000);
+
   const sessionUser = session.user as any;
   const tPrisma = (await getTenantPrisma()) as any;
   const canViewAll = sessionUser.role === "TENANT_ADMIN" || sessionUser.role === "ADMIN";
@@ -30,13 +36,13 @@ export async function GET(req: Request) {
   // Cache per-tenant + user scope + range (short TTL).
   const dbBookings = await cached(
     "api:calendarBookingsLite",
-    [tenantId, String(role || ""), String(teamMemberId || ""), String(clientId || ""), String(agentId || ""), startAt.toISOString(), endAt.toISOString()],
+    [tenantId, String(role || ""), String(teamMemberId || ""), String(clientId || ""), String(agentId || ""), rangeStart.toISOString(), rangeEnd.toISOString()],
     async () =>
       await tPrisma.booking.findMany({
         where: {
           deletedAt: null,
-          startAt: { lt: endAt },
-          endAt: { gt: startAt },
+          startAt: { lt: rangeEnd },
+          endAt: { gt: rangeStart },
         },
         select: {
           id: true,
@@ -87,6 +93,8 @@ export async function GET(req: Request) {
           slotType: null,
           teamAvatars: [] as string[],
           teamCount: 0,
+          teamMemberIds: [] as string[],
+          isDraft: false,
         };
       }
 
@@ -94,6 +102,16 @@ export async function GET(req: Request) {
       if (status === "approved") status = "confirmed";
       const isClientOrAgent = role === "CLIENT" || role === "AGENT";
       const isBlocked = String(b.status || "").toUpperCase() === "BLOCKED";
+
+      const teamMemberIds = (b.assignments || [])
+        .map((a: any) => a?.teamMemberId)
+        .filter(Boolean)
+        .map((id: any) => String(id));
+
+      const statusRaw = String(b.status || "").toUpperCase();
+      // Lightweight draft heuristic (avoid pulling metadata JSON):
+      // Drafts created by Calendar V2 use title "New Event" + status APPROVED.
+      const isDraft = String(b.title || "").trim().toLowerCase() === "new event" && statusRaw === "APPROVED";
 
       return {
         id: String(b.id),
@@ -109,6 +127,8 @@ export async function GET(req: Request) {
         // to keep the response small and fast. Full details load on demand.
         teamAvatars: [] as string[],
         teamCount: 0,
+        teamMemberIds,
+        isDraft,
       };
     })
     .filter(Boolean);
