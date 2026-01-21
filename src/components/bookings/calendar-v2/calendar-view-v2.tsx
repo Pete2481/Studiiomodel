@@ -93,16 +93,6 @@ export function CalendarViewV2(props: {
   const { user, tenantTimezone, tenantLat, tenantLon, businessHours, aiLogisticsEnabled = false, reference, slotSettings, sunSlotsAddress } = props;
   const calendarRef = useRef<any>(null);
 
-  const debugCalendar = (() => {
-    try {
-      if (typeof window === "undefined") return false;
-      return new URLSearchParams(window.location.search).get("debug") === "1";
-    } catch {
-      return false;
-    }
-  })();
-  const [debugLastFetch, setDebugLastFetch] = useState<{ start: string; end: string; count: number; ms: number } | null>(null);
-
   // Local-only feature gates (do not ship to prod UI).
   const isLocalOnly = typeof window !== "undefined" && window.location.hostname === "localhost";
   const [selectedTeamMemberIds, setSelectedTeamMemberIds] = useState<string[]>([]);
@@ -482,23 +472,10 @@ export function CalendarViewV2(props: {
     if (rangeInflightRef.current.has(key)) return rangeInflightRef.current.get(key)!;
 
     const p = (async () => {
-      const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
       const url = `/api/tenant/calendar/bookings-lite?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`;
       const res = await fetch(url);
       const data = await res.json().catch(() => ({}));
       const items = Array.isArray(data?.bookings) ? (data.bookings as LiteBooking[]) : [];
-      const t1 = typeof performance !== "undefined" ? performance.now() : Date.now();
-      if (debugCalendar) {
-        const ms = Math.max(0, Math.round(Number(t1) - Number(t0)));
-        // eslint-disable-next-line no-console
-        console.log("[CALENDAR_V2][debug] bookings-lite", {
-          start: start.toISOString(),
-          end: end.toISOString(),
-          count: items.length,
-          ms,
-        });
-        setDebugLastFetch({ start: start.toISOString(), end: end.toISOString(), count: items.length, ms });
-      }
       rangeCacheRef.current.set(key, items);
       rangeInflightRef.current.delete(key);
       return items;
@@ -1654,20 +1631,6 @@ export function CalendarViewV2(props: {
 
   return (
     <div className="relative">
-      {debugCalendar && debugLastFetch ? (
-        <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[11px] font-bold text-amber-900">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-black uppercase tracking-widest text-amber-700">Calendar debug</span>
-            <span>bookings-lite:</span>
-            <span className="font-black">{debugLastFetch.count}</span>
-            <span>items in</span>
-            <span className="font-black">{debugLastFetch.ms}ms</span>
-          </div>
-          <div className="mt-1 text-[10px] font-mono text-amber-800 break-all">
-            {debugLastFetch.start} → {debugLastFetch.end}
-          </div>
-        </div>
-      ) : null}
       {/* Top menu (V1 parity) */}
       <div className={cn("flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4", isMobile && "mb-3")}>
         {/* Prev / Today / Next + range title (iOS style) */}
