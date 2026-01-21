@@ -44,15 +44,15 @@ export async function GET(req: Request) {
           startAt: true,
           endAt: true,
           status: true,
+          propertyStatus: true,
+          metadata: true,
           clientId: true,
           agentId: true,
           isPlaceholder: true,
           slotType: true,
-          // Keep names for calendar cards, but avoid heavy nested payloads.
-          client: { select: { name: true, businessName: true } },
-          property: { select: { name: true } },
-          // Keep assignment ids only for ownership masking (no teamMember objects/avatars).
-          assignments: { select: { teamMemberId: true } },
+          client: { select: { id: true, name: true, businessName: true } },
+          property: { select: { id: true, name: true } },
+          assignments: { select: { teamMemberId: true, teamMember: { select: { id: true, displayName: true, avatarUrl: true } } } },
         },
       }),
     { revalidateSeconds: 30, tags: [tenantTag(tenantId), `tenant:${tenantId}:calendar`] },
@@ -95,20 +95,35 @@ export async function GET(req: Request) {
       const isClientOrAgent = role === "CLIENT" || role === "AGENT";
       const isBlocked = String(b.status || "").toUpperCase() === "BLOCKED";
 
+      const members = (b.assignments || [])
+        .map((a: any) => a?.teamMember)
+        .filter(Boolean);
+
+      const teamAvatars = members
+        .map((m: any) => m?.avatarUrl)
+        .filter(Boolean)
+        .slice(0, 3);
+
+      const teamMemberIds = (b.assignments || [])
+        .map((a: any) => a?.teamMemberId)
+        .filter(Boolean)
+        .map((id: any) => String(id));
+
       return {
         id: String(b.id),
         title: isClientOrAgent && isBlocked ? "TIME BLOCK OUT" : String(b.title || (b.isPlaceholder ? `${b.slotType} SLOT` : "Booking")),
         startAt: s,
         endAt: e,
         status: status as any,
+        propertyStatus: b.propertyStatus || "",
         client: !b.client ? null : { name: String(b.client.name || ""), businessName: String(b.client.businessName || "") },
         property: isClientOrAgent && isBlocked ? { name: "UNAVAILABLE" } : (!b.property ? { name: "TBC" } : { name: String(b.property.name || "TBC") }),
         isPlaceholder: !!b.isPlaceholder,
         slotType: (b as any).slotType || null,
-        // NOTE: We intentionally do not include team avatars/count in the lite payload
-        // to keep the response small and fast. Full details load on demand.
-        teamAvatars: [] as string[],
-        teamCount: 0,
+        isDraft: !!((b.metadata as any)?.draft),
+        teamAvatars,
+        teamCount: members.length,
+        teamMemberIds,
       };
     })
     .filter(Boolean);
