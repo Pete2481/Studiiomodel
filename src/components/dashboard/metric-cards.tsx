@@ -168,6 +168,7 @@ function BreakdownItem({ icon: Icon, label, count, href, color }: any) {
   return (
     <Link 
       href={href}
+      prefetch={false}
       className="group flex items-center justify-between p-4 rounded-3xl border border-slate-100 bg-white hover:border-slate-200 hover:shadow-lg hover:shadow-slate-100 transition-all active:scale-[0.98]"
     >
       <div className="flex items-center gap-4">

@@ -198,6 +198,7 @@ export function DashboardSummaryClient({
             <div className="flex items-center gap-3">
               <Link
                 href="/tenant/calendar"
+                prefetch={false}
                 className="h-10 border border-slate-200 bg-white hover:border-slate-300 text-slate-600 rounded-full px-5 text-xs font-bold transition-all active:scale-95 flex items-center justify-center"
               >
                 Calendar view
@@ -206,6 +207,7 @@ export function DashboardSummaryClient({
                 <Hint title="Schedule" content="Book a new photography or media session.">
                   <Link
                     href={isActionLocked ? "/tenant/settings?tab=billing" : "/tenant/calendar?action=new"}
+                    prefetch={false}
                     className={cn(
                       "h-10 bg-primary hover:opacity-90 text-white rounded-full px-5 text-xs font-bold transition-all shadow-lg shadow-primary/20 active:scale-95 flex items-center justify-center gap-2",
                       isActionLocked && "opacity-50 grayscale hover:grayscale-0",

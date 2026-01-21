@@ -251,6 +251,7 @@ export function DashboardGalleries({
         <div className="flex items-center gap-2 sm:gap-3">
           <Link 
             href="/tenant/galleries"
+            prefetch={false}
             className="h-10 border border-slate-200 bg-white hover:border-slate-300 text-slate-600 rounded-full px-4 sm:px-5 text-xs font-bold transition-all active:scale-95 flex items-center gap-2 flex-1 sm:flex-none justify-center"
           >
             See All

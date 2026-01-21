@@ -42,7 +42,11 @@ export function ScheduleList({ items }: ScheduleListProps) {
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Upcoming Schedule</h2>
-        <Link href="/tenant/bookings" className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400 hover:text-slate-900 transition-colors flex items-center gap-2">
+        <Link
+          href="/tenant/bookings"
+          prefetch={false}
+          className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400 hover:text-slate-900 transition-colors flex items-center gap-2"
+        >
           View Calendar ➔
         </Link>
       </div>

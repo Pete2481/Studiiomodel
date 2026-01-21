@@ -178,6 +178,7 @@ function DashboardShellContent({
     "Studio Setup": true
   });
   const pointerNavHrefRef = useRef<string | null>(null);
+  const didFetchCountsRef = useRef(false);
 
   const toggleExpand = (label: string) => {
     setExpandedItems(prev => ({
@@ -216,11 +217,14 @@ function DashboardShellContent({
     setIsMobileMenuOpen(false);
   };
 
-  // Fetch Spark Counts in background
+  // Fetch Spark Counts in background (defer so it doesn't compete with dashboard load)
   useEffect(() => {
-    async function fetchCounts() {
+    const fetchCounts = async () => {
+      if (didFetchCountsRef.current) return;
+      didFetchCountsRef.current = true;
+
       try {
-        const res = await fetch('/api/nav/counts');
+        const res = await fetch("/api/nav/counts");
         if (res.ok) {
           const data = await res.json();
           setCounts(data);
@@ -228,9 +232,51 @@ function DashboardShellContent({
       } catch (err) {
         console.error("Failed to fetch spark counts:", err);
       }
-    }
-    fetchCounts();
+    };
+
+    const run = () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+
+      const conn: any = typeof navigator !== "undefined" ? (navigator as any).connection : null;
+      if (conn?.saveData) return;
+
+      void fetchCounts();
+    };
+
+    const delayMs = 4000;
+    let timeoutId: number | null = null;
+    let idleId: number | null = null;
+
+    timeoutId = window.setTimeout(() => {
+      if (typeof (window as any).requestIdleCallback === "function") {
+        idleId = (window as any).requestIdleCallback(run, { timeout: 1500 });
+      } else {
+        run();
+      }
+    }, delayMs);
+
+    return () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      if (idleId && typeof (window as any).cancelIdleCallback === "function") {
+        (window as any).cancelIdleCallback(idleId);
+      }
+    };
   }, []);
+
+  // If the user opens the mobile menu, fetch counts immediately (better perceived responsiveness)
+  useEffect(() => {
+    if (!isMobileMenuOpen) return;
+    if (didFetchCountsRef.current) return;
+    didFetchCountsRef.current = true;
+    void (async () => {
+      try {
+        const res = await fetch("/api/nav/counts");
+        if (res.ok) setCounts(await res.json());
+      } catch (err) {
+        console.error("Failed to fetch spark counts:", err);
+      }
+    })();
+  }, [isMobileMenuOpen]);
 
   // Dynamically apply brand color
   useEffect(() => {
@@ -355,6 +401,7 @@ function DashboardShellContent({
                           <Link
                             key={sub.href}
                             href={sub.href}
+                            prefetch={false}
                             onPointerDown={(e) => handleNavPointerDown(e, sub.href)}
                             onClick={(e) => handleNavClick(e, sub.href)}
                             className={cn(
@@ -388,6 +435,7 @@ function DashboardShellContent({
               >
                 <Link
                   href={item.href}
+                  prefetch={false}
                   onPointerDown={(e) => handleNavPointerDown(e, item.href)}
                   onClick={(e) => handleNavClick(e, item.href)}
                   className={cn(

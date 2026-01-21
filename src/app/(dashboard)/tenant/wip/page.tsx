@@ -45,7 +45,7 @@ export default async function WipPage() {
             Galleries not finished
           </div>
           <div className="text-4xl font-black text-slate-900">{unfinishedGalleries}</div>
-          <Link className="text-sm font-bold text-primary" href="/tenant/galleries">
+          <Link className="text-sm font-bold text-primary" href="/tenant/galleries" prefetch={false}>
             View Galleries →
           </Link>
         </div>
@@ -55,7 +55,7 @@ export default async function WipPage() {
             Bookings not invoiced (completed)
           </div>
           <div className="text-4xl font-black text-slate-900">{uninvoicedCompletedBookings}</div>
-          <Link className="text-sm font-bold text-primary" href="/tenant/bookings">
+          <Link className="text-sm font-bold text-primary" href="/tenant/bookings" prefetch={false}>
             View Bookings →
           </Link>
         </div>
@@ -65,7 +65,7 @@ export default async function WipPage() {
             New edit requests
           </div>
           <div className="text-4xl font-black text-slate-900">{newEditRequests}</div>
-          <Link className="text-sm font-bold text-primary" href="/tenant/edits">
+          <Link className="text-sm font-bold text-primary" href="/tenant/edits" prefetch={false}>
             View Edit Requests →
           </Link>
         </div>
