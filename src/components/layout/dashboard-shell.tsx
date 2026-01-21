@@ -219,6 +219,10 @@ function DashboardShellContent({
 
   // Fetch Spark Counts in background (defer so it doesn't compete with dashboard load)
   useEffect(() => {
+    // Only schedule the background counts fetch from the dashboard. This avoids
+    // competing with heavier pages (Calendar/Galleries) during navigation.
+    if (pathname !== "/") return;
+
     const fetchCounts = async () => {
       if (didFetchCountsRef.current) return;
       didFetchCountsRef.current = true;
@@ -261,7 +265,7 @@ function DashboardShellContent({
         (window as any).cancelIdleCallback(idleId);
       }
     };
-  }, []);
+  }, [pathname]);
 
   // If the user opens the mobile menu, fetch counts immediately (better perceived responsiveness)
   useEffect(() => {

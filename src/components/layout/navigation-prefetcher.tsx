@@ -1,12 +1,18 @@
 "use client";
 
 import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { useRouter } from "next/navigation";
 
 export function NavigationPrefetcher() {
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
+    // Only run the idle prefetch on the dashboard route so it doesn't compete
+    // with other heavy page loads (e.g. Calendar).
+    if (pathname !== "/") return;
+
     // Dashboard-first UX:
     // - Do NOT prefetch everything on login; it competes with the dashboard load.
     // - Prefetch only the highest-use routes after an idle delay.
@@ -39,7 +45,7 @@ export function NavigationPrefetcher() {
         (window as any).cancelIdleCallback(idleId);
       }
     };
-  }, [router]);
+  }, [router, pathname]);
 
   return null;
 }
