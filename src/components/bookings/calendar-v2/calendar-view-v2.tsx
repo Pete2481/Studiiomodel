@@ -1035,10 +1035,23 @@ export function CalendarViewV2(props: {
 
   // Hide closed days in multi-day views (Week + 2-day). Month stays full.
   const hiddenDaysForView = useMemo(() => {
-    // IMPORTANT: Do not hide closed days. Many studios have bookings on weekends
-    // even if businessHours marks them closed, and hiding them makes the calendar
-    // appear "empty" for that week.
-    return [];
+    if (!businessHours) return [];
+    if (view === "dayGridMonth") return [];
+    // Only apply to views that show multiple days as columns.
+    const isMultiDayGrid = view === "timeGridWeek" || view === "timeGridTwoDay";
+    if (!isMultiDayGrid) return [];
+
+    const hidden: number[] = [];
+    for (const [day, cfg] of Object.entries(businessHours as any)) {
+      const d = Number(day);
+      if (!Number.isFinite(d)) continue;
+      if (!cfg || typeof cfg !== "object") continue;
+      const c = cfg as any;
+      if (c?.open === false) hidden.push(d);
+    }
+    // Safety: don't allow hiding everything.
+    if (hidden.length >= 7) return [];
+    return hidden;
   }, [businessHours, view]);
 
   // Business hours baseline (for FullCalendar non-business shading + constraints)
