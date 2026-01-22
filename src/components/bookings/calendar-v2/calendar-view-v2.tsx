@@ -476,6 +476,9 @@ export function CalendarViewV2(props: {
       const res = await fetch(url);
       const data = await res.json().catch(() => ({}));
       const items = Array.isArray(data?.bookings) ? (data.bookings as LiteBooking[]) : [];
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/8ba4527e-5b8b-42ce-b005-e0cd58eb2355',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'run1',hypothesisId:'H_cache',location:'calendar-view-v2.tsx:fetchBookingsForRange',message:'bookings-lite fetched',data:{start:start.toISOString(),end:end.toISOString(),count:items.length},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion agent log
       rangeCacheRef.current.set(key, items);
       rangeInflightRef.current.delete(key);
       return items;
@@ -2029,6 +2032,9 @@ export function CalendarViewV2(props: {
             // FullCalendar gives inclusive/exclusive range boundaries.
             const start = arg.start;
             const end = arg.end;
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/8ba4527e-5b8b-42ce-b005-e0cd58eb2355',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'run1',hypothesisId:'H_range',location:'calendar-view-v2.tsx:datesSet',message:'datesSet',data:{viewType:String(arg.view?.type||''),start:start.toISOString(),end:end.toISOString()},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion agent log
             void handleVisibleRange(start, end);
             // Load visible range and ensure rolling 4-week prefetch.
             void loadSunSlotsForRange(start, end);

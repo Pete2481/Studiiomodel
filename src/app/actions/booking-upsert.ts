@@ -119,6 +119,10 @@ export async function upsertBooking(data: any) {
       endAt
     });
 
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8ba4527e-5b8b-42ce-b005-e0cd58eb2355',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'run1',hypothesisId:'H_cache',location:'booking-upsert.ts:afterUpsert',message:'upsertBooking completed',data:{tenantId:String(tenantId||''),bookingId:String(booking?.id||''),status:String(booking?.status||''),startAt:String((booking?.startAt instanceof Date)?booking.startAt.toISOString():booking?.startAt||''),endAt:String((booking?.endAt instanceof Date)?booking.endAt.toISOString():booking?.endAt||''),isPlaceholder:!!booking?.isPlaceholder,slotType:String((booking as any)?.slotType||'')},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion agent log
+
     revalidatePath("/tenant/bookings");
     revalidatePath("/tenant/calendar");
     revalidatePath("/");
