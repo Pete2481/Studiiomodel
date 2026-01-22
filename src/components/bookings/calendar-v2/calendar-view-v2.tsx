@@ -476,9 +476,6 @@ export function CalendarViewV2(props: {
       const res = await fetch(url);
       const data = await res.json().catch(() => ({}));
       const items = Array.isArray(data?.bookings) ? (data.bookings as LiteBooking[]) : [];
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/8ba4527e-5b8b-42ce-b005-e0cd58eb2355',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'run1',hypothesisId:'H_cache',location:'calendar-view-v2.tsx:fetchBookingsForRange',message:'bookings-lite fetched',data:{start:start.toISOString(),end:end.toISOString(),count:items.length},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion agent log
       rangeCacheRef.current.set(key, items);
       rangeInflightRef.current.delete(key);
       return items;
@@ -1054,6 +1051,28 @@ export function CalendarViewV2(props: {
     }
     // Safety: don't allow hiding everything.
     if (hidden.length >= 7) return [];
+    // IMPORTANT: never hide a day that has a real booking on it.
+    // This prevents "future bookings disappear in Week view" when a booking lands on a normally-closed day.
+    if (hidden.length && Array.isArray(bookings) && bookings.length) {
+      const weekdayToIndex: Record<string, number> = { SUN: 0, MON: 1, TUE: 2, WED: 3, THU: 4, FRI: 5, SAT: 6 };
+      const daysWithRealBookings = new Set<number>();
+      for (const b of bookings) {
+        try {
+          if (!b || (b as any).isPlaceholder) continue;
+          const iso = String((b as any).startAt || "");
+          if (!iso) continue;
+          const d = new Date(iso);
+          if (isNaN(d.getTime())) continue;
+          const wd = new Intl.DateTimeFormat("en-US", { timeZone: tenantTimezone, weekday: "short" }).format(d).toUpperCase().slice(0, 3);
+          const idx = weekdayToIndex[wd];
+          if (Number.isFinite(idx)) daysWithRealBookings.add(idx);
+        } catch {
+          // ignore
+        }
+      }
+      const result = hidden.filter((d) => !daysWithRealBookings.has(d));
+      return result;
+    }
     return hidden;
   }, [businessHours, view]);
 
@@ -2030,16 +2049,24 @@ export function CalendarViewV2(props: {
           }}
           datesSet={(arg) => {
             // FullCalendar gives inclusive/exclusive range boundaries.
-            const start = arg.start;
-            const end = arg.end;
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/8ba4527e-5b8b-42ce-b005-e0cd58eb2355',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'run1',hypothesisId:'H_range',location:'calendar-view-v2.tsx:datesSet',message:'datesSet',data:{viewType:String(arg.view?.type||''),start:start.toISOString(),end:end.toISOString()},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion agent log
+            // NOTE: if `hiddenDays` is set, FullCalendar may shrink the visible range (e.g. Week becomes Sun→Fri).
+            // We still need to fetch bookings for the full logical range so future bookings on hidden days don't vanish.
+            const vt = String(arg.view?.type || view);
+            let start = arg.start;
+            let end = arg.end;
+            if (vt === "timeGridWeek") {
+              const dayMs = 24 * 60 * 60 * 1000;
+              const days = Math.round((end.getTime() - start.getTime()) / dayMs);
+              if (days < 7) end = new Date(start.getTime() + 7 * dayMs);
+            } else if (vt === "timeGridTwoDay") {
+              const dayMs = 24 * 60 * 60 * 1000;
+              const days = Math.round((end.getTime() - start.getTime()) / dayMs);
+              if (days < 2) end = new Date(start.getTime() + 2 * dayMs);
+            }
             void handleVisibleRange(start, end);
             // Load visible range and ensure rolling 4-week prefetch.
             void loadSunSlotsForRange(start, end);
             ensureRolling4WeeksAhead();
-            const vt = String(arg.view?.type || view);
             setView(vt);
             setRangeTitle(formatRangeTitle(vt, start, end));
           }}

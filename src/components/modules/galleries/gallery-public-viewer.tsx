@@ -2883,14 +2883,6 @@ function ProgressiveImage({ src, alt, className, getImageUrl, priority, directUr
   const finalSrc = hasError 
     ? (directUrl || formatDropboxUrl(src)) 
     : optimizedSrc;
-  
-  // #region agent log
-  useEffect(() => {
-    if (hasError) {
-      console.warn("[IMAGE] Loading failed for optimized src, falling back to:", finalSrc);
-    }
-  }, [hasError, finalSrc]);
-  // #endregion
 
   return (
     <div 

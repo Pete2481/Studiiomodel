@@ -26,17 +26,13 @@ export async function GET(req: Request) {
   const tenantId = String(session.user.tenantId || "");
   const { role, teamMemberId, clientId, agentId } = sessionUser;
 
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/8ba4527e-5b8b-42ce-b005-e0cd58eb2355',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'run1',hypothesisId:'H_cache',location:'bookings-lite/route.ts:entry',message:'bookings-lite request',data:{tenantId,role:String(role||''),teamMemberId:String(teamMemberId||''),clientId:String(clientId||''),agentId:String(agentId||''),start:startAt.toISOString(),end:endAt.toISOString()},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion agent log
-
   // IMPORTANT: Use overlap logic so events that span into the range still show.
   // Cache per-tenant + user scope + range (short TTL).
   const dbBookings = await cached(
     "api:calendarBookingsLite",
     [tenantId, String(role || ""), String(teamMemberId || ""), String(clientId || ""), String(agentId || ""), startAt.toISOString(), endAt.toISOString()],
-    async () =>
-      await tPrisma.booking.findMany({
+    async () => {
+      const rows = await tPrisma.booking.findMany({
         where: {
           deletedAt: null,
           startAt: { lt: endAt },
@@ -58,7 +54,10 @@ export async function GET(req: Request) {
           property: { select: { id: true, name: true } },
           assignments: { select: { teamMemberId: true, teamMember: { select: { id: true, displayName: true, avatarUrl: true } } } },
         },
-      }),
+      });
+
+      return rows;
+    },
     { revalidateSeconds: 30, tags: [tenantTag(tenantId), `tenant:${tenantId}:calendar`] },
   );
 
@@ -131,10 +130,6 @@ export async function GET(req: Request) {
       };
     })
     .filter(Boolean);
-
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/8ba4527e-5b8b-42ce-b005-e0cd58eb2355',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'run1',hypothesisId:'H_cache',location:'bookings-lite/route.ts:exit',message:'bookings-lite response',data:{tenantId,start:startAt.toISOString(),end:endAt.toISOString(),count:Array.isArray(bookings)?bookings.length:0},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion agent log
 
   return NextResponse.json({ bookings });
 }

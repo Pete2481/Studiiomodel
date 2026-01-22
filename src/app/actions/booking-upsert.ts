@@ -1,10 +1,11 @@
 "use server";
 
 import { getTenantPrisma, enforceSubscription } from "@/lib/tenant-guard";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { bookingService } from "@/server/services/booking.service";
 import { auth } from "@/auth";
 import { permissionService } from "@/lib/permission-service";
+import { tenantTag } from "@/lib/server-cache";
 
 function toIso(d: any) {
   if (!d) return null;
@@ -119,13 +120,13 @@ export async function upsertBooking(data: any) {
       endAt
     });
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/8ba4527e-5b8b-42ce-b005-e0cd58eb2355',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'run1',hypothesisId:'H_cache',location:'booking-upsert.ts:afterUpsert',message:'upsertBooking completed',data:{tenantId:String(tenantId||''),bookingId:String(booking?.id||''),status:String(booking?.status||''),startAt:String((booking?.startAt instanceof Date)?booking.startAt.toISOString():booking?.startAt||''),endAt:String((booking?.endAt instanceof Date)?booking.endAt.toISOString():booking?.endAt||''),isPlaceholder:!!booking?.isPlaceholder,slotType:String((booking as any)?.slotType||'')},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion agent log
-
     revalidatePath("/tenant/bookings");
     revalidatePath("/tenant/calendar");
     revalidatePath("/");
+
+    // IMPORTANT: invalidate Next Data Cache entries (unstable_cache) used by calendar endpoints.
+    revalidateTag(tenantTag(tenantId));
+    revalidateTag(`tenant:${tenantId}:calendar`);
     
     // Return a calendar-ready payload so the UI can update immediately without waiting on range refetch.
     const calendarBooking = toCalendarBooking(booking);
@@ -160,6 +161,13 @@ export async function deleteBooking(id: string) {
     revalidatePath("/tenant/bookings");
     revalidatePath("/tenant/calendar");
     revalidatePath("/");
+
+    // IMPORTANT: invalidate Next Data Cache entries (unstable_cache) used by calendar endpoints.
+    const tenantId = String((session as any)?.user?.tenantId || "");
+    if (tenantId) {
+      revalidateTag(tenantTag(tenantId));
+      revalidateTag(`tenant:${tenantId}:calendar`);
+    }
     
     return { success: true };
   } catch (error: any) {
@@ -248,6 +256,10 @@ export async function rescheduleBooking(input: { id: string; startAt: string; en
     revalidatePath("/tenant/bookings");
     revalidatePath("/tenant/calendar");
     revalidatePath("/");
+
+    // IMPORTANT: invalidate Next Data Cache entries (unstable_cache) used by calendar endpoints.
+    revalidateTag(tenantTag(tenantId));
+    revalidateTag(`tenant:${tenantId}:calendar`);
 
     const calendarBooking = toCalendarBooking(updated);
     return { success: true, bookingId: String(bookingId), booking: calendarBooking };
