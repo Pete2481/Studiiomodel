@@ -47,6 +47,7 @@ export async function upsertClient(data: any, skipNotification = false) {
       id, 
       name, 
       email, 
+      accountsEmail,
       businessName, 
       phone, 
       avatarUrl: rawAvatarUrl,
@@ -78,7 +79,8 @@ export async function upsertClient(data: any, skipNotification = false) {
       settings: {
         permissions: permissions || {},
         priceOverrides: priceOverrides || {},
-        disabledServices: disabledServices || []
+        disabledServices: disabledServices || [],
+        accountsEmail: accountsEmail || ""
       },
     };
 
@@ -108,7 +110,8 @@ export async function upsertClient(data: any, skipNotification = false) {
           settings: {
             permissions: permissions || {},
             priceOverrides: priceOverrides || {},
-            disabledServices: disabledServices || []
+            disabledServices: disabledServices || [],
+            accountsEmail: accountsEmail || ""
           },
         }
       });
@@ -127,7 +130,8 @@ export async function upsertClient(data: any, skipNotification = false) {
           settings: {
             permissions: permissions || {},
             priceOverrides: priceOverrides || {},
-            disabledServices: disabledServices || []
+            disabledServices: disabledServices || [],
+            accountsEmail: accountsEmail || ""
           },
           slug: (businessName || name).toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
         }

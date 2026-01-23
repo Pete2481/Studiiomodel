@@ -520,6 +520,179 @@ export async function getDropboxTemporaryLink(path: string, tenantId: string) {
   }
 }
 
+export async function resolveDropboxPathFromSharedLink(params: { tenantId: string; sharedLink: string; path?: string }) {
+  const { tenantId, sharedLink, path: relativePath } = params;
+  try {
+    const tPrisma = await getTenantPrisma(tenantId);
+    const tenant = await tPrisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { dropboxAccessToken: true, dropboxRefreshToken: true },
+    });
+    if (!tenant?.dropboxAccessToken) return { success: false as const, error: "Dropbox not connected" };
+
+    let accessToken = tenant.dropboxAccessToken;
+    const refreshToken = tenant.dropboxRefreshToken;
+
+    const doReq = async (token: string) =>
+      fetch("https://api.dropboxapi.com/2/sharing/get_shared_link_metadata", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: sharedLink,
+          ...(relativePath ? { path: relativePath } : {}),
+        }),
+      });
+
+    let res = await doReq(accessToken);
+    if (res.status === 401 && refreshToken) {
+      const newToken = await refreshDropboxAccessToken(tenantId, refreshToken);
+      if (newToken) {
+        accessToken = newToken;
+        res = await doReq(accessToken);
+      }
+    }
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      return { success: false as const, error: txt || `Dropbox shared link metadata failed (${res.status})` };
+    }
+
+    const data: any = await res.json().catch(() => null);
+    const p = data?.path_lower || data?.path_display || "";
+    if (!p || typeof p !== "string") {
+      return { success: false as const, error: "Dropbox shared link did not return a path" };
+    }
+    return { success: true as const, pathLower: String(data.path_lower || p), name: String(data.name || "") };
+  } catch (e: any) {
+    return { success: false as const, error: e?.message || "Failed to resolve shared link path" };
+  }
+}
+
+export async function uploadBytesToDropbox(params: {
+  tenantId: string;
+  dropboxPath: string;
+  bytes: Buffer;
+  mode?: "add" | "overwrite";
+}) {
+  const { tenantId, dropboxPath, bytes, mode = "add" } = params;
+  try {
+    const tPrisma = await getTenantPrisma(tenantId);
+    const tenant = await tPrisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { dropboxAccessToken: true, dropboxRefreshToken: true },
+    });
+    if (!tenant?.dropboxAccessToken) return { success: false as const, error: "Dropbox not connected" };
+
+    let accessToken = tenant.dropboxAccessToken;
+    const refreshToken = tenant.dropboxRefreshToken;
+
+    const doUpload = async (token: string) => {
+      return fetch("https://content.dropboxapi.com/2/files/upload", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/octet-stream",
+          "Dropbox-API-Arg": JSON.stringify({
+            path: dropboxPath,
+            mode,
+            autorename: mode === "add",
+            mute: false,
+            strict_conflict: false,
+          }),
+        },
+        body: bytes as any,
+      });
+    };
+
+    let response = await doUpload(accessToken);
+    if (response.status === 401 && refreshToken) {
+      const newToken = await refreshDropboxAccessToken(tenantId, refreshToken);
+      if (newToken) {
+        accessToken = newToken;
+        response = await doUpload(accessToken);
+      }
+    }
+
+    if (!response.ok) {
+      const txt = await response.text().catch(() => "");
+      return { success: false as const, error: txt || `Dropbox upload failed (${response.status})` };
+    }
+
+    const data = await response.json().catch(() => ({}));
+    return { success: true as const, data };
+  } catch (e: any) {
+    return { success: false as const, error: e?.message || "Dropbox upload failed" };
+  }
+}
+
+async function dropboxGetMetadata(params: { tenantId: string; path: string }) {
+  const { tenantId, path } = params;
+  const tPrisma = await getTenantPrisma(tenantId);
+  const tenant = await tPrisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { dropboxAccessToken: true, dropboxRefreshToken: true },
+  });
+  if (!tenant?.dropboxAccessToken) return { ok: false as const, error: "Dropbox not connected" };
+
+  let accessToken = tenant.dropboxAccessToken;
+  const refreshToken = tenant.dropboxRefreshToken;
+
+  const doReq = async (token: string) =>
+    fetch("https://api.dropboxapi.com/2/files/get_metadata", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ path, include_media_info: false, include_deleted: false, include_has_explicit_shared_members: false }),
+    });
+
+  let res = await doReq(accessToken);
+  if (res.status === 401 && refreshToken) {
+    const newToken = await refreshDropboxAccessToken(tenantId, refreshToken);
+    if (newToken) {
+      accessToken = newToken;
+      res = await doReq(accessToken);
+    }
+  }
+
+  if (res.ok) return { ok: true as const };
+  if (res.status === 409) return { ok: false as const, notFound: true as const };
+  const txt = await res.text().catch(() => "");
+  return { ok: false as const, error: txt || `Dropbox get_metadata failed (${res.status})` };
+}
+
+export async function ensureDropboxUniquePath(params: { tenantId: string; originalPath: string; suffix: string }) {
+  const { tenantId, originalPath, suffix } = params;
+  try {
+    const p = String(originalPath || "");
+    const parts = p.split("/");
+    const filename = parts.pop() || "";
+    const dir = parts.join("/") || "";
+    const dot = filename.lastIndexOf(".");
+    const base = dot > 0 ? filename.slice(0, dot) : filename;
+    const ext = dot > 0 ? filename.slice(dot) : "";
+
+    const mk = (n: number) => {
+      const tag = n <= 1 ? suffix : `${suffix}_${n}`;
+      const name = `${base}${tag}${ext}`;
+      return `${dir}/${name}`.replaceAll("//", "/");
+    };
+
+    // Try up to 20 unique variants.
+    for (let i = 1; i <= 20; i++) {
+      const candidate = mk(i);
+      const meta = await dropboxGetMetadata({ tenantId, path: candidate });
+      if (meta.ok === false && (meta as any).notFound) return { success: true as const, path: candidate };
+      if (meta.ok === false && !(meta as any).notFound) {
+        return { success: false as const, error: (meta as any).error || "Failed to check Dropbox path" };
+      }
+    }
+
+    // Fallback: let Dropbox autorename handle conflicts.
+    return { success: true as const, path: mk(1) };
+  } catch (e: any) {
+    return { success: false as const, error: e?.message || "Failed to compute unique path" };
+  }
+}
+
 /**
  * Saves an AI-generated image URL back to the tenant's Dropbox folder.
  */

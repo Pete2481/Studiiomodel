@@ -31,8 +31,13 @@ export default auth((req) => {
 
   // 2. Restricted Role Routing (Editors/Team Members)
   if (user?.role === "EDITOR" || user?.role === "TEAM_MEMBER") {
+    // Force restricted roles into their portal landing page.
+    if (path === "/") {
+      return Response.redirect(new URL("/tenant/edits", req.nextUrl));
+    }
+
     const allowedPaths = ["/tenant/edits", "/api", "/login", "/logout"];
-    const isAllowed = allowedPaths.some(p => path.startsWith(p)) || path === "/";
+    const isAllowed = allowedPaths.some(p => path.startsWith(p));
     
     if (!isAllowed) {
       return Response.redirect(new URL("/tenant/edits", req.nextUrl));

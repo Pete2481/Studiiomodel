@@ -52,6 +52,7 @@ export async function createInvoiceFromGallery(galleryId: string) {
     // Get price overrides from client settings
     const clientSettings = (gallery.client.settings as any) || {};
     const priceOverrides = clientSettings.priceOverrides || {};
+    const accountsEmail = String(clientSettings.accountsEmail || "").trim();
 
     // 4. Create the Invoice
     const dueDays = (gallery.tenant as any).invoiceDueDays ?? 7;
@@ -74,7 +75,8 @@ export async function createInvoiceFromGallery(galleryId: string) {
         paymentTerms: gallery.tenant.accountName ? `Account Name: ${gallery.tenant.accountName}\nBSB: ${gallery.tenant.bsb || ""}  Account: ${gallery.tenant.accountNumber || ""}` : null,
         invoiceTerms: gallery.tenant.invoiceTerms,
         tenant: { connect: { id: gallery.tenantId } },
-        invoiceEmailOverride: !gallery.clientId ? otcEmail : undefined,
+        // OTC: send to OTC email. Client: send to Accounts email if configured.
+        invoiceEmailOverride: !gallery.clientId ? otcEmail : (accountsEmail || undefined),
         invoiceRecipientName: !gallery.clientId ? otcName : undefined,
         lineItems: {
           create: gallery.services.map((gs: any) => {
@@ -135,6 +137,8 @@ export async function createInvoiceFromEditRequests(galleryId: string) {
 
     if (!gallery) return { success: false, error: "Gallery not found." };
     if (gallery.editRequests.length === 0) return { success: false, error: "No completed edit requests found for this job." };
+    const clientSettings = (gallery.client?.settings as any) || {};
+    const accountsEmail = String(clientSettings.accountsEmail || "").trim();
 
     // 2. Generate unique invoice number
     const latestInvoice = await tPrisma.invoice.findFirst({
@@ -183,7 +187,8 @@ export async function createInvoiceFromEditRequests(galleryId: string) {
         paymentTerms: gallery.tenant.accountName ? `Account Name: ${gallery.tenant.accountName}\nBSB: ${gallery.tenant.bsb || ""}  Account: ${gallery.tenant.accountNumber || ""}` : null,
         invoiceTerms: gallery.tenant.invoiceTerms,
         tenant: { connect: { id: gallery.tenantId } },
-        invoiceEmailOverride: !gallery.clientId ? otcEmail : undefined,
+        // OTC: send to OTC email. Client: send to Accounts email if configured.
+        invoiceEmailOverride: !gallery.clientId ? otcEmail : (accountsEmail || undefined),
         invoiceRecipientName: !gallery.clientId ? otcName : undefined,
         lineItems: {
           create: lineItemsData
@@ -306,9 +311,20 @@ export async function upsertInvoice(data: any) {
       }
     } else {
       const { bookingId, galleryId, clientId, tenantId, ...createRest } = rest;
+      let invoiceEmailOverride = (createRest as any).invoiceEmailOverride;
+      // If not explicitly set, default to client's Accounts email (accounts-only).
+      if (clientId && !String(invoiceEmailOverride || "").trim()) {
+        const client = await (tPrisma as any).client.findUnique({
+          where: { id: clientId },
+          select: { settings: true },
+        });
+        const acct = (client?.settings && typeof client.settings === "object") ? String((client.settings as any).accountsEmail || "").trim() : "";
+        if (acct) invoiceEmailOverride = acct;
+      }
       const newInvoice = await (tPrisma as any).invoice.create({
         data: {
           ...createRest,
+          invoiceEmailOverride,
           client: clientId ? { connect: { id: clientId } } : undefined,
           booking: bookingId ? { connect: { id: bookingId } } : undefined,
           gallery: galleryId ? { connect: { id: galleryId } } : undefined,

@@ -26,12 +26,13 @@ import {
   Video,
   FileJson,
   Download,
+  Upload,
   Zap,
   Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EditTagsDrawer } from "./edit-tags-drawer";
-import { updateEditRequestStatus, updateEditRequestAssignments, exportGalleryEditRequests } from "@/app/actions/edit-request";
+import { updateEditRequestStatus, updateEditRequestAssignments, exportGalleryEditRequests, getEditRequestOriginalDownloadLink, getEditRequestEditedDownloadLink, uploadEditedAssetToDropbox } from "@/app/actions/edit-request";
 import { createInvoiceFromEditRequests } from "@/app/actions/invoice";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 
@@ -47,6 +48,7 @@ export function EditRequestsContent({ initialRequests, initialTags, teamMembers,
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
+  const MAX_EDIT_UPLOAD_BYTES = 10 * 1024 * 1024; // 10MB
   const [requests, setRequests] = useState(initialRequests);
   const [tags, setTags] = useState(initialTags);
   const [isTagsDrawerOpen, setIsTagsDrawerOpen] = useState(false);
@@ -55,6 +57,9 @@ export function EditRequestsContent({ initialRequests, initialTags, teamMembers,
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
   const [isCreatingInvoice, setIsCreatingInvoice] = useState<string | null>(null);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+  const [isDownloadingAsset, setIsDownloadingAsset] = useState<string | null>(null);
+  const [isUploadingEdited, setIsUploadingEdited] = useState<string | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setTags(initialTags);
@@ -192,11 +197,133 @@ export function EditRequestsContent({ initialRequests, initialTags, teamMembers,
     }
   };
 
+  const handleDownloadOriginal = async (request: any) => {
+    if (!request?.id) return;
+    setIsDownloadingAsset(String(request.id));
+    try {
+      const res = await getEditRequestOriginalDownloadLink(String(request.id));
+      if (!(res as any)?.success || !(res as any)?.url) {
+        alert((res as any)?.error || "Failed to get download link");
+        return;
+      }
+      const url = String((res as any).url);
+      // Open in a new tab so browser can handle download
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      console.error("Download original failed:", e);
+      alert("Failed to download asset.");
+    } finally {
+      setIsDownloadingAsset(null);
+    }
+  };
+
+  const handleDownloadEdited = async (request: any) => {
+    if (!request?.id) return;
+    setIsDownloadingAsset(String(request.id) + ":edited");
+    try {
+      const res = await getEditRequestEditedDownloadLink(String(request.id));
+      if (!(res as any)?.success || !(res as any)?.url) {
+        alert((res as any)?.error || "No edited upload found");
+        return;
+      }
+      const url = String((res as any).url);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      console.error("Download edited failed:", e);
+      alert("Failed to download edited file.");
+    } finally {
+      setIsDownloadingAsset(null);
+    }
+  };
+
+  const triggerUploadEdited = (request: any) => {
+    if (!request?.id) return;
+    (uploadInputRef.current as any).__editRequestId = String(request.id);
+    uploadInputRef.current?.click();
+  };
+
+  const handleUploadEditedFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const requestId = String((uploadInputRef.current as any)?.__editRequestId || "");
+    e.target.value = "";
+    if (!file || !requestId) return;
+
+    if (file.size > MAX_EDIT_UPLOAD_BYTES) {
+      alert("File too large. Maximum upload is 10MB.");
+      return;
+    }
+
+    setIsUploadingEdited(requestId);
+    try {
+      const fd = new FormData();
+      fd.set("editRequestId", requestId);
+      fd.set("file", file);
+      const res = await uploadEditedAssetToDropbox(fd);
+      if (!(res as any)?.success) {
+        alert((res as any)?.error || "Upload failed");
+        return;
+      }
+
+      // Refresh state best-effort: update selectedRequest + list so "Download edited" appears immediately.
+      const editedPath = String((res as any)?.editedPath || "");
+      setRequests((prev: any[]) =>
+        prev.map((r) =>
+          String(r.id) === String(requestId)
+            ? { ...r, metadata: { ...(r.metadata || {}), edited: { path: editedPath, uploadedAt: new Date().toISOString() } } }
+            : r,
+        ),
+      );
+      setSelectedRequest((prev: any) =>
+        prev && String(prev.id) === String(requestId)
+          ? { ...prev, metadata: { ...(prev.metadata || {}), edited: { path: editedPath, uploadedAt: new Date().toISOString() } } }
+          : prev,
+      );
+
+      router.refresh();
+    } catch (err) {
+      console.error("Upload edited failed:", err);
+      const msg = String((err as any)?.message || err || "");
+      const is413 =
+        msg.includes("413") ||
+        msg.toLowerCase().includes("payload too large") ||
+        msg.toLowerCase().includes("request entity too large") ||
+        msg.toLowerCase().includes("body size") ||
+        msg.toLowerCase().includes("bodysizelimit");
+      if (is413) {
+        alert("Upload failed: file is too large. Please try a smaller file or compress it.");
+      } else {
+        alert("Upload failed.");
+      }
+    } finally {
+      setIsUploadingEdited(null);
+    }
+  };
+
   const showFinancials = user.role === "TENANT_ADMIN" || user.role === "ADMIN" || user.role === "ACCOUNTS";
   const isRestrictedRole = !showFinancials && user.role !== "CLIENT" && user.role !== "AGENT";
 
+  const editorSummary = useMemo(() => {
+    const teamMemberId = String((user as any)?.teamMemberId || "");
+    const assignedToMe = teamMemberId
+      ? requests.filter(
+          (r: any) => Array.isArray(r?.assignedToIds) && r.assignedToIds.map(String).includes(teamMemberId),
+        ).length
+      : requests.length;
+    const newCount = requests.filter((r: any) => String(r?.status) === "NEW").length;
+    const inProgressCount = requests.filter((r: any) => String(r?.status) === "IN_PROGRESS").length;
+    const needsUploadCount = requests.filter((r: any) => !r?.metadata?.edited?.path).length;
+    return { assignedToMe, newCount, inProgressCount, needsUploadCount };
+  }, [requests, user]);
+
   return (
     <div className="space-y-8">
+      <input
+        ref={uploadInputRef}
+        type="file"
+        className="hidden"
+        accept="image/*,video/*"
+        onChange={handleUploadEditedFile}
+      />
       {/* Top Action Bar */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-3">
@@ -247,6 +374,28 @@ export function EditRequestsContent({ initialRequests, initialTags, teamMembers,
           )}
         </div>
       </div>
+
+      {/* Editor dashboard summary */}
+      {user.role === "EDITOR" && (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Assigned to me</p>
+            <p className="mt-2 text-2xl font-black text-slate-900">{editorSummary.assignedToMe}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">New</p>
+            <p className="mt-2 text-2xl font-black text-slate-900">{editorSummary.newCount}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">In progress</p>
+            <p className="mt-2 text-2xl font-black text-slate-900">{editorSummary.inProgressCount}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Needs upload</p>
+            <p className="mt-2 text-2xl font-black text-slate-900">{editorSummary.needsUploadCount}</p>
+          </div>
+        </div>
+      )}
 
       {/* Summary Stats */}
       <div className="flex items-center gap-8 text-[11px] font-black text-slate-400 uppercase tracking-widest px-2">
@@ -527,6 +676,11 @@ export function EditRequestsContent({ initialRequests, initialTags, teamMembers,
           onStatusUpdate={handleStatusUpdate}
           onAssignmentUpdate={handleAssignmentUpdate}
           onExport={handleExport}
+          onDownloadOriginal={handleDownloadOriginal}
+          onDownloadEdited={handleDownloadEdited}
+          onUploadEdited={triggerUploadEdited}
+          isDownloadingAsset={isDownloadingAsset}
+          isUploadingEdited={isUploadingEdited}
         />
       )}
 
@@ -547,7 +701,12 @@ function RequestDetailDrawer({
   onClose, 
   onStatusUpdate, 
   onAssignmentUpdate,
-  onExport
+  onExport,
+  onDownloadOriginal,
+  onDownloadEdited,
+  onUploadEdited,
+  isDownloadingAsset,
+  isUploadingEdited
 }: { 
   request: any, 
   teamMembers: any[],
@@ -555,15 +714,35 @@ function RequestDetailDrawer({
   onClose: () => void, 
   onStatusUpdate: any,
   onAssignmentUpdate: any,
-  onExport: any
+  onExport: any,
+  onDownloadOriginal: (request: any) => void,
+  onDownloadEdited: (request: any) => void,
+  onUploadEdited: (request: any) => void,
+  isDownloadingAsset: string | null,
+  isUploadingEdited: string | null
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const footerActionsRef = useRef<HTMLDivElement>(null);
   const [isAssigning, setIsAssigning] = useState(false);
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
+  const [isFooterActionsOpen, setIsFooterActionsOpen] = useState(false);
   
   const showFinancials = user.role === "TENANT_ADMIN" || user.role === "ADMIN" || user.role === "ACCOUNTS";
   const isRestrictedRole = !showFinancials && user.role !== "CLIENT" && user.role !== "AGENT";
+
+  useEffect(() => {
+    const onDocPointerDown = (e: PointerEvent) => {
+      if (!isFooterActionsOpen) return;
+      const el = footerActionsRef.current;
+      if (!el) return;
+      if (e.target instanceof Node && !el.contains(e.target)) {
+        setIsFooterActionsOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onDocPointerDown);
+    return () => document.removeEventListener("pointerdown", onDocPointerDown);
+  }, [isFooterActionsOpen]);
 
   // Drawing overlay logic
   useEffect(() => {
@@ -869,32 +1048,80 @@ function RequestDetailDrawer({
           </div>
         </div>
 
-        <div className="p-10 border-t border-slate-50 bg-slate-50/50 flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className="p-6 border-t border-slate-50 bg-slate-50/50 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
             <StatusBadge status={request.status} />
-            <a 
-              href={request.fileUrl} 
-              download 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="h-14 px-8 rounded-2xl bg-white border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2"
-            >
-              <Download className="h-5 w-5" />
-              Download Assets
-            </a>
+
+            {/* Compact actions menu (keeps footer single-line on mobile) */}
+            <div ref={footerActionsRef} className="relative flex-none">
+              <button
+                type="button"
+                onClick={() => setIsFooterActionsOpen((v) => !v)}
+                className="h-11 w-11 rounded-xl bg-white border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 transition-all shadow-sm flex items-center justify-center"
+                aria-label="Actions"
+              >
+                <MoreHorizontal className="h-5 w-5" />
+              </button>
+
+              {isFooterActionsOpen && (
+                <div className="absolute bottom-full left-0 mb-2 w-56 rounded-2xl bg-white shadow-xl border border-slate-100 py-2 z-[120] animate-in fade-in slide-in-from-bottom-2 duration-150">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsFooterActionsOpen(false);
+                      onDownloadOriginal(request);
+                    }}
+                    disabled={isDownloadingAsset === String(request.id)}
+                    className="w-full px-4 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-slate-50 transition-all flex items-center gap-2 disabled:opacity-50"
+                  >
+                    <Download className="h-4 w-4" />
+                    {isDownloadingAsset === String(request.id) ? "Preparing…" : "Download assets"}
+                  </button>
+
+                  {request?.metadata?.edited?.path && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsFooterActionsOpen(false);
+                        onDownloadEdited(request);
+                      }}
+                      disabled={isDownloadingAsset === String(request.id) + ":edited"}
+                      className="w-full px-4 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-slate-50 transition-all flex items-center gap-2 disabled:opacity-50"
+                    >
+                      <Download className="h-4 w-4" />
+                      {isDownloadingAsset === String(request.id) + ":edited" ? "Preparing…" : "Download edited"}
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsFooterActionsOpen(false);
+                      onUploadEdited(request);
+                    }}
+                    disabled={isUploadingEdited === String(request.id)}
+                    className="w-full px-4 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-slate-50 transition-all flex items-center gap-2 disabled:opacity-50"
+                  >
+                    <Upload className="h-4 w-4" />
+                    {isUploadingEdited === String(request.id) ? "Uploading…" : "Upload edited"}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-4">
+
+          <div className="flex items-center gap-2 flex-none">
             <button 
               onClick={() => onStatusUpdate(request.id, 'IN_PROGRESS')}
-              className="h-14 px-8 rounded-2xl bg-white border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 transition-all shadow-sm"
+              className="h-11 px-4 rounded-xl bg-white border border-slate-200 text-slate-600 text-sm font-bold hover:bg-slate-50 transition-all shadow-sm"
             >
               Set In Progress
             </button>
             <button 
               onClick={() => onStatusUpdate(request.id, 'COMPLETED')}
-              className="h-14 px-10 rounded-2xl bg-slate-900 text-white font-bold hover:bg-slate-800 transition-all shadow-xl shadow-slate-200 flex items-center gap-3"
+              className="h-11 px-5 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800 transition-all shadow-xl shadow-slate-200 flex items-center gap-2"
             >
-              <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
               Mark Completed
             </button>
           </div>

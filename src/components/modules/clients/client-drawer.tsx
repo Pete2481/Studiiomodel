@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { X, Building2, User, Mail, Phone, ShieldCheck, Plus, ChevronDown, Download, CalendarDays, Receipt, Edit3, Globe, Camera, Layout, Upload, Move, RotateCcw, Trash2, DollarSign, Tag } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatDropboxUrl } from "@/lib/utils";
 
 interface ClientDrawerProps {
   isOpen: boolean;
@@ -39,6 +39,7 @@ export function ClientDrawer({
     name: "",
     businessName: "",
     email: "",
+    accountsEmail: "",
     phone: "",
     avatarUrl: "",
     status: "PENDING",
@@ -77,6 +78,7 @@ export function ClientDrawer({
         name: client.contact || client.name || "",
         businessName: client.businessName || client.name || "",
         email: client.email || "",
+        accountsEmail: (client.settings && typeof client.settings === "object" && (client.settings as any).accountsEmail) ? String((client.settings as any).accountsEmail) : "",
         phone: client.phone || "",
         avatarUrl: client.avatarUrl || "",
         status: client.status || "PENDING",
@@ -92,13 +94,14 @@ export function ClientDrawer({
         priceOverrides: client.priceOverrides || {},
         disabledServices: client.disabledServices || [],
       });
-      setPreviewUrl(client.avatar || client.avatarUrl || null);
+      setPreviewUrl(client.avatar || client.avatarUrl ? formatDropboxUrl(client.avatar || client.avatarUrl) : null);
     } else {
       setFormData({
         id: "",
         name: "",
         businessName: "",
         email: "",
+        accountsEmail: "",
         phone: "",
         avatarUrl: "",
         status: "PENDING",
@@ -117,6 +120,13 @@ export function ClientDrawer({
       setPreviewUrl(null);
     }
   }, [client]);
+
+  const setAvatarUrl = (raw: string) => {
+    const v = String(raw || "").trim();
+    const formatted = v ? formatDropboxUrl(v) : "";
+    setPreviewUrl(formatted || null);
+    setFormData(prev => ({ ...prev, avatarUrl: v }));
+  };
 
   if (!mounted) return null;
 
@@ -223,8 +233,7 @@ export function ClientDrawer({
                       onClick={() => {
                         const url = promptForImageLink("Paste a public Dropbox image link for the client icon (logo/avatar):", formData.avatarUrl);
                         if (!url) return;
-                        setPreviewUrl(url);
-                        setFormData(prev => ({ ...prev, avatarUrl: url }));
+                        setAvatarUrl(url);
                       }}
                       className="absolute -bottom-2 -right-2 h-10 w-10 bg-emerald-500 rounded-2xl text-white flex items-center justify-center shadow-lg hover:bg-emerald-600 transition-all active:scale-95 border-2 border-white"
                     >
@@ -237,9 +246,7 @@ export function ClientDrawer({
                     <input
                       value={formData.avatarUrl || ""}
                       onChange={(e) => {
-                        const v = e.target.value;
-                        setPreviewUrl(v || null);
-                        setFormData(prev => ({ ...prev, avatarUrl: v }));
+                        setAvatarUrl(e.target.value);
                       }}
                       type="url"
                       placeholder="Paste Dropbox link…"
@@ -308,6 +315,23 @@ export function ClientDrawer({
                         />
                       </div>
                     </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">ACCOUNTS email</label>
+                    <div className="relative">
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-300" />
+                      <input
+                        value={formData.accountsEmail}
+                        onChange={(e) => setFormData({ ...formData, accountsEmail: e.target.value })}
+                        type="text"
+                        placeholder="accounts@agency.com, ap@agency.com"
+                        className="ui-input-tight pl-12 text-xs"
+                      />
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-medium ml-1">
+                      Comma-separated allowed. Invoices will be sent to this address instead of the portal email.
+                    </p>
                   </div>
 
                   <div className="space-y-2">

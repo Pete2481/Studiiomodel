@@ -1028,42 +1028,7 @@ export function GalleryDrawer({
                   <p className="text-[10px] font-bold text-slate-500">Links are 10x faster than navigating folders.</p>
                 </div>
 
-                {/* Dropbox Folders */}
-                <div className="space-y-4 pt-6 border-t border-slate-50">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Mapped Folders (Advanced)</label>
-                    <button 
-                      type="button"
-                      onClick={() => handleBrowseFolders()}
-                      className="text-[11px] font-bold text-primary uppercase tracking-widest hover:underline"
-                    >
-                      + Browse Dropbox
-                    </button>
-                  </div>
-
-                  <div className="space-y-2">
-                    {formData.imageFolders.map((folder: any, i: number) => (
-                      <div key={i} className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-100 group">
-                        <div className="flex items-center gap-3">
-                          <div className="h-8 w-8 rounded-lg bg-white shadow-sm flex items-center justify-center text-blue-500">
-                            <Folder className="h-4 w-4" />
-                          </div>
-                          <div>
-                            <p className="text-xs font-bold text-slate-900">{folder.name}</p>
-                            <p className="text-[9px] text-slate-400 font-medium">{folder.path}</p>
-                          </div>
-                        </div>
-                        <button 
-                          type="button"
-                          onClick={() => removeFolder(i)}
-                          className="p-2 text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                {/* Mapped folders intentionally disabled in UI: links-only workflow */}
 
                 {/* Video Links */}
                 <div className="space-y-4 pt-6 border-t border-slate-50">
@@ -1152,7 +1117,7 @@ export function GalleryDrawer({
         </form>
 
         {/* Dropbox Browser Modal/Overlay */}
-        {isBrowsing && (
+        {false && isBrowsing && (
           <div className="absolute inset-0 z-[110] bg-white flex flex-col animate-in slide-in-from-bottom duration-500">
             <div className="px-10 py-8 border-b border-slate-50 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-4">

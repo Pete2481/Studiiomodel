@@ -321,6 +321,22 @@ function DashboardShellContent({
 
   const filteredNav = useMemo(() => {
     if (providedNavSections) return providedNavSections;
+
+    // Editor portal: keep navigation focused on Edit Requests only.
+    if (user.role === "EDITOR") {
+      return [
+        {
+          items: [
+            {
+              label: "Edit requests",
+              href: "/tenant/edits",
+              icon: "Paintbrush",
+              module: "edits",
+            },
+          ],
+        },
+      ] as any;
+    }
     
     return permissionService.getFilteredNav(
       { 
