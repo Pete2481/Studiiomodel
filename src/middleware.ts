@@ -12,7 +12,8 @@ export default auth((req) => {
 
   // Always allow unauthenticated access to public assets/metadata.
   // Otherwise the browser fetches HTML redirects which causes "Manifest: Syntax error" warnings.
-  if (isApiAuthRoute || isPublicBooking || isPublicGallery || isManifest || isFavicon || isAppIcons) return;
+  // NOTE: we still run demo-guards for logged-in users on certain /api/auth routes (see below).
+  if (isPublicBooking || isPublicGallery || isManifest || isFavicon || isAppIcons) return;
 
   if (isAuthPage) {
     if (isLoggedIn) {
@@ -22,12 +23,34 @@ export default auth((req) => {
   }
 
   if (!isLoggedIn) {
+    // Keep /api/auth routes reachable for login/otp.
+    if (isApiAuthRoute) return;
     return Response.redirect(new URL("/login", req.nextUrl));
   }
 
   // Role-based routing
   const user = req.auth?.user as any;
   const path = req.nextUrl.pathname;
+
+  const isReadOnlyDemo = !!user?.permissions?.readOnlyDemo;
+  if (isReadOnlyDemo) {
+    const method = String(req.method || "").toUpperCase();
+
+    // Block integration connects even though they are GET (prevents OAuth flow + tokens).
+    if (path.startsWith("/api/auth/dropbox") || path.startsWith("/api/auth/google-drive")) {
+      return new Response("Demo account is read-only.", { status: 403 });
+    }
+
+    // Keep demo users out of settings entirely (integrations + billing, etc).
+    if (path.startsWith("/tenant/settings")) {
+      return Response.redirect(new URL("/", req.nextUrl));
+    }
+
+    // Block any non-read request (prevents Server Actions + form submits).
+    if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
+      return new Response("Demo account is read-only.", { status: 403 });
+    }
+  }
 
   // 2. Restricted Role Routing (Editors/Team Members)
   if (user?.role === "EDITOR" || user?.role === "TEAM_MEMBER") {

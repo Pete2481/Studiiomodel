@@ -12,6 +12,18 @@ export async function POST(request: Request) {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
+
+    // Demo account support (production-only, tightly scoped):
+    // - tenantId here is the MEMBERSHIP ID (see tenant-lookup route)
+    const demoEmail = String(process.env.DEMO_EMAIL || "").toLowerCase().trim();
+    const demoMembershipId = String(process.env.DEMO_MEMBERSHIP_ID || "");
+    const demoOtp = String(process.env.DEMO_OTP_CODE || "000000");
+    const isDemoLogin =
+      process.env.NODE_ENV === "production" &&
+      !!demoEmail &&
+      normalizedEmail === demoEmail &&
+      !!demoMembershipId &&
+      String(tenantId) === demoMembershipId;
     // NOTE (performance): We intentionally DO NOT check membership here.
     // If the UI allowed the user to request an OTP for a workspace, we send it immediately.
     // Actual authorization is enforced during OTP verification in the NextAuth credentials authorize().
@@ -25,8 +37,14 @@ export async function POST(request: Request) {
     }
 
     // 2. Generate 6-digit OTP
-    // Default to 000000 for development ONLY if specified in ENV
-    const otp = process.env.NODE_ENV === "development" ? "000000" : randomInt(100000, 999999).toString();
+    // - Development: always 000000
+    // - Production: allow demo fixed OTP ONLY for the demo membership
+    const otp =
+      process.env.NODE_ENV === "development"
+        ? "000000"
+        : isDemoLogin
+          ? demoOtp
+          : randomInt(100000, 999999).toString();
     const expires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
 
     // 3. Store OTP in VerificationToken table
@@ -51,6 +69,11 @@ export async function POST(request: Request) {
     //
     // Local dev: fire-and-forget so the API responds instantly.
     // Production: await to ensure delivery (serverless runtimes can stop executing after response).
+    // For demo logins, do not send email (fixed code is known).
+    if (isDemoLogin) {
+      return NextResponse.json({ success: true, demo: true });
+    }
+
     try {
       let actualTenantId: string | "MASTER" = "MASTER";
       if (tenantId !== "MASTER") {
