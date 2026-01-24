@@ -9,7 +9,7 @@ import { addDays, addMinutes, format, subMinutes } from "date-fns";
 import { cn } from "@/lib/utils";
 import { permissionService } from "@/lib/permission-service";
 import { BookingPopoverV2 } from "./booking-popover-v2";
-import { deleteBooking, rescheduleBooking, upsertBooking } from "@/app/actions/booking-upsert";
+import { deleteBooking, rescheduleBooking } from "@/app/actions/booking-upsert";
 import dynamic from "next/dynamic";
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Loader2, Plus, Settings } from "lucide-react";
 import { getSunTimesForLatLonRange } from "@/app/actions/weather";
@@ -121,7 +121,7 @@ export function CalendarViewV2(props: {
     bookingsRef.current = bookings;
   }, [bookings]);
   const [sunSlots, setSunSlots] = useState<LiteBooking[]>([]);
-  const [clientTempBooking, setClientTempBooking] = useState<LiteBooking | null>(null);
+  const [tempBooking, setTempBooking] = useState<LiteBooking | null>(null);
   const [rangeTitle, setRangeTitle] = useState<string>("");
   const [clientHoursMsg, setClientHoursMsg] = useState<string | null>(null);
   const lastVisibleRangeRef = useRef<{ start: Date; end: Date } | null>(null);
@@ -217,7 +217,6 @@ export function CalendarViewV2(props: {
   const [pendingView, setPendingView] = useState<string | null>(null);
 
   const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
-  const lastCreateRef = useRef<{ key: string; at: number } | null>(null);
   const suppressSelectUntilRef = useRef<number>(0);
   const pendingAnchorBookingIdRef = useRef<string | null>(null);
 
@@ -227,25 +226,24 @@ export function CalendarViewV2(props: {
   const canPlaceBookings = permissionService.can(user, "canPlaceBookings");
   const canClientPlaceBookings = canPlaceBookings;
 
-  const setClientTempAt = (startIso: string, endIso: string, opts?: { slotType?: "SUNRISE" | "DUSK" | null }) => {
-    if (user?.role !== "CLIENT") return;
-    setClientTempBooking({
-      id: "client-temp",
+  const setTempAt = (startIso: string, endIso: string, opts?: { slotType?: "SUNRISE" | "DUSK" | null }) => {
+    setTempBooking({
+      id: "temp-booking",
       title: "New Event",
       startAt: startIso,
       endAt: endIso,
-      status: "REQUESTED",
+      status: user?.role === "CLIENT" ? "REQUESTED" : "APPROVED",
       isPlaceholder: false,
       slotType: opts?.slotType || null,
       isDraft: true,
       isTemp: true,
-      client: { businessName: "CLIENT" },
+      client: { businessName: user?.role === "CLIENT" ? "CLIENT" : "" },
       property: { name: "TBC" },
       teamAvatars: [],
       teamCount: 0,
     });
     // Re-anchor popover to the actual rendered temp card (so arrow sits on the card edge, not the click point).
-    pendingAnchorBookingIdRef.current = "client-temp";
+    pendingAnchorBookingIdRef.current = "temp-booking";
   };
 
   const mergeLiteById = (prev: LiteBooking[], next: LiteBooking[]) => {
@@ -388,46 +386,6 @@ export function CalendarViewV2(props: {
         return mk([225, 29, 72]); // deeper rose
       default:
         return "none";
-    }
-  };
-
-  const createDraftBooking = async (
-    startAtIso: string,
-    endAtIso: string,
-    anchor: { left: number; top: number; right: number; bottom: number; width: number; height: number },
-    opts?: { slotType?: "SUNRISE" | "DUSK" | null }
-  ) => {
-    try {
-      // Dedupe: FullCalendar can fire both dateClick + select for a single user gesture.
-      const now = Date.now();
-      // Use start-time only (rounded) because click+select may produce different endAt values.
-      const startKey = new Date(startAtIso);
-      const roundedStartMs = Math.floor(startKey.getTime() / (60 * 1000)) * (60 * 1000);
-      const key = `${roundedStartMs}`;
-      if (lastCreateRef.current && lastCreateRef.current.key === key && now - lastCreateRef.current.at < 750) {
-        return null;
-      }
-      lastCreateRef.current = { key, at: now };
-
-      const res = await upsertBooking({
-        title: "New Event",
-        startAt: startAtIso,
-        endAt: endAtIso,
-        status: "approved",
-        metadata: { draft: true },
-        slotType: opts?.slotType || null,
-      });
-      if (!(res as any)?.success || !(res as any)?.booking) return null;
-      const created = { ...toLiteFromCalendarBooking((res as any).booking), isDraft: true };
-      setBookings((prev) => mergeBookingsById(prev, [created]));
-      // Initially open using pointer anchor, then re-anchor to the actual rendered event card once mounted.
-      setPopoverAnchor(anchor);
-      setPopover({ open: true, mode: "booking", bookingId: String(created.id), startAt: startAtIso, endAt: endAtIso });
-      pendingAnchorBookingIdRef.current = String(created.id);
-      return created;
-    } catch (e) {
-      console.error("[CALENDAR_V2] Draft create failed:", e);
-      return null;
     }
   };
 
@@ -815,12 +773,15 @@ export function CalendarViewV2(props: {
         }
         start = found.start;
       }
-      setClientTempAt(start.toISOString(), end.toISOString());
+      setTempAt(start.toISOString(), end.toISOString());
       setPopoverAnchor(anchor);
       setPopover({ open: true, mode: "booking", bookingId: undefined, startAt: start.toISOString(), endAt: end.toISOString(), presetSlotType: null });
       return;
     }
-    await createDraftBooking(start.toISOString(), end.toISOString(), anchor);
+    // Tenant/team: open instantly; only persist when user presses Save.
+    setTempAt(start.toISOString(), end.toISOString());
+    setPopoverAnchor(anchor);
+    setPopover({ open: true, mode: "booking", bookingId: undefined, startAt: start.toISOString(), endAt: end.toISOString(), presetSlotType: null });
   };
 
   const calendarEvents = useMemo(() => {
@@ -929,7 +890,7 @@ export function CalendarViewV2(props: {
       });
     })();
 
-    const allBookings = [...staffFilteredBookings, ...sunSlotsRender, ...(clientTempBooking ? [clientTempBooking] : [])];
+    const allBookings = [...staffFilteredBookings, ...sunSlotsRender, ...(tempBooking ? [tempBooking] : [])];
 
     // 1) Availability background (punched holes)
     if (businessHours) {
@@ -1024,7 +985,7 @@ export function CalendarViewV2(props: {
     aiLogisticsEnabled,
     bookings,
     sunSlots,
-    clientTempBooking,
+    tempBooking,
     businessHours,
     isClientOrRestrictedAgent,
     user,
@@ -1949,13 +1910,15 @@ export function CalendarViewV2(props: {
                 flashClientHoursMsg("Select a Sunrise/Dusk slot or a time within business hours.");
                 return;
               }
-              setClientTempAt(start.toISOString(), end.toISOString());
+              setTempAt(start.toISOString(), end.toISOString());
               setPopoverAnchor(anchor);
               setPopover({ open: true, mode: "booking", bookingId: undefined, startAt: start.toISOString(), endAt: end.toISOString(), presetSlotType: null });
               return;
             }
             // Tenant/team: iOS behavior (create draft immediately on click).
-            await createDraftBooking(start.toISOString(), end.toISOString(), anchor);
+            setTempAt(start.toISOString(), end.toISOString());
+            setPopoverAnchor(anchor);
+            setPopover({ open: true, mode: "booking", bookingId: undefined, startAt: start.toISOString(), endAt: end.toISOString(), presetSlotType: null });
           }}
           eventDidMount={(info) => {
             const el = info.el as HTMLElement;
@@ -2151,7 +2114,7 @@ export function CalendarViewV2(props: {
                 // Slots-only behavior: open the popover anchored to the slot WITHOUT creating a booking until Save.
                 // IMPORTANT: For CLIENT, do NOT create an extra temporary booking box here.
                 // The Sunrise/Dusk card itself is the only selectable box; just open the popover.
-                if (user?.role === "CLIENT") setClientTempBooking(null);
+                setTempBooking(null);
                 setPopoverAnchor(anchor);
                 setPopover({ open: true, mode: "booking", bookingId: undefined, startAt: startAtIso, endAt: endAtIso, presetSlotType: slotType as any });
               }
@@ -2165,8 +2128,6 @@ export function CalendarViewV2(props: {
             if (isRestrictedRole && !canClientPlaceBookings) return;
             // If this selection was initiated by a click (not a drag), ignore it.
             if (Date.now() < suppressSelectUntilRef.current) return;
-            // Drag-select should not be affected by our click dedupe key.
-            lastCreateRef.current = null;
             const containerRect = calendarRef.current?.el?.getBoundingClientRect?.() as DOMRect | undefined;
             const p = lastPointerRef.current;
             const cx = p?.x ?? (containerRect ? containerRect.left + containerRect.width / 2 : window.innerWidth / 2);
@@ -2224,13 +2185,15 @@ export function CalendarViewV2(props: {
                 return;
               }
               const endIso = addMinutes(info.start, 60).toISOString();
-              setClientTempAt(info.start.toISOString(), endIso);
+              setTempAt(info.start.toISOString(), endIso);
               setPopoverAnchor(anchor);
               setPopover({ open: true, mode: "booking", bookingId: undefined, startAt: info.start.toISOString(), endAt: endIso, presetSlotType: null });
               return;
             }
             // Tenant/team: create draft immediately for selected range.
-            void createDraftBooking(info.start.toISOString(), info.end.toISOString(), anchor);
+            setTempAt(info.start.toISOString(), info.end.toISOString());
+            setPopoverAnchor(anchor);
+            setPopover({ open: true, mode: "booking", bookingId: undefined, startAt: info.start.toISOString(), endAt: info.end.toISOString(), presetSlotType: null });
           }}
           selectAllow={(selectInfo) => {
             if (user?.role !== "CLIENT") return true;
@@ -2538,7 +2501,7 @@ export function CalendarViewV2(props: {
           if (!calendarBooking) return;
           const lite = toLiteFromCalendarBooking(calendarBooking);
           setBookings((prev) => mergeBookingsById(prev, [lite]));
-          if (user?.role === "CLIENT") setClientTempBooking(null);
+          setTempBooking(null);
         }}
         onDeleted={(id) => {
           if (!id) return;
@@ -2548,7 +2511,7 @@ export function CalendarViewV2(props: {
           setPopover((p) => ({ ...p, open: false }));
           setPopoverAnchor(null);
           setPopoverRestore(null);
-          if (user?.role === "CLIENT") setClientTempBooking(null);
+          setTempBooking(null);
         }}
       />
 

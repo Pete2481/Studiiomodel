@@ -213,6 +213,64 @@ export function BookingPopoverV2(props: {
   const [notesOpen, setNotesOpen] = useState(false);
   const isSunLocked = form.slotType === "SUNRISE" || form.slotType === "DUSK";
 
+  // NEW BOOKING: hard reset all editable fields so nothing carries over from the last booking.
+  // Keep only the clicked start/end and any preset slot type (SUNRISE/DUSK).
+  useEffect(() => {
+    if (!open) return;
+    if (bookingId) return;
+    if (restoreForm) return; // allow reopen-after-failed-save to restore prior edits
+
+    // Reset dropdown UI state that can carry over between opens
+    setNotesOpen(false);
+    setIsStatusOpen(false);
+    setIsStartTimeOpen(false);
+    setIsEndTimeOpen(false);
+    setIsClientDropdownOpen(false);
+    setClientSearch("");
+    setIsServiceDropdownOpen(false);
+    setServiceSearch("");
+    setIsTeamDropdownOpen(false);
+    setTeamSearch("");
+
+    const preset = String(presetSlotType || "").toUpperCase();
+    const slotType = preset === "SUNRISE" ? "SUNRISE" : preset === "DUSK" ? "DUSK" : "";
+
+    // Compute initial duration from the provided start/end range (if any)
+    const durationMinutes = (() => {
+      try {
+        const s = new Date(startAt || "");
+        const e = new Date(endAt || "");
+        if (isNaN(s.getTime()) || isNaN(e.getTime())) return 60;
+        const mins = Math.max(30, Math.min(480, Math.round((e.getTime() - s.getTime()) / (1000 * 60) / 30) * 30));
+        return mins || 60;
+      } catch {
+        return 60;
+      }
+    })();
+
+    setForm({
+      title: "New Event",
+      status: isClient ? "requested" : "approved",
+      slotType: slotType as any,
+      clientMode: "existing",
+      clientId: isClient ? String(user?.clientId || "") : "",
+      agentId: "",
+      otcName: "",
+      otcEmail: "",
+      otcPhone: "",
+      address: "",
+      startAt: startAt || "",
+      endAt: endAt || "",
+      durationMinutes: isClient ? 60 : durationMinutes,
+      serviceIds: [],
+      teamMemberIds: [],
+      clientNotes: "",
+      internalNotes: "",
+      repeat: "none",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, bookingId, restoreForm, presetSlotType, startAt, endAt, isClient, user?.clientId]);
+
   // Tenant/staff: if the user selects a SUNRISE/DUSK service, keep slotType in sync.
   // Respect preset slot bookings (opened from a SUNRISE/DUSK slot) by not auto-overriding slotType.
   const derivedSlotTypeFromServices = useMemo(() => {
@@ -1528,7 +1586,13 @@ export function BookingPopoverV2(props: {
                               );
                               if (!description) return row;
                               return (
-                                <PortalTooltip title={String(s?.name || "Service")} content={description} placement="top" className="w-full">
+                                <PortalTooltip
+                                  key={String(s?.id)}
+                                  title={String(s?.name || "Service")}
+                                  content={description}
+                                  placement="top"
+                                  className="w-full"
+                                >
                                   {row}
                                 </PortalTooltip>
                               );
@@ -1753,12 +1817,17 @@ export function BookingPopoverV2(props: {
                         setIsSaving(true);
                         void (async () => {
                           try {
+                            const isCreate = !snapshotBookingId;
+                            const prevStatus = isCreate ? "pencilled" : (initialStatusRef.current || "pencilled");
+                            const nextStatus = normalizeStatus(snapshot.status);
+                            const notificationType = computeNotificationType({ isCreate, prevStatus, nextStatus });
+
                             const result = await upsertBooking({
                               ...(snapshotBookingId ? { id: snapshotBookingId } : {}),
                               title: snapshot.title || "New Event",
                               startAt: snapshot.startAt,
                               endAt: snapshot.endAt,
-                              status: normalizeStatus(snapshot.status),
+                              status: nextStatus,
                               slotType: snapshot.slotType || null,
                               clientId: snapshot.clientMode === "existing" ? snapshot.clientId : "",
                               agentId: snapshot.agentId || "",
@@ -1777,7 +1846,20 @@ export function BookingPopoverV2(props: {
                               onUpserted?.(saved);
                               if (!snapshotBookingId && optimisticId && onDeleted) onDeleted(String(optimisticId));
                               // Update baseline after save
-                              initialStatusRef.current = normalizeStatus(snapshot.status);
+                              initialStatusRef.current = nextStatus;
+
+                              // Silent approvals should still notify photographer/team + tenant (exclude client/agent).
+                              if (!isClient && notifyPref === "silent" && (notificationType === "BOOKING_APPROVED" || notificationType === "NEW_BOOKING")) {
+                                try {
+                                  await fetch("/api/tenant/calendar/notifications/send", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ bookingId: String(saved.id), type: notificationType, audience: "team+tenant" }),
+                                  });
+                                } catch {
+                                  // Ignore notification send errors in the silent path.
+                                }
+                              }
                               return;
                             }
                             throw new Error((result as any)?.error || "Save failed");
