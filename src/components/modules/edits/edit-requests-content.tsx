@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EditTagsDrawer } from "./edit-tags-drawer";
-import { updateEditRequestStatus, updateEditRequestAssignments, exportGalleryEditRequests, getEditRequestOriginalDownloadLink, getEditRequestEditedDownloadLink, uploadEditedAssetToDropbox } from "@/app/actions/edit-request";
+import { bulkCancelEditRequests, updateEditRequestStatus, updateEditRequestAssignments, exportGalleryEditRequests, getEditRequestOriginalDownloadLink, getEditRequestEditedDownloadLink, uploadEditedAssetToDropbox } from "@/app/actions/edit-request";
 import { createInvoiceFromEditRequests } from "@/app/actions/invoice";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 
@@ -59,6 +59,8 @@ export function EditRequestsContent({ initialRequests, initialTags, teamMembers,
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
   const [isDownloadingAsset, setIsDownloadingAsset] = useState<string | null>(null);
   const [isUploadingEdited, setIsUploadingEdited] = useState<string | null>(null);
+  const [selectedByGallery, setSelectedByGallery] = useState<Record<string, string[]>>({});
+  const [bulkDeletingGalleryId, setBulkDeletingGalleryId] = useState<string | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -138,6 +140,60 @@ export function EditRequestsContent({ initialRequests, initialTags, teamMembers,
     setExpandedGalleries(prev => 
       prev.includes(id) ? prev.filter(gid => gid !== id) : [...prev, id]
     );
+    // Clear selection when collapsing to keep scope per-gallery clean.
+    setSelectedByGallery((prev) => {
+      if (!prev[id]) return prev;
+      const next = { ...(prev || {}) };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const canBulkDelete = user?.role === "TENANT_ADMIN" || user?.role === "ADMIN";
+
+  const toggleSelectRequest = (galleryId: string, requestId: string, checked: boolean) => {
+    setSelectedByGallery((prev) => {
+      const current = new Set<string>((prev?.[galleryId] || []).map(String));
+      if (checked) current.add(String(requestId));
+      else current.delete(String(requestId));
+      return { ...(prev || {}), [galleryId]: Array.from(current) };
+    });
+  };
+
+  const toggleSelectAllInGallery = (galleryId: string, requestIds: string[], checked: boolean) => {
+    setSelectedByGallery((prev) => ({ ...(prev || {}), [galleryId]: checked ? requestIds : [] }));
+  };
+
+  const clearGallerySelection = (galleryId: string) => {
+    setSelectedByGallery((prev) => ({ ...(prev || {}), [galleryId]: [] }));
+  };
+
+  const handleBulkDeleteInGallery = async (galleryId: string, requestIds: string[]) => {
+    if (!canBulkDelete) return;
+    const ids = (selectedByGallery?.[galleryId] || []).filter(Boolean);
+    if (!ids.length) return;
+    if (!confirm(`Delete ${ids.length} edit request${ids.length === 1 ? "" : "s"} for this job?`)) return;
+    setBulkDeletingGalleryId(galleryId);
+    try {
+      const res = await bulkCancelEditRequests(ids);
+      if (!(res as any)?.success) {
+        alert((res as any)?.error || "Failed to delete edit requests.");
+        return;
+      }
+      // Remove from local UI immediately.
+      setRequests((prev) => prev.filter((r: any) => !ids.includes(String(r.id))));
+      // Close drawer if the selected request was deleted.
+      if (selectedRequest?.id && ids.includes(String(selectedRequest.id))) {
+        setSelectedRequest(null);
+      }
+      clearGallerySelection(galleryId);
+      router.refresh();
+    } catch (e: any) {
+      console.error("Bulk delete edit requests failed:", e);
+      alert(e?.message || "Failed to delete edit requests.");
+    } finally {
+      setBulkDeletingGalleryId(null);
+    }
   };
 
   const handleStatusUpdate = async (id: string, newStatus: string) => {
@@ -417,6 +473,10 @@ export function EditRequestsContent({ initialRequests, initialTags, teamMembers,
       <div className="space-y-4">
         {groupedRequests.map((group) => {
           const isExpanded = expandedGalleries.includes(group.id);
+          const selectedIds = (selectedByGallery?.[group.id] || []).map(String);
+          const requestIds = (group.requests || []).map((r: any) => String(r.id));
+          const allSelected = requestIds.length > 0 && requestIds.every((id: string) => selectedIds.includes(id));
+          const someSelected = requestIds.some((id: string) => selectedIds.includes(id));
           return (
             <div key={group.id} className="ui-card overflow-hidden p-0 border-slate-100 bg-white group/card">
               {/* Group Header */}
@@ -507,12 +567,74 @@ export function EditRequestsContent({ initialRequests, initialTags, teamMembers,
               {/* Group Items */}
               {isExpanded && (
                 <div className="divide-y divide-slate-50 border-t border-slate-50 animate-in slide-in-from-top-2 duration-300">
+                  {canBulkDelete && (
+                    <div
+                      className="px-8 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          ref={(el) => {
+                            if (el) el.indeterminate = someSelected && !allSelected;
+                          }}
+                          disabled={bulkDeletingGalleryId === group.id}
+                          onChange={(e) => toggleSelectAllInGallery(group.id, requestIds, e.target.checked)}
+                          className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary/20"
+                          aria-label="Select all edit requests in this job"
+                        />
+                        <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                          {selectedIds.length ? `${selectedIds.length} selected` : "Select requests"}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {selectedIds.length > 0 && (
+                          <>
+                            <button
+                              onClick={() => clearGallerySelection(group.id)}
+                              disabled={bulkDeletingGalleryId === group.id}
+                              className="h-10 px-4 rounded-xl bg-white border border-slate-200 text-slate-700 text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all disabled:opacity-50"
+                            >
+                              Clear
+                            </button>
+                            <button
+                              onClick={() => handleBulkDeleteInGallery(group.id, requestIds)}
+                              disabled={bulkDeletingGalleryId === group.id}
+                              className={cn(
+                                "h-10 px-4 rounded-xl bg-rose-600 text-white text-[10px] font-black uppercase tracking-widest hover:opacity-90 transition-all disabled:opacity-50"
+                              )}
+                            >
+                              {bulkDeletingGalleryId === group.id ? "Deleting..." : "Delete selected"}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
                   {group.requests.map((request: any) => (
                     <div 
                       key={request.id} 
                       className="flex items-start gap-8 px-8 py-8 hover:bg-slate-50/20 transition-all cursor-pointer group/item"
                       onClick={() => setSelectedRequest(request)}
                     >
+                      {canBulkDelete && (
+                        <div
+                          className="pt-2"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(String(request.id))}
+                            disabled={bulkDeletingGalleryId === group.id}
+                            onChange={(e) => toggleSelectRequest(group.id, String(request.id), e.target.checked)}
+                            className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary/20"
+                            aria-label="Select edit request"
+                          />
+                        </div>
+                      )}
                       <div className="h-24 w-32 rounded-2xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200 relative">
                         {(() => {
                           const isAiSuiteUnlock =

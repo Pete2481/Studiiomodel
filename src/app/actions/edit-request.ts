@@ -344,6 +344,33 @@ export async function updateEditRequestAssignments(id: string, assignedToIds: st
   }
 }
 
+export async function bulkCancelEditRequests(ids: string[]) {
+  try {
+    const session = await auth();
+    if (!session) return { success: false, error: "Unauthorized" } as const;
+
+    // ROLE CHECK (deletion is admin-only)
+    if (session.user.role !== "TENANT_ADMIN" && session.user.role !== "ADMIN") {
+      return { success: false, error: "Permission Denied: Admin only." } as const;
+    }
+
+    const safeIds = Array.isArray(ids) ? ids.map((x) => String(x)).filter(Boolean) : [];
+    if (safeIds.length === 0) return { success: true, cancelledCount: 0 } as const;
+
+    const tPrisma = await getTenantPrisma();
+    const res = await (tPrisma as any).editRequest.updateMany({
+      where: { id: { in: safeIds } },
+      data: { status: "CANCELLED", completedAt: null },
+    });
+
+    revalidatePath("/tenant/edits");
+    return { success: true, cancelledCount: Number(res?.count || 0) } as const;
+  } catch (error: any) {
+    console.error("BULK CANCEL EDIT REQUESTS ERROR:", error);
+    return { success: false, error: error?.message || "Failed to delete edit requests." } as const;
+  }
+}
+
 export async function exportGalleryEditRequests(galleryId: string, format: 'fcpxml' | 'resolve' | 'csv' | 'json' | 'markdown', requestId?: string) {
   try {
     const session = await auth();
