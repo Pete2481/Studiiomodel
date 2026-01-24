@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import sharp from "sharp";
 import { checkSubscriptionStatus } from "@/lib/tenant-guard";
+import { isTenantStaffRole } from "@/lib/permission-service";
 
 // Dropbox requires JSON args in the `Dropbox-API-Arg` header. Node's fetch (undici) enforces ByteString
 // for header values, so we must escape non-Latin-1 chars (e.g. U+202F) to avoid runtime errors.
@@ -64,7 +65,7 @@ export async function GET(
 
     // SECURITY: Public access only for READY/DELIVERED galleries
     const session = await auth();
-    const isStaff = session?.user?.role === "TENANT_ADMIN" || session?.user?.role === "TEAM_MEMBER";
+    const isStaff = isTenantStaffRole((session?.user as any)?.role);
     
     if (gallery.status === "DRAFT" && !isStaff) {
       return new NextResponse("Gallery not published", { status: 403 });

@@ -16,6 +16,7 @@ const DEFAULT_PERMISSIONS: Record<TeamMemberRole, any> = {
     viewBookings: true,
     viewBlankedBookings: true,
     viewAllBookings: true,
+    viewGalleries: true,
     viewAllGalleries: true,
     deleteGallery: true,
     viewInvoices: true,
@@ -28,8 +29,9 @@ const DEFAULT_PERMISSIONS: Record<TeamMemberRole, any> = {
     viewCalendar: true,
     viewBookings: true,
     viewBlankedBookings: false,
-    viewAllBookings: true,
-    viewAllGalleries: true,
+    viewAllBookings: false,
+    viewGalleries: true,
+    viewAllGalleries: false,
     deleteGallery: false,
     viewInvoices: false,
     manageGalleries: false,
@@ -42,6 +44,7 @@ const DEFAULT_PERMISSIONS: Record<TeamMemberRole, any> = {
     viewBookings: false,
     viewBlankedBookings: false,
     viewAllBookings: false,
+    viewGalleries: true,
     viewAllGalleries: true,
     deleteGallery: false,
     viewInvoices: false,
@@ -55,6 +58,7 @@ const DEFAULT_PERMISSIONS: Record<TeamMemberRole, any> = {
     viewBookings: true,
     viewBlankedBookings: false,
     viewAllBookings: true,
+    viewGalleries: false,
     viewAllGalleries: false,
     deleteGallery: false,
     viewInvoices: true,
@@ -123,6 +127,10 @@ export async function upsertTeamMember(data: any) {
     else if (normalizedRole === "ACCOUNTS") validRole = TeamMemberRole.ACCOUNTS;
     else validRole = TeamMemberRole.PHOTOGRAPHER;
 
+    // IMPORTANT: Membership.permissions is what the session + permissionService enforce.
+    // We store the same permission set on TeamMember for roster UI, but treat Membership as source of truth.
+    const finalPermissions = permissions || DEFAULT_PERMISSIONS[validRole] || {};
+
     let member;
     if (id) {
       // Fetch current member to check for secret
@@ -140,7 +148,7 @@ export async function upsertTeamMember(data: any) {
           role: validRole,
           status: status || "ACTIVE",
           avatarUrl,
-          permissions: permissions || DEFAULT_PERMISSIONS[validRole] || {},
+          permissions: finalPermissions,
           calendarSecret: currentMember?.calendarSecret || data.calendarSecret || randomBytes(16).toString("hex")
         },
       });
@@ -160,7 +168,7 @@ export async function upsertTeamMember(data: any) {
             role: validRole,
             status: status || "ACTIVE",
             avatarUrl,
-            permissions: permissions || DEFAULT_PERMISSIONS[validRole] || {},
+            permissions: finalPermissions,
             calendarSecret: existingMember.calendarSecret || randomBytes(16).toString("hex")
           }
         });
@@ -173,7 +181,7 @@ export async function upsertTeamMember(data: any) {
             role: validRole,
             status: status || "ACTIVE",
             avatarUrl,
-            permissions: permissions || DEFAULT_PERMISSIONS[validRole] || {},
+            permissions: finalPermissions,
             calendarSecret: newSecret
           },
         });
@@ -219,6 +227,13 @@ export async function upsertTeamMember(data: any) {
             user: { connect: { id: user.id } },
             role: tenantRole as any,
           }
+        });
+      }
+      // Keep membership permissions in sync (source of truth for enforcement).
+      if (membership?.id) {
+        await (tPrisma as any).tenantMembership.update({
+          where: { id: membership.id },
+          data: { permissions: finalPermissions },
         });
       }
 

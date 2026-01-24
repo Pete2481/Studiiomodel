@@ -259,7 +259,7 @@ export async function getGalleryReferenceData() {
         select: { id: true, name: true, businessName: true, settings: true, avatarUrl: true } 
       }),
       prisma.booking.findMany({ 
-        where: { tenantId, deletedAt: null, clientId: !canViewAll && (session.user as any).clientId ? (session.user as any).clientId : undefined },
+        where: { tenantId, deletedAt: null, isPlaceholder: false, clientId: !canViewAll && (session.user as any).clientId ? (session.user as any).clientId : undefined },
         select: { 
           id: true, 
           title: true, 

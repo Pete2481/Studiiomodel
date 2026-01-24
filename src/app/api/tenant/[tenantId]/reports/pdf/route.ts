@@ -187,7 +187,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ tena
         where: { tenantId, deliveredAt: { gte: from, lte: to }, deletedAt: null }
       }),
       prisma.booking.findMany({
-        where: { tenantId, startAt: { gte: from, lte: to }, deletedAt: null },
+        where: { tenantId, startAt: { gte: from, lte: to }, deletedAt: null, isPlaceholder: false },
         include: { services: true }
       }),
       prisma.service.findMany({

@@ -127,6 +127,8 @@ export async function GET() {
             where: {
               ...bookingWhere,
               startAt: { gte: startOfTodayInTimeZone(tenantTz) },
+              // Never show system placeholders in booking feeds.
+              isPlaceholder: false,
             },
             orderBy: { startAt: "asc" },
             take: 5,

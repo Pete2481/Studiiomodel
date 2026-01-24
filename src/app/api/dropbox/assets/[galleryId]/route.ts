@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getTenantPrisma } from "@/lib/tenant-guard";
 import { auth } from "@/auth";
+import { isTenantStaffRole } from "@/lib/permission-service";
 import sharp from "sharp";
 import { logger } from "@/lib/logger";
 
@@ -86,7 +87,7 @@ export async function GET(
     }
 
     const session = await auth();
-    const isStaff = session?.user?.role === "TENANT_ADMIN" || session?.user?.role === "TEAM_MEMBER";
+    const isStaff = isTenantStaffRole((session?.user as any)?.role);
     const isOwner = session?.user?.clientId === gallery.clientId;
     
     // SECURITY: Public access only for READY/DELIVERED (unless it's a shared curated link)

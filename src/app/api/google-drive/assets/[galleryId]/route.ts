@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { google } from "googleapis";
 import sharp from "sharp";
+import { isTenantStaffRole } from "@/lib/permission-service";
 
 /**
  * Proxy route to fetch assets from Google Drive.
@@ -40,7 +41,7 @@ export async function GET(
 
     // 2. Auth Check
     const session = await auth();
-    const isStaff = session?.user?.role === "TENANT_ADMIN" || session?.user?.role === "TEAM_MEMBER";
+    const isStaff = isTenantStaffRole((session?.user as any)?.role);
     const isOwner = session?.user?.clientId === gallery.clientId;
     const isSharedRequest = searchParams.get("shared") === "true";
 

@@ -18,17 +18,58 @@ const ROLE_OPTIONS = [
   { value: "ACCOUNTS", label: "Accounts", description: "Billing & invoices only" },
 ];
 
-const PERMISSION_OPTIONS = [
-  { key: "viewCalendar", label: "View Calendar" },
-  { key: "viewBookings", label: "View Bookings" },
-  { key: "viewBlankedBookings", label: "View Blanked Bookings" },
-  { key: "viewAllBookings", label: "View All Bookings" },
-  { key: "viewAllGalleries", label: "View All Galleries" },
-  { key: "deleteGallery", label: "Delete Gallery" },
-  { key: "viewInvoices", label: "View Invoices" },
-  { key: "manageGalleries", label: "Manage Galleries" },
-  { key: "manageServices", label: "Manage Services" },
-];
+type PermissionKey =
+  | "viewCalendar"
+  | "viewBookings"
+  | "viewAllBookings"
+  | "viewGalleries"
+  | "viewAllGalleries"
+  | "viewInvoices"
+  | "manageGalleries"
+  | "manageServices"
+  | "deleteGallery";
+
+const PERMISSIONS: Record<
+  PermissionKey,
+  { label: string; help: string }
+> = {
+  viewCalendar: {
+    label: "Calendar",
+    help: "See the calendar grid and booking times.",
+  },
+  viewBookings: {
+    label: "Bookings",
+    help: "Open the bookings page and view booking details.",
+  },
+  viewAllBookings: {
+    label: "See all bookings",
+    help: "When off, they should only see jobs assigned to them.",
+  },
+  viewGalleries: {
+    label: "Galleries",
+    help: "Access the galleries module and view job galleries.",
+  },
+  viewAllGalleries: {
+    label: "See all galleries",
+    help: "When off, they should only see galleries for jobs assigned to them.",
+  },
+  viewInvoices: {
+    label: "Invoices",
+    help: "Access invoices and billing information.",
+  },
+  manageGalleries: {
+    label: "Manage galleries",
+    help: "Create/edit galleries and delivery settings.",
+  },
+  manageServices: {
+    label: "Manage services",
+    help: "Edit the service catalogue and pricing.",
+  },
+  deleteGallery: {
+    label: "Delete gallery",
+    help: "Hard delete a gallery. Use sparingly.",
+  },
+};
 
 export function TeamMemberDrawer({
   isOpen,
@@ -51,8 +92,64 @@ export function TeamMemberDrawer({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const [mounted, setMounted] = useState(false);
+
+  const getDefaultPermissionsForRole = (role: string): Record<string, boolean> => {
+    const r = String(role || "PHOTOGRAPHER").toUpperCase();
+    if (r === "ADMIN") {
+      return {
+        viewCalendar: true,
+        viewBookings: true,
+        viewAllBookings: true,
+        viewGalleries: true,
+        viewAllGalleries: true,
+        viewInvoices: true,
+        manageGalleries: true,
+        manageServices: true,
+        deleteGallery: true,
+      };
+    }
+    if (r === "EDITOR") {
+      return {
+        viewCalendar: false,
+        viewBookings: false,
+        viewAllBookings: false,
+        viewGalleries: true,
+        viewAllGalleries: true,
+        viewInvoices: false,
+        manageGalleries: true,
+        manageServices: false,
+        deleteGallery: false,
+      };
+    }
+    if (r === "ACCOUNTS") {
+      return {
+        viewCalendar: true,
+        viewBookings: true,
+        viewAllBookings: true,
+        viewGalleries: false,
+        viewAllGalleries: false,
+        viewInvoices: true,
+        manageGalleries: false,
+        manageServices: false,
+        deleteGallery: false,
+      };
+    }
+    // PHOTOGRAPHER default: access on, assigned-only scope.
+    return {
+      viewCalendar: true,
+      viewBookings: true,
+      viewAllBookings: false,
+      viewGalleries: true,
+      viewAllGalleries: false,
+      viewInvoices: false,
+      manageGalleries: false,
+      manageServices: false,
+      deleteGallery: false,
+    };
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -64,6 +161,8 @@ export function TeamMemberDrawer({
     if (member && member.id) {
       // Auto-generate a secret for existing members who don't have one yet
       const secret = member.calendarSecret || Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      const roleForDefaults = String(member.role || "PHOTOGRAPHER");
+      const mergedPerms = { ...getDefaultPermissionsForRole(roleForDefaults), ...(member.permissions || {}) };
       
       setFormData({
         id: member.id,
@@ -74,7 +173,7 @@ export function TeamMemberDrawer({
         avatarUrl: member.avatar || "",
         status: member.status || "ACTIVE",
         calendarSecret: secret,
-        permissions: member.permissions || {},
+        permissions: mergedPerms,
       });
       setPreviewUrl(member.avatar || null);
     } else {
@@ -87,18 +186,51 @@ export function TeamMemberDrawer({
         avatarUrl: "",
         status: "ACTIVE",
         calendarSecret: Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15),
-        permissions: {
-          viewCalendar: true,
-          viewBookings: true,
-          viewAllBookings: true,
-          viewAllGalleries: true,
-        },
+        permissions: getDefaultPermissionsForRole("PHOTOGRAPHER"),
       });
       setPreviewUrl(null);
     }
   }, [member]);
 
   if (!mounted) return null;
+
+  const setPerm = (key: PermissionKey, next: boolean) => {
+    setFormData((prev) => ({
+      ...prev,
+      permissions: {
+        ...prev.permissions,
+        [key]: next,
+      },
+    }));
+  };
+
+  const PermToggle = (props: { k: PermissionKey }) => {
+    const meta = PERMISSIONS[props.k];
+    const checked = !!formData.permissions[props.k];
+    return (
+      <label
+        className={cn(
+          "flex items-start justify-between gap-4 px-5 py-4 rounded-2xl border transition-all cursor-pointer",
+          checked ? "border-emerald-500 bg-emerald-50/30" : "border-slate-100 bg-white hover:border-slate-200"
+        )}
+      >
+        <span className="min-w-0">
+          <span className={cn("block text-[11px] font-black uppercase tracking-tight", checked ? "text-slate-900" : "text-slate-600")}>
+            {meta.label}
+          </span>
+          <span className="block mt-1 text-[11px] font-medium text-slate-500 leading-snug">
+            {meta.help}
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-500 focus:ring-emerald-500"
+          checked={checked}
+          onChange={(e) => setPerm(props.k, e.target.checked)}
+        />
+      </label>
+    );
+  };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -320,42 +452,45 @@ export function TeamMemberDrawer({
             <div className="space-y-6 border-t border-slate-100 pt-8">
               <div className="flex flex-col gap-1">
                 <h4 className="text-sm font-bold text-slate-900">Permissions</h4>
-                <p className="text-xs text-slate-500">Toggle access for this team member.</p>
+                <p className="text-xs text-slate-500">Clear access rules for what this crew member can see and do.</p>
               </div>
               
-              <div className="grid grid-cols-3 gap-3">
-                {PERMISSION_OPTIONS.map((opt) => (
-                  <label 
-                    key={opt.key}
-                    className={cn(
-                      "flex items-center justify-between px-4 py-3 rounded-2xl border transition-all cursor-pointer",
-                      formData.permissions[opt.key] 
-                        ? "border-emerald-500 bg-emerald-50/30" 
-                        : "border-slate-100 bg-white hover:border-slate-200"
-                    )}
-                  >
-                    <span className={cn(
-                      "text-[11px] font-bold uppercase tracking-tight",
-                      formData.permissions[opt.key] ? "text-slate-900" : "text-slate-500"
-                    )}>
-                      {opt.label}
-                    </span>
-                    <input 
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-slate-300 text-emerald-500 focus:ring-emerald-500"
-                      checked={!!formData.permissions[opt.key]}
-                      onChange={(e) => {
-                        setFormData({
-                          ...formData,
-                          permissions: {
-                            ...formData.permissions,
-                            [opt.key]: e.target.checked
-                          }
-                        });
-                      }}
-                    />
-                  </label>
-                ))}
+              {/* Simple permissions */}
+              <div className="space-y-3">
+                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Access</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <PermToggle k="viewCalendar" />
+                  <PermToggle k="viewBookings" />
+                  <PermToggle k="viewGalleries" />
+                  <PermToggle k="viewInvoices" />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Scope</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <PermToggle k="viewAllBookings" />
+                  <PermToggle k="viewAllGalleries" />
+                </div>
+              </div>
+
+              {/* Advanced */}
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced((v) => !v)}
+                  className="w-full flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-100 bg-white hover:border-slate-200 transition-all"
+                >
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Advanced</span>
+                  <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform", showAdvanced && "rotate-180")} />
+                </button>
+                {showAdvanced && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <PermToggle k="manageGalleries" />
+                    <PermToggle k="manageServices" />
+                    <PermToggle k="deleteGallery" />
+                  </div>
+                )}
               </div>
             </div>
 

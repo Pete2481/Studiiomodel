@@ -58,6 +58,7 @@ async function TeamDataWrapper({ tenantId }: { tenantId: string }) {
     where: { deletedAt: null },
     orderBy: { displayName: 'asc' },
     include: {
+      membership: { select: { permissions: true } },
       _count: {
         select: { bookings: true }
       }
@@ -74,7 +75,8 @@ async function TeamDataWrapper({ tenantId }: { tenantId: string }) {
     avatar: m.avatarUrl || null,
     shoots: m._count.bookings,
     calendarSecret: m.calendarSecret || "",
-    permissions: m.permissions || {}
+    // Prefer membership permissions (enforced by session) if present.
+    permissions: (m.membership?.permissions as any) || m.permissions || {}
   }));
 
   const user = {

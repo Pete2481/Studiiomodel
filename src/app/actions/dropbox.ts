@@ -3,6 +3,7 @@
 import { auth } from "@/auth";
 import { getTenantPrisma } from "@/lib/tenant-guard";
 import { prisma } from "@/lib/prisma";
+import { isTenantStaffRole } from "@/lib/permission-service";
 import { cleanDropboxLink } from "@/lib/utils";
 import path from "path";
 import sharp from "sharp";
@@ -837,7 +838,7 @@ export async function saveAIResultSiblingToDropbox({
 
     const sessionTenantId = (session.user as any)?.tenantId;
     const role = (session.user as any)?.role;
-    const isAdminLike = role === "ADMIN" || role === "TENANT_ADMIN" || role === "TEAM_MEMBER";
+    const isAdminLike = isTenantStaffRole(role);
     if (!isAdminLike || (sessionTenantId && sessionTenantId !== tenantId)) {
       return { success: false, error: "Unauthorized" };
     }

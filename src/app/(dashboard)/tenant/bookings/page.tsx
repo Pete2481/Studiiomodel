@@ -94,6 +94,8 @@ async function BookingsDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
     deletedAt: null,
     startAt: { gte: todayStart },
   };
+  // Booking feed should only show real bookings (never system placeholders).
+  bookingWhere.isPlaceholder = false;
 
   const canViewAll = sessionUser.role === "TENANT_ADMIN" || sessionUser.role === "ADMIN";
   if (!canViewAll) {

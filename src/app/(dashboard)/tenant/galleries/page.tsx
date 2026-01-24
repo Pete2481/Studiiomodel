@@ -7,6 +7,7 @@ import { Suspense } from "react";
 import { ShellSettings } from "@/components/layout/shell-settings";
 import { Loader2 } from "lucide-react";
 import { GalleryPageContent } from "@/components/modules/galleries/gallery-page-content";
+import { permissionService } from "@/lib/permission-service";
 
 export const dynamic = "force-dynamic";
 
@@ -70,11 +71,31 @@ async function GalleriesDataWrapper({ sessionUser, isGlobal, page }: { sessionUs
 
   const galleryWhere: any = { deletedAt: null };
   const canViewAll = sessionUser.role === "TENANT_ADMIN" || sessionUser.role === "ADMIN";
+
+  // Module access guard
+  if (!canViewAll && !permissionService.can(sessionUser, "viewGalleries")) {
+    redirect("/");
+  }
+
   if (!canViewAll) {
     if (role === "CLIENT") galleryWhere.clientId = clientId;
     else if (role === "AGENT") {
       if (sessionUser.permissions?.canViewAllAgencyGalleries) galleryWhere.clientId = clientId;
       else galleryWhere.agentId = sessionUser.agentId;
+    }
+    else if (role === "PHOTOGRAPHER") {
+      const canSeeAll = permissionService.can(sessionUser, "viewAllGalleries");
+      if (!canSeeAll) {
+        const teamMemberId = sessionUser.teamMemberId ? String(sessionUser.teamMemberId) : "";
+        if (!teamMemberId) {
+          // No assignment identity -> no galleries.
+          galleryWhere.id = "__none__";
+        } else {
+          galleryWhere.booking = {
+            assignments: { some: { teamMemberId } },
+          };
+        }
+      }
     }
   }
 

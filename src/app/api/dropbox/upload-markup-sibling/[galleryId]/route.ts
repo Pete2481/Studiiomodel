@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getTenantPrisma } from "@/lib/tenant-guard";
+import { isTenantStaffRole } from "@/lib/permission-service";
 import path from "path";
 
 export const runtime = "nodejs";
@@ -50,7 +51,7 @@ export async function POST(
 
     const role = (session.user as any)?.role;
     const sessionTenantId = (session.user as any)?.tenantId;
-    const isAdminLike = role === "ADMIN" || role === "TENANT_ADMIN" || role === "TEAM_MEMBER";
+    const isAdminLike = isTenantStaffRole(role);
     if (!isAdminLike) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
 
     const { galleryId } = await params;

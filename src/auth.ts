@@ -173,30 +173,38 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.agentId = user.agentId;
         token.teamMemberId = user.teamMemberId;
         token.isMasterAdmin = user.isMasterAdmin;
+      }
 
-        // Fetch specific permissions for the membership
-        if (token.tenantId) {
-          try {
-            const dbRole = (token.role === "EDITOR" || token.role === "PHOTOGRAPHER") 
-              ? "TEAM_MEMBER" 
-              : token.role;
+      // IMPORTANT: Membership.permissions can change after login (admin updates toggles).
+      // Refresh permissions periodically so access changes take effect without requiring logout/login.
+      if (token?.tenantId && token?.id) {
+        try {
+          const now = Date.now();
+          const last = typeof (token as any)._permRefreshedAt === "number" ? (token as any)._permRefreshedAt : 0;
+          const shouldRefresh = !last || now - last > 30_000; // 30s TTL
+          if (shouldRefresh) {
+            const dbRole =
+              token.role === "EDITOR" || token.role === "PHOTOGRAPHER" || token.role === "ACCOUNTS"
+                ? "TEAM_MEMBER"
+                : token.role;
 
             const membership = await prisma.tenantMembership.findFirst({
-              where: { 
+              where: {
                 tenantId: token.tenantId as string,
                 userId: token.id as string,
                 role: dbRole as any,
-                clientId: (token.clientId as string | null) || null
+                clientId: (token.clientId as string | null) || null,
               },
-              select: { permissions: true }
+              select: { permissions: true },
             });
             if (membership) {
               token.permissions = membership.permissions;
             }
-          } catch (permissionError) {
-            console.error("[AUTH_JWT_PERMISSIONS_ERROR]:", permissionError);
-            // Non-blocking, continue with default permissions
+            (token as any)._permRefreshedAt = now;
           }
+        } catch (permissionError) {
+          console.error("[AUTH_JWT_PERMISSIONS_ERROR]:", permissionError);
+          // Non-blocking, continue with last-known permissions
         }
       }
       return token;

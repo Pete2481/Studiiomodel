@@ -19,6 +19,7 @@ export async function globalSearch(query: string): Promise<SearchResult[]> {
     tPrisma.booking.findMany({
       where: {
         deletedAt: null,
+        isPlaceholder: false,
         OR: [
           { title: { contains: lowerQuery, mode: 'insensitive' } },
           { description: { contains: lowerQuery, mode: 'insensitive' } },

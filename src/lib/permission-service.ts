@@ -30,6 +30,19 @@ export interface UserContext {
   permissions?: Record<string, any>; // Optional JSON overrides
 }
 
+// Useful for API routes that need “staff-like” access (draft/locked content, integrations).
+export function isTenantStaffRole(role: string | undefined | null): boolean {
+  const r = String(role || "").toUpperCase();
+  return (
+    r === "TENANT_ADMIN" ||
+    r === "ADMIN" ||
+    r === "PHOTOGRAPHER" ||
+    r === "EDITOR" ||
+    r === "ACCOUNTS" ||
+    r === "MASTER_ADMIN"
+  );
+}
+
 export class PermissionService {
   /**
    * Granular permission check
@@ -55,10 +68,12 @@ export class PermissionService {
         return user.role === "PHOTOGRAPHER" || user.role === "CLIENT" || user.role === "AGENT";
       case "viewBookings":
         return true;
+      case "viewGalleries":
+        return user.role === "PHOTOGRAPHER" || user.role === "EDITOR";
       case "viewAllBookings":
         return user.role === "PHOTOGRAPHER";
       case "viewAllGalleries":
-        return user.role === "PHOTOGRAPHER" || user.role === "EDITOR";
+        return user.role === "EDITOR";
       case "manageGalleries":
         return user.role === "PHOTOGRAPHER" || user.role === "EDITOR";
       case "deleteGallery":
@@ -121,7 +136,7 @@ export class PermissionService {
     const moduleToPermission: Record<string, string> = {
       calendar: "viewCalendar",
       bookings: "viewBookings",
-      galleries: "viewAllGalleries",
+      galleries: "viewGalleries",
       invoices: "viewInvoices",
       services: "manageServices",
       team: "manageTeam", // Assuming this for now
