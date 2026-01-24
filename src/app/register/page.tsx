@@ -28,6 +28,11 @@ function slugify(input: string) {
     .slice(0, 40);
 }
 
+function isValidEmail(input: string) {
+  const v = String(input || "").trim().toLowerCase();
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v);
+}
+
 export default function RegisterPage() {
   const router = useRouter();
   const [step, setStep] = useState<Step>(1);
@@ -60,7 +65,7 @@ export default function RegisterPage() {
 
   const canNext = useMemo(() => {
     if (step === 1) return !!form.studioName.trim() && !!effectiveSlug;
-    if (step === 2) return !!form.contactName.trim() && !!form.contactEmail.trim();
+    if (step === 2) return !!form.contactName.trim() && isValidEmail(form.contactEmail);
     return true;
   }, [step, form.studioName, form.contactName, form.contactEmail, effectiveSlug]);
 
@@ -82,7 +87,7 @@ export default function RegisterPage() {
         name: form.studioName.trim(),
         slug: effectiveSlug,
         contactName: form.contactName.trim(),
-        contactEmail: form.contactEmail.trim(),
+        contactEmail: form.contactEmail.trim().toLowerCase(),
         contactPhone: form.contactPhone.trim(),
         starter: {},
       };

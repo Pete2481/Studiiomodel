@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { addDays } from "date-fns";
 import { notificationService } from "@/server/services/notification.service";
+import { randomInt } from "crypto";
 
 function randomId(prefix: string) {
   return `${prefix}${Math.random().toString(36).substring(2, 11)}`;
@@ -163,17 +164,38 @@ export async function createTenantWithDefaults(input: TenantOnboardingInput) {
     });
   }
 
-  // Welcome email best-effort (non-blocking)
-  if (contactEmail) {
+  // Signup approve email best-effort (non-blocking)
+  // - Generates a one-time OTP for the *membershipId* (the login flow’s tenantId value)
+  // - Sends a one-click Approve link that autologins the new admin
+  if (contactEmail && membershipId) {
     try {
-      await notificationService.sendTenantWelcomeEmail({
+      const otp = randomInt(100000, 999999).toString();
+      const expires = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+      const identifier = `${contactEmail}:${membershipId}`;
+
+      // Ensure token uniqueness + single-use per identifier
+      await prisma.$transaction([
+        prisma.verificationToken.deleteMany({ where: { identifier } }),
+        prisma.verificationToken.create({ data: { identifier, token: otp, expires } }),
+      ]);
+
+      const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || "https://studiio.com.au").replace(/\/+$/g, "");
+      const approveUrl =
+        `${baseUrl}/login?autologin=1` +
+        `&email=${encodeURIComponent(contactEmail)}` +
+        `&tenantId=${encodeURIComponent(membershipId)}` +
+        `&otp=${encodeURIComponent(otp)}`;
+
+      await notificationService.sendSignupApproveEmail({
         tenantId: tenant.id,
         toEmail: contactEmail,
         toName: contactName,
+        studioName: tenant.name,
+        approveUrl,
       });
     } catch (e) {
       // non-blocking
-      console.error("[TenantOnboarding] Welcome email failed:", e);
+      console.error("[TenantOnboarding] Approve email failed:", e);
     }
   }
 

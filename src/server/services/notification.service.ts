@@ -412,6 +412,54 @@ export class NotificationService {
     });
   }
 
+  async sendSignupApproveEmail(params: { tenantId: string; toEmail: string; toName?: string | null; studioName: string; approveUrl: string }) {
+    const { tenantId, toEmail, toName, studioName, approveUrl } = params;
+    if (!tenantId || !toEmail || !approveUrl) return;
+
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) return;
+
+    const subject = `Approve your ${studioName} workspace`;
+    const safeName = String(toName || "there");
+
+    const html = this.getBaseTemplate(
+      `
+      <h1>You're almost ready</h1>
+      <p style="color: #64748b; font-size: 16px; margin-top: 8px;">
+        Hi <strong>${safeName}</strong> — click the button below to approve and log straight into your new workspace.
+      </p>
+
+      <div class="divider"></div>
+
+      <div class="details-grid">
+        <div class="detail-item">
+          <span class="detail-label">Workspace</span>
+          <span class="detail-value">${studioName}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Link expiry</span>
+          <span class="detail-value">15 minutes</span>
+        </div>
+      </div>
+
+      <a href="${approveUrl}" class="button">Approve & Log In</a>
+    `,
+      tenant,
+      "Approve Workspace"
+    );
+
+    await emailService.sendEmail({
+      tenantId,
+      to: toEmail,
+      subject,
+      html,
+      fromName: tenant.name || "Studiio",
+      headers: {
+        "X-Entity-Ref-ID": `signup-approve-${tenantId}-${Date.now()}`,
+      },
+    });
+  }
+
   // 1. New Booking Notification (to Admin)
   async sendNewBookingNotification(bookingId: string) {
     const booking = await prisma.booking.findUnique({

@@ -46,11 +46,53 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [failedLogos, setFailedLogos] = useState<Record<string, true>>({});
   const pointerSelectedTenantIdRef = useRef<string | null>(null);
+  const didAutoLoginRef = useRef(false);
 
   // Prefill email after registration (or any deep-link).
   useEffect(() => {
     const prefill = String(searchParams.get("email") || "").trim();
     if (prefill && !email) setEmail(prefill);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // Auto-login support (Approve link): /login?autologin=1&email=...&tenantId=...&otp=......
+  useEffect(() => {
+    if (didAutoLoginRef.current) return;
+    const autologin = String(searchParams.get("autologin") || "") === "1";
+    if (!autologin) return;
+
+    const e = String(searchParams.get("email") || "").trim();
+    const t = String(searchParams.get("tenantId") || "").trim();
+    const code = String(searchParams.get("otp") || "").trim();
+    if (!e || !t || !code) return;
+    if (!/^\d{6}$/.test(code)) return;
+
+    didAutoLoginRef.current = true;
+    setError(null);
+    setEmail(e);
+    setSelectedTenant({ id: t, name: "Workspace", slug: "", role: "TENANT_ADMIN" });
+    setStep("OTP");
+    setOtp(code.split(""));
+
+    setLoading(true);
+    void (async () => {
+      try {
+        const result = await signIn("credentials", {
+          email: e,
+          tenantId: t,
+          otp: code,
+          redirect: false,
+        });
+        if (result?.error) throw new Error("This Approve link has expired or was already used. Please request a new code.");
+        window.location.href = "/";
+      } catch (err: any) {
+        setError(err?.message || "Auto-login failed. Please log in normally.");
+        setLoading(false);
+        setStep("EMAIL");
+        setSelectedTenant(null);
+        setOtp(["", "", "", "", "", ""]);
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
