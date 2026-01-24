@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 export default auth((req) => {
   const isLoggedIn = !!req.auth;
   const isAuthPage = req.nextUrl.pathname.startsWith("/login");
+  const isRegisterPage = req.nextUrl.pathname.startsWith("/register");
   const isApiAuthRoute = req.nextUrl.pathname.startsWith("/api/auth");
   const isPublicBooking = req.nextUrl.pathname.startsWith("/book/");
   const isPublicGallery = req.nextUrl.pathname.startsWith("/gallery/");
@@ -19,6 +20,12 @@ export default auth((req) => {
     if (isLoggedIn) {
       return Response.redirect(new URL("/", req.nextUrl));
     }
+    return;
+  }
+
+  // Public registration page
+  if (isRegisterPage) {
+    if (isLoggedIn) return Response.redirect(new URL("/", req.nextUrl));
     return;
   }
 

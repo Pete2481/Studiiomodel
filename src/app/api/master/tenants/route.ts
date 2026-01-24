@@ -1,8 +1,6 @@
-import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
-import { addDays } from "date-fns";
-import { notificationService } from "@/server/services/notification.service";
+import { createTenantWithDefaults } from "@/server/services/tenant-onboarding.service";
 
 export async function POST(request: Request) {
   try {
@@ -18,111 +16,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Name and Slug are required" }, { status: 400 });
     }
 
-    // 1. Create the Tenant with initial trial
-    const trialEndsAt = addDays(new Date(), 90); // 3-month free trial
-    const slugLower = slug.toLowerCase().trim();
     const settingsJson = settings ? JSON.parse(settings) : {};
-    const calendarSecret = `t_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
-
-    const tenantResults: any[] = await prisma.$queryRawUnsafe(`
-      INSERT INTO "Tenant" (
-        id, name, slug, "contactEmail", "contactPhone", settings, 
-        "subscriptionStatus", "trialEndsAt", "brandColor", "calendarSecret", "createdAt", "updatedAt"
-      )
-      VALUES (
-        $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, NOW(), NOW()
-      )
-      RETURNING *
-    `, 
-      `cm${Math.random().toString(36).substring(2, 11)}`,
-      name, slugLower, contactEmail, contactPhone, JSON.stringify(settingsJson), "trialing", trialEndsAt, "#94a3b8", calendarSecret
-    );
-    
-    const tenant = tenantResults[0];
-    
-    // Sanitize tenant for JSON response (convert Decimals/BigInts to plain numbers)
-    const sanitizedTenant = {
-      ...tenant,
-      taxRate: tenant.taxRate ? Number(tenant.taxRate) : 0.1,
-      revenueTarget: tenant.revenueTarget ? Number(tenant.revenueTarget) : 100000,
-    };
-
-    // 2. Automatically link the contact email as a TENANT_ADMIN
-    let contactUserId = null;
-    if (contactEmail) {
-      const normalizedContactEmail = contactEmail.toLowerCase().trim();
-      
-      const contactUser = await prisma.user.upsert({
-        where: { email: normalizedContactEmail },
-        update: {
-          name: contactName || name
-        },
-        create: {
-          email: normalizedContactEmail,
-          name: contactName || name,
-        }
-      });
-
-      contactUserId = contactUser.id;
-
-      await prisma.tenantMembership.create({
-        data: {
-          tenantId: tenant.id,
-          userId: contactUser.id,
-          role: "TENANT_ADMIN",
-          hasFullClientAccess: true,
-        },
-      });
-    }
-
-    // 4. AUTO-SEED STANDARD SERVICES
-    const standardServices = [
-      { name: "Professional Real Estate Photography", price: 250, duration: 60, icon: "Camera" },
-      { name: "Aerial Drone (Photos & Video)", price: 350, duration: 45, icon: "Zap" },
-      { name: "2D & 3D Floor Plans", price: 150, duration: 30, icon: "FileText" },
-      { name: "Full Cinematic Video Tour", price: 550, duration: 90, icon: "Video" },
-    ];
-
-    await Promise.all(standardServices.map(s => 
-      prisma.service.create({
-        data: {
-          tenantId: tenant.id,
-          name: s.name,
-          description: `Standard ${s.name.toLowerCase()} service for real estate properties.`,
-          price: s.price,
-          durationMinutes: s.duration,
-          icon: s.icon,
-          active: true,
-        }
-      })
-    ));
-
-    // 5. AUTO-SEED DEFAULT EDIT TAGS
-    await prisma.editTag.create({
-      data: {
-        tenantId: tenant.id,
-        name: "AI Item removal",
-        description: "Uses AI tools to remove unwanted items and clean up the image.",
-        cost: 10.00,
-        specialistType: "PHOTO",
-        active: true,
-      }
+    const created = await createTenantWithDefaults({
+      name,
+      slug,
+      contactName,
+      contactEmail,
+      contactPhone,
+      settings: settingsJson,
+      trialDays: 90,
     });
 
-    // 6. SEND WELCOME EMAIL
-    if (contactEmail) {
-      try {
-        await notificationService.sendTenantWelcomeEmail({
-          tenantId: tenant.id,
-          toEmail: contactEmail.toLowerCase().trim(),
-          toName: contactName || name,
-        });
-      } catch (e) {
-        console.error("[CreateTenant] Failed to send welcome email:", e);
-      }
-    }
-
-    return NextResponse.json({ tenant: sanitizedTenant });
+    return NextResponse.json({ tenant: { id: created.tenantId } });
   } catch (error: any) {
     console.error("[CreateTenant Error]:", error);
     if (error.code === 'P2002') {

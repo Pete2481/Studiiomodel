@@ -20,6 +20,7 @@ import {
 import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { formatDropboxUrl } from "@/lib/utils";
+import { useSearchParams } from "next/navigation";
 
 type LoginStep = "EMAIL" | "TENANT_SELECT" | "OTP";
 
@@ -33,6 +34,7 @@ interface TenantOption {
 }
 
 export default function LoginPage() {
+  const searchParams = useSearchParams();
   const [step, setStep] = useState<LoginStep>("EMAIL");
   const [email, setEmail] = useState("");
   const [selectedTenant, setSelectedTenant] = useState<TenantOption | null>(null);
@@ -42,6 +44,13 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [failedLogos, setFailedLogos] = useState<Record<string, true>>({});
+
+  // Prefill email after registration (or any deep-link).
+  useEffect(() => {
+    const prefill = String(searchParams.get("email") || "").trim();
+    if (prefill && !email) setEmail(prefill);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
