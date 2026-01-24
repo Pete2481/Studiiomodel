@@ -61,10 +61,20 @@ export async function GET(req: Request) {
     { revalidateSeconds: 30, tags: [tenantTag(tenantId), `tenant:${tenantId}:calendar`] },
   );
 
+  const toIso = (v: any) => {
+    try {
+      const d = v instanceof Date ? v : new Date(v);
+      if (isNaN(d.getTime())) return null;
+      return d.toISOString();
+    } catch {
+      return null;
+    }
+  };
+
   const bookings = (dbBookings as any[])
     .map((b: any) => {
-      const s = b.startAt instanceof Date && !isNaN(b.startAt.getTime()) ? b.startAt.toISOString() : null;
-      const e = b.endAt instanceof Date && !isNaN(b.endAt.getTime()) ? b.endAt.toISOString() : null;
+      const s = toIso(b.startAt);
+      const e = toIso(b.endAt);
       if (!s || !e) return null;
 
       // Ownership check (same as full endpoint)

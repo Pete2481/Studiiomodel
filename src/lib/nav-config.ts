@@ -52,6 +52,7 @@ export const UNIFIED_NAV_CONFIG: NavSection[] = [
         items: [
           { label: "Reports", href: "/tenant/reports", module: "reports" },
           { label: "Bookings", href: "/tenant/bookings", module: "bookings" },
+          { label: "Past bookings", href: "/tenant/bookings/history", module: "bookings" },
           { label: "Gallery", href: "/tenant/galleries", module: "galleries" },
           { label: "Edit requests", href: "/tenant/edits", module: "edits" },
           { label: "Invoices", href: "/tenant/invoices", module: "invoices" },

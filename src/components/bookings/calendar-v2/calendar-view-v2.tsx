@@ -468,14 +468,26 @@ export function CalendarViewV2(props: {
 
   const fetchBookingsForRange = async (start: Date, end: Date) => {
     const key = `${start.toISOString()}|${end.toISOString()}`;
-    if (rangeCacheRef.current.has(key)) return rangeCacheRef.current.get(key)!;
+    if (rangeCacheRef.current.has(key)) {
+      const cachedItems = rangeCacheRef.current.get(key)!;
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/8ba4527e-5b8b-42ce-b005-e0cd58eb2355',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'calendar-view-v2.tsx:fetchBookingsForRange:cacheHit',message:'calendar range cache hit',data:{view:String(view||''),start:start.toISOString(),end:end.toISOString(),key,itemCount:Array.isArray(cachedItems)?cachedItems.length:0},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H2'})}).catch(()=>{});
+      // #endregion
+      return cachedItems;
+    }
     if (rangeInflightRef.current.has(key)) return rangeInflightRef.current.get(key)!;
 
     const p = (async () => {
       const url = `/api/tenant/calendar/bookings-lite?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`;
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/8ba4527e-5b8b-42ce-b005-e0cd58eb2355',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'calendar-view-v2.tsx:fetchBookingsForRange:request',message:'calendar range fetch request',data:{view:String(view||''),start:start.toISOString(),end:end.toISOString(),url},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
       const res = await fetch(url);
       const data = await res.json().catch(() => ({}));
       const items = Array.isArray(data?.bookings) ? (data.bookings as LiteBooking[]) : [];
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/8ba4527e-5b8b-42ce-b005-e0cd58eb2355',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'calendar-view-v2.tsx:fetchBookingsForRange:response',message:'calendar range fetch response',data:{view:String(view||''),start:start.toISOString(),end:end.toISOString(),status:res.status,itemCount:items.length,xNextjsCache:res.headers.get('x-nextjs-cache'),xVercelCache:res.headers.get('x-vercel-cache')},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H3'})}).catch(()=>{});
+      // #endregion
       rangeCacheRef.current.set(key, items);
       rangeInflightRef.current.delete(key);
       return items;
@@ -492,6 +504,9 @@ export function CalendarViewV2(props: {
   const handleVisibleRange = async (start: Date, end: Date) => {
     lastVisibleRangeRef.current = { start, end };
     const items = await fetchBookingsForRange(start, end);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8ba4527e-5b8b-42ce-b005-e0cd58eb2355',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'calendar-view-v2.tsx:handleVisibleRange',message:'calendar range merged into state',data:{view:String(view||''),start:start.toISOString(),end:end.toISOString(),fetchedCount:Array.isArray(items)?items.length:0,prevCount:Array.isArray(bookingsRef.current)?bookingsRef.current.length:0},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H4'})}).catch(()=>{});
+    // #endregion
     setBookings((prev) => mergeBookingsById(prev, items));
   };
 
@@ -2063,6 +2078,9 @@ export function CalendarViewV2(props: {
               const days = Math.round((end.getTime() - start.getTime()) / dayMs);
               if (days < 2) end = new Date(start.getTime() + 2 * dayMs);
             }
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/8ba4527e-5b8b-42ce-b005-e0cd58eb2355',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'calendar-view-v2.tsx:datesSet',message:'calendar datesSet range',data:{vt,start:start.toISOString(),end:end.toISOString(),rawStart:arg.start?.toISOString?.(),rawEnd:arg.end?.toISOString?.(),tenantTimezone:String(tenantTimezone||''),existingCount:Array.isArray(bookingsRef.current)?bookingsRef.current.length:0},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H1'})}).catch(()=>{});
+            // #endregion
             void handleVisibleRange(start, end);
             // Load visible range and ensure rolling 4-week prefetch.
             void loadSunSlotsForRange(start, end);
