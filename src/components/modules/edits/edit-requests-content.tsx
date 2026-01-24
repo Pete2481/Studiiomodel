@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EditTagsDrawer } from "./edit-tags-drawer";
-import { bulkCancelEditRequests, updateEditRequestStatus, updateEditRequestAssignments, exportGalleryEditRequests, getEditRequestOriginalDownloadLink, getEditRequestEditedDownloadLink, uploadEditedAssetToDropbox } from "@/app/actions/edit-request";
+import { bulkDeleteEditRequests, updateEditRequestStatus, updateEditRequestAssignments, exportGalleryEditRequests, getEditRequestOriginalDownloadLink, getEditRequestEditedDownloadLink, uploadEditedAssetToDropbox } from "@/app/actions/edit-request";
 import { createInvoiceFromEditRequests } from "@/app/actions/invoice";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 
@@ -175,7 +175,7 @@ export function EditRequestsContent({ initialRequests, initialTags, teamMembers,
     if (!confirm(`Delete ${ids.length} edit request${ids.length === 1 ? "" : "s"} for this job?`)) return;
     setBulkDeletingGalleryId(galleryId);
     try {
-      const res = await bulkCancelEditRequests(ids);
+      const res = await bulkDeleteEditRequests(ids);
       if (!(res as any)?.success) {
         alert((res as any)?.error || "Failed to delete edit requests.");
         return;

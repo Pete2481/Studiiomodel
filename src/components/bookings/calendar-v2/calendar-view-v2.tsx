@@ -2068,7 +2068,10 @@ export function CalendarViewV2(props: {
             void loadSunSlotsForRange(start, end);
             ensureRolling4WeeksAhead();
             setView(vt);
-            setRangeTitle(formatRangeTitle(vt, start, end));
+            // Month view: `arg.start` can be the grid start (often in previous month).
+            // Use the month’s actual start date for the header label.
+            const titleStart = vt === "dayGridMonth" && arg.view?.currentStart ? arg.view.currentStart : start;
+            setRangeTitle(formatRangeTitle(vt, titleStart, end));
           }}
           eventClick={(info) => {
             // Trackpad: ignore synthetic click immediately after drag-stop.

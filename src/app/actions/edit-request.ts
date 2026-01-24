@@ -344,7 +344,7 @@ export async function updateEditRequestAssignments(id: string, assignedToIds: st
   }
 }
 
-export async function bulkCancelEditRequests(ids: string[]) {
+export async function bulkDeleteEditRequests(ids: string[]) {
   try {
     const session = await auth();
     if (!session) return { success: false, error: "Unauthorized" } as const;
@@ -358,15 +358,15 @@ export async function bulkCancelEditRequests(ids: string[]) {
     if (safeIds.length === 0) return { success: true, cancelledCount: 0 } as const;
 
     const tPrisma = await getTenantPrisma();
-    const res = await (tPrisma as any).editRequest.updateMany({
+    // HARD DELETE: remove rows from DB (EditTagAssignment rows cascade via schema).
+    const res = await (tPrisma as any).editRequest.deleteMany({
       where: { id: { in: safeIds } },
-      data: { status: "CANCELLED", completedAt: null },
     });
 
     revalidatePath("/tenant/edits");
-    return { success: true, cancelledCount: Number(res?.count || 0) } as const;
+    return { success: true, deletedCount: Number(res?.count || 0) } as const;
   } catch (error: any) {
-    console.error("BULK CANCEL EDIT REQUESTS ERROR:", error);
+    console.error("BULK DELETE EDIT REQUESTS ERROR:", error);
     return { success: false, error: error?.message || "Failed to delete edit requests." } as const;
   }
 }

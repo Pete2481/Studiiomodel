@@ -170,6 +170,8 @@ function DashboardShellContent({
   // Full-width layout rollout (now live): dashboard home + galleries.
   const isDashboardHomeFullWidth = pathname === "/";
   const isTenantGalleriesFullWidth = pathname?.startsWith("/tenant/galleries");
+  // Feature flag: hide “Booking Link” until you’re ready for full production rollout.
+  const showBookingLink = process.env.NEXT_PUBLIC_ENABLE_BOOKING_LINK === "true";
   const [mounted, setMounted] = useState(false);
   const [copied, setCopied] = useState(false);
   const [counts, setCounts] = useState<{ bookings?: number, galleries?: number, edits?: number }>(navCounts || {});
@@ -676,7 +678,7 @@ function DashboardShellContent({
                         <SetupChecklist />
                       )}
                       
-                      {finalSlug && user.role !== "CLIENT" && user.role !== "AGENT" && user.role !== "EDITOR" && (
+                      {showBookingLink && finalSlug && user.role !== "CLIENT" && user.role !== "AGENT" && user.role !== "EDITOR" && (
                         <Hint title="Public Booking Link" content="Copy your unique booking URL to share with new clients." position="bottom">
                           <button 
                             onClick={() => {
