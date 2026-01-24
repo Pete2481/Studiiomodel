@@ -13,6 +13,7 @@ import { QuickClientModal } from "../modules/clients/quick-client-modal";
 import { QuickServiceModal } from "../modules/services/quick-service-modal";
 import { QuickAgentModal } from "../modules/agents/quick-agent-modal";
 import { Hint } from "@/components/ui";
+import { PortalTooltip } from "@/components/ui/portal-tooltip";
 
 interface BookingDrawerProps {
   isOpen: boolean;
@@ -965,7 +966,8 @@ export function BookingDrawer({
                             const key = String(s.icon || "CAMERA").toUpperCase();
                             const Icon = IconMap[key] || Camera;
                             const iconStyle = IconColorMap[key] || IconColorMap.CAMERA;
-                            return (
+                            const description = String(s.description || "").trim();
+                            const row = (
                               <button
                                 key={s.id}
                                 type="button"
@@ -1005,6 +1007,17 @@ export function BookingDrawer({
                                   <Check className="h-4 w-4 text-primary animate-in zoom-in duration-200" />
                                 )}
                               </button>
+                            );
+                            if (!description) return row;
+                            return (
+                              <PortalTooltip
+                                title={String(s.name || "Service")}
+                                content={description}
+                                placement="top"
+                                className="w-full"
+                              >
+                                {row}
+                              </PortalTooltip>
                             );
                           })}
                         {visibleServices.filter(s => s.name.toLowerCase().includes(serviceSearchQuery.toLowerCase())).length === 0 && (

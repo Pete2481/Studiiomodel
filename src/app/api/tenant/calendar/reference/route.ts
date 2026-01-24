@@ -22,7 +22,7 @@ export async function GET() {
     }),
     tPrisma.service.findMany({
       where: { active: true },
-      select: { id: true, name: true, price: true, durationMinutes: true, icon: true, slotType: true, clientVisible: true, settings: true },
+      select: { id: true, name: true, description: true, price: true, durationMinutes: true, icon: true, slotType: true, clientVisible: true, settings: true },
     }),
     tPrisma.teamMember.findMany({
       where: { deletedAt: null },
@@ -44,6 +44,7 @@ export async function GET() {
   const services = dbServices.map((s: any) => ({
     id: String(s.id),
     name: String(s.name),
+    description: String(s.description || ""),
     price: Number(s.price),
     durationMinutes: Number(s.durationMinutes),
     icon: String(s.icon || "CAMERA"),

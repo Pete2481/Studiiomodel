@@ -39,6 +39,7 @@ export function AddressAutocomplete({
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const [inputValue, setInputValue] = useState(value);
+  const [userHasTyped, setUserHasTyped] = useState(false);
   const lastFetchedValue = useRef("");
   const [googleReady, setGoogleReady] = useState(false);
   const autocompleteService = useRef<any>(null);
@@ -85,7 +86,14 @@ export function AddressAutocomplete({
   }, []);
 
   useEffect(() => {
-    if (value !== inputValue) setInputValue(value);
+    if (value !== inputValue) {
+      // When parent sets a value (e.g. opening an existing booking), do NOT open suggestions.
+      setInputValue(value);
+      setUserHasTyped(false);
+      setSuggestions([]);
+      setIsOpen(false);
+      lastFetchedValue.current = "";
+    }
   }, [value]);
 
   useEffect(() => {
@@ -99,6 +107,8 @@ export function AddressAutocomplete({
   }, []);
 
   useEffect(() => {
+    // Only fetch/show suggestions after the user has typed in this field.
+    if (!userHasTyped) return;
     if (inputValue.length < 3 || inputValue === lastFetchedValue.current) {
       if (inputValue.length < 3) {
         setSuggestions([]);
@@ -176,7 +186,7 @@ export function AddressAutocomplete({
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [inputValue, countryBias, googleReady]);
+  }, [inputValue, countryBias, googleReady, userHasTyped]);
 
   return (
     <div ref={containerRef} className="relative w-full">
@@ -187,10 +197,11 @@ export function AddressAutocomplete({
           required={required}
           value={inputValue}
           onChange={(e) => {
-            setInputValue(e.target.value);
-            onChange(e.target.value);
+            const next = e.target.value;
+            setUserHasTyped(true);
+            setInputValue(next);
+            onChange(next);
           }}
-          onFocus={() => suggestions.length > 0 && setIsOpen(true)}
           placeholder={placeholder}
           className={cn("w-full", className)}
         />
@@ -200,10 +211,12 @@ export function AddressAutocomplete({
             <button
               type="button"
               onClick={() => {
+                setUserHasTyped(false);
                 setInputValue("");
                 onChange("");
                 setSuggestions([]);
                 setIsOpen(false);
+                lastFetchedValue.current = "";
               }}
               className="text-slate-300 hover:text-slate-500"
             >
@@ -221,9 +234,11 @@ export function AddressAutocomplete({
                 key={s.id}
                 type="button"
                 onClick={() => {
+                  setUserHasTyped(false);
                   setInputValue(s.label);
                   onChange(s.label);
                   setIsOpen(false);
+                  lastFetchedValue.current = "";
                 }}
                 className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-slate-50 group"
               >

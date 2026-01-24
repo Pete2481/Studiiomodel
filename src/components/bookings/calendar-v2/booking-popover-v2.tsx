@@ -6,6 +6,7 @@ import { deleteBooking, upsertBooking } from "@/app/actions/booking-upsert";
 import { QuickClientModal } from "@/components/modules/clients/quick-client-modal";
 import { QuickServiceModal } from "@/components/modules/services/quick-service-modal";
 import { AddressAutocomplete } from "@/components/ui/address-autocomplete";
+import { PortalTooltip } from "@/components/ui/portal-tooltip";
 import { Box, Camera, Check, ChevronDown, FileText, Loader2, Plane, Search, Sun, Trash2, User, Video, Wrench, X, Zap } from "lucide-react";
 import { getServiceIconComponent, getServiceIconStyle } from "@/lib/service-icons";
 import { getSunTimesForAddress } from "@/app/actions/weather";
@@ -1503,7 +1504,8 @@ export function BookingPopoverV2(props: {
                               const selected = form.serviceIds.includes(s.id);
                               const Icon = getServiceIconComponent(s?.icon);
                               const iconStyle = getServiceIconStyle(s?.icon);
-                              return (
+                              const description = String(s?.description || "").trim();
+                              const row = (
                                 <button
                                   key={s.id}
                                   type="button"
@@ -1523,6 +1525,12 @@ export function BookingPopoverV2(props: {
                                   </div>
                                   {selected && <Check className="h-4 w-4 text-emerald-600" />}
                                 </button>
+                              );
+                              if (!description) return row;
+                              return (
+                                <PortalTooltip title={String(s?.name || "Service")} content={description} placement="top" className="w-full">
+                                  {row}
+                                </PortalTooltip>
                               );
                             })}
                         </div>

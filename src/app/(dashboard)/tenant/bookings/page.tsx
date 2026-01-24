@@ -133,7 +133,7 @@ async function BookingsDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
     }),
     tPrisma.service.findMany({ 
       where: { active: true },
-      select: { id: true, name: true, price: true, durationMinutes: true, icon: true, slotType: true, clientVisible: true, settings: true }
+      select: { id: true, name: true, description: true, price: true, durationMinutes: true, icon: true, slotType: true, clientVisible: true, settings: true }
     }),
     tPrisma.teamMember.findMany({ 
       where: { deletedAt: null },
@@ -179,7 +179,17 @@ async function BookingsDataWrapper({ sessionUser, isGlobal }: { sessionUser: any
     avatarUrl: c.avatarUrl ? String(c.avatarUrl) : null,
     disabledServices: (c.settings as any)?.disabledServices || []
   }));
-  const services = dbServices.map((s: any) => ({ id: String(s.id), name: String(s.name), price: Number(s.price), durationMinutes: Number(s.durationMinutes), icon: String(s.icon || "CAMERA"), slotType: s.slotType || null, clientVisible: s.clientVisible !== false, isFavorite: (s.settings as any)?.isFavorite || false }));
+  const services = dbServices.map((s: any) => ({
+    id: String(s.id),
+    name: String(s.name),
+    description: String(s.description || ""),
+    price: Number(s.price),
+    durationMinutes: Number(s.durationMinutes),
+    icon: String(s.icon || "CAMERA"),
+    slotType: s.slotType || null,
+    clientVisible: s.clientVisible !== false,
+    isFavorite: (s.settings as any)?.isFavorite || false,
+  }));
   const teamMembers = dbTeamMembers.map((m: any) => ({ id: String(m.id), displayName: String(m.displayName), avatarUrl: m.avatarUrl || null }));
   const agents = dbAgents.map((a: any) => ({ id: String(a.id), name: String(a.name), clientId: String(a.clientId), avatarUrl: a.avatarUrl || null }));
 
