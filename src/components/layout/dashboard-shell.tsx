@@ -158,7 +158,9 @@ function DashboardShellContent({
     isMobileMenuOpen,
     setIsMobileMenuOpen,
     title: contextTitle,
-    subtitle: contextSubtitle
+    subtitle: contextSubtitle,
+    setTitle,
+    setSubtitle,
   } = useDashboard();
 
   const title = propTitle || contextTitle;
@@ -166,6 +168,7 @@ function DashboardShellContent({
 
   const pathname = usePathname();
   const router = useRouter();
+  const [pendingNavHref, setPendingNavHref] = useState<string | null>(null);
   const isCalendarV2FullWidth = pathname?.startsWith("/tenant/calendar");
   // Full-width layout rollout (now live): dashboard home + galleries.
   const isDashboardHomeFullWidth = pathname === "/";
@@ -181,6 +184,18 @@ function DashboardShellContent({
   });
   const pointerNavHrefRef = useRef<string | null>(null);
   const didFetchCountsRef = useRef(false);
+
+  // While navigation is in-flight, treat the pending href as the “active” route for instant UI feedback.
+  const effectivePath = pendingNavHref ?? pathname;
+
+  // Clear pending state after navigation completes.
+  useEffect(() => {
+    if (!pendingNavHref) return;
+    // Any route change means navigation finished; clear the pending indicator.
+    setPendingNavHref(null);
+    pointerNavHrefRef.current = null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
 
   const toggleExpand = (label: string) => {
     setExpandedItems(prev => ({
@@ -198,10 +213,15 @@ function DashboardShellContent({
     return true;
   };
 
-  const handleNavPointerDown = (e: ReactPointerEvent, href: string) => {
+  const handleNavPointerDown = (e: ReactPointerEvent, href: string, label?: string) => {
     if (!shouldHandlePointerNav(e, href)) return;
     // Trigger nav on pointer-down so touch feels instant (click can come later).
     pointerNavHrefRef.current = href;
+    setPendingNavHref(href);
+    if (label) {
+      setTitle(label);
+      setSubtitle("Loading…");
+    }
     setIsMobileMenuOpen(false);
     router.push(href);
   };
@@ -371,7 +391,7 @@ function DashboardShellContent({
             const Icon = IconMap[item.icon] || HelpCircle;
             const hasSubItems = item.items && item.items.length > 0;
             const isExpanded = expandedItems[item.label];
-            const isActive = pathname === item.href || (hasSubItems && item.items.some((sub: any) => pathname === sub.href));
+            const isActive = effectivePath === item.href || (hasSubItems && item.items.some((sub: any) => effectivePath === sub.href));
             
             // Calculate total count for parent if it has sub-items
             const totalSubCount = hasSubItems 
@@ -413,15 +433,20 @@ function DashboardShellContent({
                   {isExpanded && (
                     <div className="ml-4 pl-4 border-l border-slate-100 flex flex-col gap-1 animate-in slide-in-from-top-2 duration-200">
                       {item.items.map((sub: any) => {
-                        const isSubActive = pathname === sub.href;
+                        const isSubActive = effectivePath === sub.href;
                         const subCount = counts[sub.module as keyof typeof counts];
                         return (
                           <Link
                             key={sub.href}
                             href={sub.href}
                             prefetch={false}
-                            onPointerDown={(e) => handleNavPointerDown(e, sub.href)}
+                            onPointerDown={(e) => handleNavPointerDown(e, sub.href, sub.label)}
                             onClick={(e) => handleNavClick(e, sub.href)}
+                            onPointerEnter={() => {
+                              try {
+                                router.prefetch(sub.href);
+                              } catch {}
+                            }}
                             className={cn(
                               "flex items-center justify-between px-3 py-2 rounded-lg text-[12px] font-medium transition-colors group active:scale-[0.99]",
                               isSubActive 
@@ -454,8 +479,13 @@ function DashboardShellContent({
                 <Link
                   href={item.href}
                   prefetch={false}
-                  onPointerDown={(e) => handleNavPointerDown(e, item.href)}
+                  onPointerDown={(e) => handleNavPointerDown(e, item.href, item.label)}
                   onClick={(e) => handleNavClick(e, item.href)}
+                  onPointerEnter={() => {
+                    try {
+                      router.prefetch(item.href);
+                    } catch {}
+                  }}
                   className={cn(
                     "group flex items-center rounded-xl px-3 py-2.5 text-[13px] font-semibold transition-all duration-200 active:scale-[0.99]",
                     isActive 

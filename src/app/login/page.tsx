@@ -21,6 +21,7 @@ import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { formatDropboxUrl } from "@/lib/utils";
 import { useSearchParams } from "next/navigation";
+import { CameraLoader } from "@/components/ui/camera-loader";
 
 type LoginStep = "EMAIL" | "TENANT_SELECT" | "OTP";
 
@@ -44,6 +45,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [failedLogos, setFailedLogos] = useState<Record<string, true>>({});
+  const pointerSelectedTenantIdRef = useRef<string | null>(null);
 
   // Prefill email after registration (or any deep-link).
   useEffect(() => {
@@ -187,6 +189,16 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-[#FDFDFD] flex flex-col items-center justify-center p-6 relative overflow-hidden">
+      {loading && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-white/70 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-6">
+            <CameraLoader size="md" color="var(--primary)" className="text-primary" />
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 animate-pulse">
+              {step === "TENANT_SELECT" ? "Sending code…" : step === "OTP" ? "Authorizing…" : "Loading…"}
+            </p>
+          </div>
+        </div>
+      )}
       {/* Immersive high-end background */}
       <div className="absolute inset-0 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:32px_32px] opacity-[0.4] [mask-image:radial-gradient(ellipse_50%_50%_at_50%_50%,#000_60%,transparent_100%)]" />
       <div className="absolute top-[-15%] left-[-5%] w-[50%] h-[50%] bg-emerald-100/30 rounded-full blur-[120px]" />
@@ -274,7 +286,24 @@ export default function LoginPage() {
                     return (
                   <button 
                     key={tenant.id}
-                    onClick={() => handleTenantSelect(tenant)}
+                    onPointerDown={(e) => {
+                      // Trigger on pointerdown for instant touch feedback.
+                      if (e.button !== 0) return;
+                      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                      if (loading) return;
+                      pointerSelectedTenantIdRef.current = tenant.id;
+                      void handleTenantSelect(tenant);
+                    }}
+                    onClick={() => {
+                      // Suppress click if pointerdown already fired.
+                      if (pointerSelectedTenantIdRef.current === tenant.id) {
+                        setTimeout(() => {
+                          if (pointerSelectedTenantIdRef.current === tenant.id) pointerSelectedTenantIdRef.current = null;
+                        }, 0);
+                        return;
+                      }
+                      void handleTenantSelect(tenant);
+                    }}
                     disabled={loading}
                     className="w-full flex items-center justify-between p-6 rounded-[28px] border border-slate-100 bg-slate-50/30 hover:bg-white hover:border-slate-200 hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.06)] transition-all group disabled:opacity-50 relative overflow-hidden"
                   >
