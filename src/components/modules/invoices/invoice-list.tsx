@@ -22,11 +22,20 @@ import { InvoicePreviewModal } from "./invoice-preview-modal";
 interface InvoiceListProps {
   invoices: any[];
   role?: string;
+  selection?: {
+    selectedIds: Set<string>;
+    onToggle: (id: string, checked: boolean) => void;
+    onToggleAll: (checked: boolean) => void;
+    allSelected: boolean;
+    someSelected: boolean;
+    disabled?: boolean;
+  };
 }
 
-export function InvoiceList({ invoices, role = "TENANT_ADMIN" }: InvoiceListProps) {
+export function InvoiceList({ invoices, role = "TENANT_ADMIN", selection }: InvoiceListProps) {
   const router = useRouter();
   const isClient = role === "CLIENT";
+  const selectionEnabled = !!selection && !isClient;
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isActionsOpen, setIsActionsOpen] = useState<string | null>(null);
@@ -84,6 +93,37 @@ export function InvoiceList({ invoices, role = "TENANT_ADMIN" }: InvoiceListProp
 
   return (
     <div className="space-y-3">
+      {selectionEnabled && (
+        <div
+          className={cn(
+            "hidden lg:grid lg:gap-4 lg:items-center px-8 py-3 rounded-[24px] border border-slate-100 bg-slate-50/50",
+            "lg:grid-cols-[0.4fr_1.2fr_2fr_1.2fr_1.2fr_1.2fr_1.2fr_0.8fr_0.5fr]"
+          )}
+        >
+          <div className="flex items-center justify-center">
+            <input
+              type="checkbox"
+              checked={selection!.allSelected}
+              ref={(el) => {
+                if (el) el.indeterminate = selection!.someSelected && !selection!.allSelected;
+              }}
+              disabled={selection?.disabled}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => selection!.onToggleAll(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-200 text-primary focus:ring-primary/20 disabled:opacity-50"
+              aria-label="Select all invoices on this page"
+            />
+          </div>
+          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Invoice</div>
+          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Client</div>
+          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dates</div>
+          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Amount</div>
+          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</div>
+          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Action</div>
+          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Seen</div>
+          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-right pr-1">More</div>
+        </div>
+      )}
       {invoices.map((invoice) => {
         const isOverdue = invoice.status !== 'PAID' && invoice.dueAt && new Date(invoice.dueAt) < today;
         
@@ -98,10 +138,27 @@ export function InvoiceList({ invoices, role = "TENANT_ADMIN" }: InvoiceListProp
               "bg-white border-slate-100 hover:border-primary/40",
               isClient 
                 ? "lg:grid-cols-[1.2fr_2fr_1.2fr_1.2fr_1.2fr_1.2fr_0.5fr]" 
-                : "lg:grid-cols-[1.2fr_2fr_1.2fr_1.2fr_1.2fr_1.2fr_0.8fr_0.5fr]"
+                : selectionEnabled
+                  ? "lg:grid-cols-[0.4fr_1.2fr_2fr_1.2fr_1.2fr_1.2fr_1.2fr_0.8fr_0.5fr]"
+                  : "lg:grid-cols-[1.2fr_2fr_1.2fr_1.2fr_1.2fr_1.2fr_0.8fr_0.5fr]"
             )}
             onClick={() => handlePreview(invoice)}
           >
+            {/* Select */}
+            {selectionEnabled && (
+              <div className="flex items-center justify-start lg:justify-center">
+                <input
+                  type="checkbox"
+                  checked={selection!.selectedIds.has(invoice.id)}
+                  disabled={selection?.disabled}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => selection!.onToggle(invoice.id, e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-200 text-primary focus:ring-primary/20 disabled:opacity-50"
+                  aria-label={`Select invoice ${invoice.number}`}
+                />
+              </div>
+            )}
+
             {/* Invoice # */}
             <div className="flex items-center gap-4">
               <div className={cn(

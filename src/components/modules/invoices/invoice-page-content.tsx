@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { 
   Receipt, 
   Search, 
@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { InvoiceList } from "./invoice-list";
 import Link from "next/link";
 import { updateTenantInvoicingSettings } from "@/app/actions/tenant-settings";
+import { markInvoicesPaid } from "@/app/actions/invoice";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import { InvoicePreviewModal } from "./invoice-preview-modal";
 
@@ -43,6 +44,10 @@ export function InvoicePageContent({
   const [isUpdating, setIsUpdating] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
+
+  const selectedSet = useMemo(() => new Set(selectedInvoiceIds), [selectedInvoiceIds]);
 
   // 1. Handle deep-linking to an invoice via search param
   useEffect(() => {
@@ -149,6 +154,53 @@ export function InvoicePageContent({
   const totalEntries = filteredInvoices.length;
   const totalPages = Math.ceil(totalEntries / pageSize);
   const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const paginatedIds = useMemo(() => paginatedInvoices.map(inv => inv.id as string), [paginatedInvoices]);
+
+  const canBulkSelect = !isClient && activeTab === "pending";
+  const allSelectedOnPage = canBulkSelect && paginatedIds.length > 0 && paginatedIds.every(id => selectedSet.has(id));
+  const someSelectedOnPage = canBulkSelect && paginatedIds.some(id => selectedSet.has(id));
+
+  // Current page only selection: clear whenever the view changes
+  useEffect(() => {
+    setSelectedInvoiceIds([]);
+  }, [activeTab, statusFilter, searchQuery, pageSize, currentPage]);
+
+  const handleToggleSelectInvoice = (id: string, checked: boolean) => {
+    setSelectedInvoiceIds(prev => {
+      if (checked) {
+        return prev.includes(id) ? prev : [...prev, id];
+      }
+      return prev.filter(x => x !== id);
+    });
+  };
+
+  const handleToggleSelectAllOnPage = (checked: boolean) => {
+    setSelectedInvoiceIds(checked ? paginatedIds : []);
+  };
+
+  const handleBulkMarkPaid = async () => {
+    if (!selectedInvoiceIds.length) return;
+    const count = selectedInvoiceIds.length;
+    if (!confirm(`Mark ${count} invoice${count === 1 ? "" : "s"} as paid?`)) return;
+    setIsBulkProcessing(true);
+    try {
+      const result = await markInvoicesPaid(selectedInvoiceIds);
+      if (!result.success) {
+        alert(result.error);
+        return;
+      }
+      setSelectedInvoiceIds([]);
+      router.refresh();
+      if (result.updatedCount === 0) {
+        alert("No invoices were updated.");
+      }
+    } catch (err: any) {
+      console.error("Bulk mark paid error:", err);
+      alert(err?.message || "Failed to mark invoices as paid.");
+    } finally {
+      setIsBulkProcessing(false);
+    }
+  };
 
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -390,7 +442,49 @@ export function InvoicePageContent({
           </div>
         </div>
 
-        <InvoiceList invoices={paginatedInvoices} role={role} />
+        {canBulkSelect && selectedInvoiceIds.length > 0 && (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-50 border border-slate-100 rounded-[24px] px-5 py-4">
+            <div className="text-xs font-black text-slate-700 uppercase tracking-widest">
+              {selectedInvoiceIds.length} selected
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setSelectedInvoiceIds([])}
+                disabled={isBulkProcessing}
+                className="h-10 px-4 rounded-xl bg-white border border-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all active:scale-95 disabled:opacity-50"
+              >
+                Clear
+              </button>
+              <button
+                onClick={handleBulkMarkPaid}
+                disabled={isBulkProcessing}
+                className={cn(
+                  "h-10 px-5 rounded-xl bg-primary text-white text-[10px] font-black uppercase tracking-widest hover:opacity-90 transition-all active:scale-95 shadow-lg shadow-primary/20",
+                  isBulkProcessing && "opacity-70"
+                )}
+              >
+                {isBulkProcessing ? "Marking..." : "Mark selected paid"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        <InvoiceList
+          invoices={paginatedInvoices}
+          role={role}
+          selection={
+            canBulkSelect
+              ? {
+                  selectedIds: selectedSet,
+                  onToggle: handleToggleSelectInvoice,
+                  onToggleAll: handleToggleSelectAllOnPage,
+                  allSelected: allSelectedOnPage,
+                  someSelected: someSelectedOnPage,
+                  disabled: isBulkProcessing,
+                }
+              : undefined
+          }
+        />
 
         {totalPages > 1 && (
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-8 border-t border-slate-50">

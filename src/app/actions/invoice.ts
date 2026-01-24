@@ -440,6 +440,45 @@ export async function updateInvoiceStatus(id: string, status: string) {
   }
 }
 
+export async function markInvoicesPaid(ids: string[]) {
+  try {
+    const session = await auth();
+    if (!session) return { success: false, error: "Unauthorized" } as const;
+
+    // PERMISSION CHECK (same as updateInvoiceStatus)
+    if (
+      session.user.role !== "TENANT_ADMIN" &&
+      session.user.role !== "ADMIN" &&
+      session.user.role !== "ACCOUNTS" &&
+      session.user.role !== "TEAM_MEMBER"
+    ) {
+      return { success: false, error: "Permission Denied: Cannot update invoice status." } as const;
+    }
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return { success: true, updatedCount: 0 } as const;
+    }
+
+    const tPrisma = await getTenantPrisma();
+    const result = await (tPrisma as any).invoice.updateMany({
+      where: {
+        id: { in: ids },
+        status: { not: "PAID" },
+      },
+      data: {
+        status: "PAID",
+        paidAt: new Date(),
+      },
+    });
+
+    revalidatePath("/tenant/invoices");
+    return { success: true, updatedCount: result?.count ?? 0 } as const;
+  } catch (error: any) {
+    console.error("BULK-MARK-INVOICES-PAID ERROR:", error);
+    return { success: false, error: error?.message || "Failed to update status" } as const;
+  }
+}
+
 export async function sendInvoiceReminder(id: string) {
   try {
     const session = await auth();

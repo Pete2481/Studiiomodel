@@ -48,9 +48,11 @@ test.describe("AI Save-to-Dropbox (E2E)", () => {
       where: { id: membership.tenantId },
       select: { dropboxAccessToken: true },
     });
-    if (!tenant?.dropboxAccessToken) {
+    const initialDropboxToken = tenant?.dropboxAccessToken || null;
+    if (!initialDropboxToken) {
       await prisma.$disconnect();
       test.skip(true, "E2E: Tenant has no Dropbox token connected.");
+      return;
     }
 
     // Prefer a gallery backed by a Dropbox shared link (this is the common setup for fast public galleries).
@@ -64,9 +66,11 @@ test.describe("AI Save-to-Dropbox (E2E)", () => {
       orderBy: { createdAt: "desc" },
     });
 
-    if (!gallery?.id) {
+    const galleryId = gallery?.id || null;
+    if (!galleryId) {
       await prisma.$disconnect();
       test.skip(true, "E2E: No gallery with dropboxLink found for this tenant.");
+      return;
     }
 
     const meta: any = (gallery as any).metadata || {};
@@ -140,7 +144,7 @@ test.describe("AI Save-to-Dropbox (E2E)", () => {
     const saveRes = await page.request.post("/api/debug/save-ai-sibling", {
       data: {
         tenantId: membership.tenantId,
-        galleryId: gallery.id,
+        galleryId,
         resultUrl,
         originalPath,
         originalName,
@@ -173,7 +177,7 @@ test.describe("AI Save-to-Dropbox (E2E)", () => {
       where: { id: membership.tenantId },
       select: { dropboxAccessToken: true },
     });
-    const verifyToken = refreshedTenant?.dropboxAccessToken || tenant.dropboxAccessToken;
+    const verifyToken = refreshedTenant?.dropboxAccessToken || initialDropboxToken;
 
     let foundName: string | null = null;
     for (let i = 0; i < 10; i++) {

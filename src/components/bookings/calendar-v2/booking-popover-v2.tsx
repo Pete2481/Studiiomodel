@@ -212,6 +212,32 @@ export function BookingPopoverV2(props: {
   const [notesOpen, setNotesOpen] = useState(false);
   const isSunLocked = form.slotType === "SUNRISE" || form.slotType === "DUSK";
 
+  // Tenant/staff: if the user selects a SUNRISE/DUSK service, keep slotType in sync.
+  // Respect preset slot bookings (opened from a SUNRISE/DUSK slot) by not auto-overriding slotType.
+  const derivedSlotTypeFromServices = useMemo(() => {
+    if (isClient) return "" as "" | "SUNRISE" | "DUSK";
+    const all = Array.isArray(localRef.services) ? localRef.services : [];
+    const selected = all.filter((s: any) => form.serviceIds.includes(String(s.id)));
+    const sunrise = selected.find((s: any) => String(s?.slotType || "").toUpperCase() === "SUNRISE");
+    if (sunrise) return "SUNRISE" as const;
+    const dusk = selected.find((s: any) => String(s?.slotType || "").toUpperCase() === "DUSK");
+    if (dusk) return "DUSK" as const;
+    return "" as const;
+  }, [isClient, localRef.services, form.serviceIds]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (isClient) return;
+
+    const preset = String(presetSlotType || "").toUpperCase();
+    const isPresetSlot = preset === "SUNRISE" || preset === "DUSK";
+    if (isPresetSlot) return;
+
+    if (derivedSlotTypeFromServices !== form.slotType) {
+      setForm((p) => ({ ...p, slotType: derivedSlotTypeFromServices }));
+    }
+  }, [open, isClient, presetSlotType, derivedSlotTypeFromServices, form.slotType]);
+
   const activeClientDisabledServiceIds = useMemo(() => {
     if (!isClient) return new Set<string>();
     const cid = String(form.clientId || user?.clientId || "");
@@ -223,9 +249,11 @@ export function BookingPopoverV2(props: {
   const servicesForPicker = useMemo(() => {
     const all = Array.isArray(localRef.services) ? localRef.services : [];
     return all.filter((s: any) => {
-      // Slots-only: SUNRISE/DUSK must be booked via calendar slots, not chosen as generic services.
-      const st = String((s as any)?.slotType || "").toUpperCase();
-      if (st === "SUNRISE" || st === "DUSK") return false;
+      // Client portal: keep slot services hidden (SUNRISE/DUSK are managed via slots).
+      if (isClient) {
+        const st = String((s as any)?.slotType || "").toUpperCase();
+        if (st === "SUNRISE" || st === "DUSK") return false;
+      }
 
       // Client portal: respect tenant/service visibility and client-level disable list.
       if (isClient) {
