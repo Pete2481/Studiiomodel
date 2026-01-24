@@ -3,7 +3,7 @@
 import React, { useRef, useState, useEffect } from "react";
 import { Plus, Calendar as CalendarIcon, Lock, GripHorizontal, Settings } from "lucide-react";
 import dynamic from "next/dynamic";
-import { upsertBooking, deleteBooking } from "@/app/actions/booking-upsert";
+import { upsertBooking, deleteBooking, bulkDeleteBookings } from "@/app/actions/booking-upsert";
 import { BookingList } from "@/components/dashboard/booking-list";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -61,6 +61,7 @@ interface BookingsPageContentProps {
   };
   mode?: "calendar" | "list";
   isActionLocked?: boolean;
+  allowBulkDelete?: boolean;
 }
 
 export function BookingsPageContent({ 
@@ -81,7 +82,8 @@ export function BookingsPageContent({
     duskSlotsPerDay: 1
   },
   mode = "calendar",
-  isActionLocked = false
+  isActionLocked = false,
+  allowBulkDelete = false
 }: BookingsPageContentProps) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
@@ -423,6 +425,20 @@ export function BookingsPageContent({
     }
   };
 
+  const handleBulkDelete = async (ids: string[]) => {
+    try {
+      const result = await bulkDeleteBookings(ids);
+      if ((result as any)?.success) {
+        // Optimistic remove from local state
+        setBookings((prev) => prev.filter((b: any) => !ids.includes(String(b?.id))));
+        queueMicrotask(() => router.refresh());
+      }
+      return result as any;
+    } catch (e: any) {
+      return { success: false, error: e?.message || "Failed to delete bookings." } as any;
+    }
+  };
+
   const filteredBookings = bookings.filter(b => {
     // 0. Status Filter (from query param)
     if (statusFilter && b.status.toUpperCase() !== statusFilter.toUpperCase()) {
@@ -603,6 +619,10 @@ export function BookingsPageContent({
               status: b.status.toLowerCase() as any,
             }))} 
             onEdit={user?.role === "CLIENT" && !canPlaceBookings ? undefined : handleSelectEvent}
+            bulkDelete={{
+              enabled: allowBulkDelete && user?.role !== "CLIENT" && user?.role !== "AGENT",
+              onDeleteMany: handleBulkDelete,
+            }}
           />
         </section>
       )}

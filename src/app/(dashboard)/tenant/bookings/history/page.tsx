@@ -257,6 +257,7 @@ async function PastBookingsDataWrapper(props: {
         customStatuses={customStatuses}
         businessHours={tenant?.businessHours || null}
         aiLogisticsEnabled={tenant?.aiLogisticsEnabled || false}
+        allowBulkDelete={true}
         slotSettings={{
           sunriseSlotTime: tenant?.sunriseSlotTime || "06:00",
           duskSlotTime: tenant?.duskSlotTime || "18:30",

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { format } from "date-fns";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -68,15 +68,22 @@ type BookingListProps = {
   bookings: BookingListBooking[];
   onEdit?: (booking: BookingListBooking) => void;
   hideHeaderActions?: boolean;
+  bulkDelete?: {
+    enabled: boolean;
+    onDeleteMany: (ids: string[]) => Promise<{ success: boolean; error?: string; deletedCount?: number }>;
+  };
 };
 
 export function BookingList({
   bookings,
   onEdit,
   hideHeaderActions,
+  bulkDelete,
 }: BookingListProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const itemsPerPage = 25;
 
   const filteredBookings = useMemo(() => {
@@ -85,6 +92,8 @@ export function BookingList({
       return searchStr.includes(searchQuery.toLowerCase());
     });
   }, [bookings, searchQuery]);
+
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   const sorted = useMemo(() => {
     return [...filteredBookings].sort(
@@ -98,6 +107,42 @@ export function BookingList({
     currentPage * itemsPerPage
   );
 
+  const canBulkSelect = !!bulkDelete?.enabled;
+  const pageIds = useMemo(() => paginatedBookings.map((b) => String(b.id)), [paginatedBookings]);
+  const allSelectedOnPage = canBulkSelect && pageIds.length > 0 && pageIds.every((id) => selectedSet.has(id));
+  const someSelectedOnPage = canBulkSelect && pageIds.some((id) => selectedSet.has(id));
+
+  const clearSelection = () => setSelectedIds([]);
+  const toggleOne = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return Array.from(next);
+    });
+  };
+  const toggleAllOnPage = (checked: boolean) => setSelectedIds(checked ? pageIds : []);
+
+  const doBulkDelete = async () => {
+    if (!bulkDelete?.enabled) return;
+    const ids = selectedIds.slice(0);
+    if (!ids.length) return;
+    if (!confirm(`Delete ${ids.length} booking${ids.length === 1 ? "" : "s"}? This cannot be undone.`)) return;
+    setIsBulkDeleting(true);
+    try {
+      const res = await bulkDelete.onDeleteMany(ids);
+      if (!res?.success) {
+        alert(res?.error || "Failed to delete bookings.");
+        return;
+      }
+      clearSelection();
+    } catch (e: any) {
+      alert(e?.message || "Failed to delete bookings.");
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
   return (
     <section className="space-y-6 pt-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -110,6 +155,7 @@ export function BookingList({
             onChange={(e) => {
               setSearchQuery(e.target.value);
               setCurrentPage(1);
+              if (canBulkSelect) clearSelection();
             }}
             className="ui-input w-full pl-11"
           />
@@ -139,6 +185,30 @@ export function BookingList({
           </div>
         )}
       </div>
+
+      {canBulkSelect && selectedIds.length > 0 && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-[22px] px-4 py-3">
+          <div className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+            {selectedIds.length} selected
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={clearSelection}
+              disabled={isBulkDeleting}
+              className="h-10 px-4 rounded-xl bg-white border border-slate-200 text-slate-700 text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all disabled:opacity-50"
+            >
+              Clear
+            </button>
+            <button
+              onClick={doBulkDelete}
+              disabled={isBulkDeleting}
+              className="h-10 px-4 rounded-xl bg-rose-600 text-white text-[10px] font-black uppercase tracking-widest hover:opacity-90 transition-all disabled:opacity-50"
+            >
+              {isBulkDeleting ? "Deleting..." : "Delete selected"}
+            </button>
+          </div>
+        </div>
+      )}
       
       {/* Mobile Card View (shown only on small screens) */}
       <div className="grid grid-cols-1 gap-4 md:hidden">
@@ -147,6 +217,18 @@ export function BookingList({
           return (
             <div key={booking.id} className="bg-white rounded-[24px] border border-slate-200 p-5 space-y-4 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex items-center justify-between">
+                {canBulkSelect ? (
+                  <input
+                    type="checkbox"
+                    checked={selectedSet.has(String(booking.id))}
+                    disabled={isBulkDeleting}
+                    onChange={(e) => toggleOne(String(booking.id), e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary/20"
+                    aria-label="Select booking"
+                  />
+                ) : (
+                  <span />
+                )}
                 <div className="flex flex-col">
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">
                     {format(new Date(booking.startAt), "EEE d MMM yyyy")}
@@ -212,6 +294,21 @@ export function BookingList({
         <table className="min-w-full text-sm text-slate-600 border-collapse">
           <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400 border-b border-slate-200">
             <tr>
+              {canBulkSelect && (
+                <th className="px-6 py-4 text-left w-[48px]">
+                  <input
+                    type="checkbox"
+                    checked={allSelectedOnPage}
+                    ref={(el) => {
+                      if (el) el.indeterminate = someSelectedOnPage && !allSelectedOnPage;
+                    }}
+                    disabled={isBulkDeleting}
+                    onChange={(e) => toggleAllOnPage(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary/20"
+                    aria-label="Select all on page"
+                  />
+                </th>
+              )}
               <th className="px-6 py-4 text-left">Date</th>
               <th className="px-6 py-4 text-left">Time</th>
               <th className="px-6 py-4 text-left">Client</th>
@@ -228,6 +325,18 @@ export function BookingList({
 
               return (
                 <tr key={booking.id} className="hover:bg-slate-50 transition-colors">
+                  {canBulkSelect && (
+                    <td className="px-6 py-4">
+                      <input
+                        type="checkbox"
+                        checked={selectedSet.has(String(booking.id))}
+                        disabled={isBulkDeleting}
+                        onChange={(e) => toggleOne(String(booking.id), e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary/20"
+                        aria-label="Select booking"
+                      />
+                    </td>
+                  )}
                   <td className="px-6 py-4">
                     <div className="font-bold text-slate-900">
                       {format(new Date(booking.startAt), "EEE d MMM")}

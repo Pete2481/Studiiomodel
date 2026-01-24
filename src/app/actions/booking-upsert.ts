@@ -176,6 +176,46 @@ export async function deleteBooking(id: string) {
   }
 }
 
+export async function bulkDeleteBookings(ids: string[]) {
+  try {
+    const session = await auth();
+    if (!session) return { success: false, error: "Unauthorized" };
+
+    // PERMISSION CHECK
+    if (!permissionService.can(session.user, "viewBookings")) {
+      return { success: false, error: "Permission Denied: Cannot delete bookings." };
+    }
+
+    const tenantId = String((session as any)?.user?.tenantId || "");
+    if (!tenantId) return { success: false, error: "Unauthorized" };
+
+    const safeIds = Array.isArray(ids) ? ids.map((x) => String(x)).filter(Boolean) : [];
+    if (safeIds.length === 0) return { success: true, deletedCount: 0 };
+
+    const tPrisma = await getTenantPrisma();
+
+    // Soft delete in one pass.
+    const res = await (tPrisma as any).booking.updateMany({
+      where: { id: { in: safeIds } },
+      data: { deletedAt: new Date(), status: "CANCELLED" },
+    });
+
+    revalidatePath("/tenant/bookings");
+    revalidatePath("/tenant/bookings/history");
+    revalidatePath("/tenant/calendar");
+    revalidatePath("/");
+
+    // IMPORTANT: invalidate Next Data Cache entries (unstable_cache) used by calendar endpoints.
+    revalidateTag(tenantTag(tenantId));
+    revalidateTag(`tenant:${tenantId}:calendar`);
+
+    return { success: true, deletedCount: Number(res?.count || 0) };
+  } catch (error: any) {
+    console.error("BULK DELETE ERROR:", error);
+    return { success: false, error: error.message || "Failed to delete bookings." };
+  }
+}
+
 export async function rescheduleBooking(input: { id: string; startAt: string; endAt: string; status?: string }) {
   try {
     const session = await auth();
