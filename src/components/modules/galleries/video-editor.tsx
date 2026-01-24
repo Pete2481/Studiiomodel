@@ -8,7 +8,7 @@ interface VideoEditorProps {
   videoUrl: string;
   videoTitle: string;
   onClose: () => void;
-  onSend: (comments: { timestamp: number; note: string }[], tagIds: string[]) => void;
+  onSend: (comments: { timestamp: number; note: string }[]) => void;
   isSubmitting?: boolean;
   editSuccess?: boolean;
   editTags?: any[];
@@ -20,7 +20,6 @@ export function VideoEditor({ videoUrl, videoTitle, onClose, onSend, isSubmittin
   const [duration, setDuration] = useState(0);
   const [comment, setComment] = useState("");
   const [comments, setComments] = useState<{ timestamp: number; note: string; id: string }[]>([]);
-  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [isEmbed, setIsEmbed] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -225,46 +224,6 @@ export function VideoEditor({ videoUrl, videoTitle, onClose, onSend, isSubmittin
                 </button>
               </div>
 
-              {/* Tag Selection - Add the ability to BILL the edit */}
-              {editTags.length > 0 && (
-                <div className="space-y-4 pt-6 border-t border-slate-50">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">BILLING / EDIT TYPES</label>
-                    {selectedTagIds.length > 0 && (
-                      <span className="text-[10px] font-black text-primary uppercase tracking-widest">
-                        Total: ${editTags.filter(t => selectedTagIds.includes(t.id)).reduce((acc, t) => acc + Number(t.cost), 0).toFixed(2)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {editTags.map((tag: any) => {
-                      const isSelected = selectedTagIds.includes(tag.id);
-                      return (
-                        <button
-                          key={tag.id}
-                          type="button"
-                          onClick={() => {
-                            if (isSelected) {
-                              setSelectedTagIds(prev => prev.filter(id => id !== tag.id));
-                            } else {
-                              setSelectedTagIds(prev => [...prev, tag.id]);
-                            }
-                          }}
-                          className={cn(
-                            "px-4 py-2 rounded-full text-[11px] font-bold transition-all border",
-                            isSelected 
-                              ? "bg-primary border-primary text-white shadow-lg shadow-primary/20" 
-                              : "bg-white border-slate-200 text-slate-600 hover:border-primary hover:text-primary"
-                          )}
-                        >
-                          {tag.name} (${Number(tag.cost).toFixed(2)})
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">COMMENTS</label>
@@ -307,7 +266,7 @@ export function VideoEditor({ videoUrl, videoTitle, onClose, onSend, isSubmittin
                 </div>
               ) : (
                 <button 
-                  onClick={() => onSend(comments, selectedTagIds)}
+                  onClick={() => onSend(comments)}
                   disabled={comments.length === 0 || isSubmitting}
                   className="w-full h-14 rounded-2xl bg-white border-2 border-slate-200 text-slate-900 font-bold hover:bg-slate-50 transition-all shadow-sm flex items-center justify-center gap-2"
                 >

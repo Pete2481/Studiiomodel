@@ -155,27 +155,32 @@ export function DownloadManager({
         void runSaveToDropbox();
       }
 
-      for (let i = 0; i < assets.length; i++) {
-        const asset = assets[i];
-        setCurrentFile(asset.name);
-        
+      // Download with a small concurrency pool to better utilize bandwidth.
+      const CONCURRENCY = 6;
+      const total = assets.length;
+      let nextIndex = 0;
+      let completed = 0;
+
+      const processAsset = async (asset: any) => {
+        setCurrentFile(String(asset?.name || ""));
+
         let blob: Blob;
 
         // If it's a client-side markup, use the blob directly
         if (asset.isMarkup && asset.markupBlob) {
           blob = asset.markupBlob;
         } else {
-        // If this is an external (AI) URL, proxy it through our server.
-        // NOTE: AI result "version" assets may carry `path` for originalPath saving context,
-        // but the bytes should still come from the AI URL for downloads.
-        const isExternalUrl =
-          typeof asset.url === "string" &&
-          asset.url.startsWith("http") &&
-          (!!asset.isAiResult || !asset.path);
+          // If this is an external (AI) URL, proxy it through our server.
+          // NOTE: AI result "version" assets may carry `path` for originalPath saving context,
+          // but the bytes should still come from the AI URL for downloads.
+          const isExternalUrl =
+            typeof asset.url === "string" &&
+            asset.url.startsWith("http") &&
+            (!!asset.isAiResult || !asset.path);
 
-        const downloadUrl = isExternalUrl
-          ? `/api/external-image?url=${encodeURIComponent(asset.url)}${resolution === "original" ? "&profile=hd" : ""}`
-          : `/api/dropbox/download/${galleryId}?path=${encodeURIComponent(asset.path)}&sharedLink=${encodeURIComponent(sharedLink || "")}&applyBranding=${applyBranding}`;
+          const downloadUrl = isExternalUrl
+            ? `/api/external-image?url=${encodeURIComponent(asset.url)}${resolution === "original" ? "&profile=hd" : ""}`
+            : `/api/dropbox/download/${galleryId}?path=${encodeURIComponent(asset.path)}&sharedLink=${encodeURIComponent(sharedLink || "")}&applyBranding=${applyBranding}`;
 
           const response = await fetch(downloadUrl);
 
@@ -183,15 +188,27 @@ export function DownloadManager({
           blob = await response.blob();
         }
 
-        // 1. Logic for Resizing (Web/Social)
-        // If resolution is not 'original', we use a hidden canvas to resize
-        if (resolution !== 'original') {
-          blob = await resizeImage(blob, resolution === 'web' ? 2500 : 1080);
+        // If resolution is not 'original', use a hidden canvas to resize (client-side).
+        if (resolution !== "original") {
+          blob = await resizeImage(blob, resolution === "web" ? 2500 : 1080);
         }
 
         folder?.file(asset.name, blob);
-        setProgress(Math.round(((i + 1) / assets.length) * 100));
-      }
+
+        completed += 1;
+        setProgress(Math.round((completed / total) * 100));
+      };
+
+      const worker = async () => {
+        while (true) {
+          const i = nextIndex++;
+          if (i >= total) return;
+          const asset = assets[i];
+          await processAsset(asset);
+        }
+      };
+
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, total) }, () => worker()));
 
       setStatus('zipping');
       const content = await zip.generateAsync({ type: "blob" }, (metadata) => {

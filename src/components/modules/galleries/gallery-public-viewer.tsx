@@ -459,7 +459,7 @@ export function GalleryPublicViewer({
         </>
       )}
 
-      {!isShared && (
+      {!!user && !isShared && (
         <button 
           onClick={() => setIsShareModalOpen(true)}
           className="hidden md:flex h-9 w-9 rounded-full bg-white border border-slate-200 text-slate-400 items-center justify-center hover:text-slate-900 transition-colors shadow-sm"
@@ -700,9 +700,10 @@ export function GalleryPublicViewer({
     };
   }, []);
 
-  // Downloads are visible to everyone (Public & Logged In)
-  const canDownload = true;
-  const canEdit = permissionService.can(user, "canEditRequests");
+  // Public unauthenticated viewers should be view-only (favorites allowed, no downloads/edits/tools)
+  const isPublicUnauthed = !user;
+  const canDownload = !!user && permissionService.can(user, "canDownloadHighRes");
+  const canEdit = !!user && permissionService.can(user, "canEditRequests");
 
   // Pre-check for cached images
   useEffect(() => {
@@ -1268,7 +1269,7 @@ export function GalleryPublicViewer({
               <div className="columns-2 sm:columns-2 md:columns-3 lg:columns-4 gap-3 sm:gap-4 lg:gap-5">
                 {combinedMedia.slice(0, visibleCount).map((item: any, idx: number) => (
                   (() => {
-                    const isSelectableImage = !isShared && item.type === "image";
+                    const isSelectableImage = canDownload && !isShared && item.type === "image";
                     const isSelected = isSelectableImage && selectedImageIds.has(getAssetKey(item));
                     return (
                   <div 
@@ -1397,7 +1398,7 @@ export function GalleryPublicViewer({
                             >
                               <Heart className={cn("h-4 w-4", favorites.includes(item.id || item.url) && "fill-current")} />
                             </button>
-                            {item.type === "image" && (
+                            {!!user && item.type === "image" && (
                               <button 
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -1549,7 +1550,7 @@ export function GalleryPublicViewer({
               <div>
                 <div className="flex items-center gap-3">
                   <p className="text-xs font-bold text-white tracking-tight">{selectedAsset.name}</p>
-                  {!isShared && requestedFileUrls.includes(selectedAsset.url) && (
+                  {canEdit && !isShared && requestedFileUrls.includes(selectedAsset.url) && (
                     <span className="px-2 py-0.5 bg-rose-500 text-white text-[8px] font-black uppercase tracking-widest rounded-md">
                       Edit Requested
                     </span>
@@ -1573,10 +1574,11 @@ export function GalleryPublicViewer({
                     </button>
                   )}
 
-                  {!isShared && (
-                    <>
-                      {/* Lightroom-style toolbar (replaces the choice modal) */}
-                      <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-2 py-1 max-w-[62vw] overflow-x-auto flex-nowrap rounded-full md:max-w-none md:overflow-visible md:flex-wrap md:rounded-2xl">
+                  <>
+                    {!!user && !isShared && (
+                      <>
+                        {/* Lightroom-style toolbar (replaces the choice modal) */}
+                        <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-2 py-1 max-w-[62vw] overflow-x-auto flex-nowrap rounded-full md:max-w-none md:overflow-visible md:flex-wrap md:rounded-2xl">
                         {TOOLBAR.unlocked.map((t) => (
                       <button 
                             key={t.id}
@@ -1697,6 +1699,8 @@ export function GalleryPublicViewer({
                           ))}
                         </div>
                       )}
+                      </>
+                    )}
 
                       <button 
                         onClick={(e) => handleToggleFavorite(e, selectedAsset)}
@@ -1709,8 +1713,7 @@ export function GalleryPublicViewer({
                       >
                         <Heart className={cn("h-4 w-4", favorites.includes(selectedAsset.id || selectedAsset.url) && "fill-current")} />
                       </button>
-                    </>
-                  )}
+                  </>
                   
                   {canDownload && (
                     <button 
@@ -2642,11 +2645,11 @@ export function GalleryPublicViewer({
             setIsVideoEditing(false);
             setVideoComments([]);
           }}
-          onSend={(comments, tagIds) => {
+          onSend={(comments) => {
             // We need to set comments AND then trigger submission.
             // Since setVideoComments is async, we can pass it to handleSubmitEditRequest 
             // if we refactor it slightly.
-            submitVideoComments(comments, tagIds);
+            submitVideoComments(comments, []);
           }}
           isSubmitting={isSubmittingEdit}
           editSuccess={editSuccess}

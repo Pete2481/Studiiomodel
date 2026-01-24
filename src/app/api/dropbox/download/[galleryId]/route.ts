@@ -33,6 +33,13 @@ export async function GET(
       return new NextResponse("Path is required", { status: 400 });
     }
 
+    // SECURITY: High-res downloads always require an authenticated session.
+    // Public/shared viewers can still view via `/api/dropbox/assets`, but cannot download originals.
+    const session = await auth();
+    if (!session?.user) {
+      return new NextResponse("Login required for downloads", { status: 403 });
+    }
+
     // 1. Fetch gallery and tenant tokens, and client branding info
     const gallery = await prisma.gallery.findUnique({
       where: { id: galleryId },
@@ -64,7 +71,6 @@ export async function GET(
     }
 
     // SECURITY: Public access only for READY/DELIVERED galleries
-    const session = await auth();
     const isStaff = isTenantStaffRole((session?.user as any)?.role);
     
     if (gallery.status === "DRAFT" && !isStaff) {

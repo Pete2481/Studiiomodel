@@ -61,6 +61,8 @@ export function AISuiteDrawer({
 }: AISuiteDrawerProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
+  // Keep a loader visible until the result preview image has actually loaded.
+  const [isResultLoading, setIsResultLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTask, setActiveTask] = useState<AITaskType | null>(null);
   const [prompt, setPrompt] = useState("");
@@ -73,6 +75,16 @@ export function AISuiteDrawer({
     resultUrl && typeof resultUrl === "string" && resultUrl.startsWith("http")
       ? `/api/external-image?url=${encodeURIComponent(resultUrl)}&profile=hd`
       : resultUrl;
+  const previewSrc = hdResultUrl || resultUrl || "";
+
+  // When we get a new result URL, keep the loader visible until the <img> confirms it rendered.
+  useEffect(() => {
+    if (!resultUrl) {
+      setIsResultLoading(false);
+      return;
+    }
+    setIsResultLoading(true);
+  }, [previewSrc, resultUrl]);
   // Single tool: prompt-only room editing with Nano-Banana
   const tool = {
     id: "room_editor" as AITaskType,
@@ -278,6 +290,7 @@ export function AISuiteDrawer({
 
   const handleReset = () => {
     setResultUrl(null);
+    setIsResultLoading(false);
     setError(null);
     setActiveTask(null);
     setPrompt("");
@@ -527,7 +540,22 @@ export function AISuiteDrawer({
                   AI Enhancement Complete
                 </p>
                 <div className="relative aspect-[4/3] rounded-[40px] overflow-hidden border border-white/10 bg-slate-900 shadow-2xl shadow-primary/10">
-                  <img src={hdResultUrl || resultUrl || ""} alt="AI Result" className="h-full w-full object-cover" />
+                  {isResultLoading && (
+                    <div className="absolute inset-0 z-10 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center">
+                      <CameraLoader size="lg" className="text-primary" />
+                    </div>
+                  )}
+                  <img
+                    key={String(previewSrc)}
+                    src={String(previewSrc)}
+                    alt="AI Result"
+                    className="h-full w-full object-cover"
+                    onLoad={() => setIsResultLoading(false)}
+                    onError={() => {
+                      setIsResultLoading(false);
+                      setError("AI result loaded, but the preview is still fetching. Please wait a moment or try Download.");
+                    }}
+                  />
                 </div>
               </div>
 
@@ -552,16 +580,18 @@ export function AISuiteDrawer({
         </div>
 
         {/* Loading Overlay */}
-        {(isProcessing || isSaving) && (
+        {(isProcessing || isSaving || isResultLoading) && (
           <div className="absolute inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex flex-col items-center justify-center p-12 text-center">
             <CameraLoader size="lg" className="text-primary mb-8" />
             <h4 className="text-2xl font-bold tracking-tight mb-2 uppercase">
-              {isSaving ? "Saving to Dropbox..." : "AI Reimagining..."}
+              {isSaving ? "Saving to Dropbox..." : isProcessing ? "AI Reimagining..." : "Loading result..."}
             </h4>
             <p className="text-xs font-medium text-white/40 max-w-[240px] leading-relaxed">
               {isSaving 
                 ? "We're pushing the enhanced version back to your production folder. This will be available instantly."
-                : "We're communicating with the neural engines to transform your production assets. This usually takes 10-20 seconds."}
+                : isProcessing
+                  ? "We're communicating with the neural engines to transform your production assets. This usually takes 10-20 seconds."
+                  : "We’ve got the result — we’re just loading the preview image now."}
             </p>
           </div>
         )}

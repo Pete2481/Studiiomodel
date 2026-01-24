@@ -117,7 +117,7 @@ export function ShareModal({ isOpen, onClose, galleryTitle, shareUrl, tenantName
             </div>
             <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/80">Production Pro-Tip</h4>
             <p className="text-xs leading-relaxed font-medium opacity-90">
-              Send this link to your clients or agents. They don't need a password to view, favourite, or request edits on these assets.
+              Send this link to your clients or agents. They don't need a password to view or favourite these assets.
             </p>
           </div>
         </div>
