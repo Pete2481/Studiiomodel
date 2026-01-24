@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     "BOOKING_CHANGE_REQUESTED",
   ];
   if (!allowed.includes(type)) return NextResponse.json({ error: "Invalid type" }, { status: 400 });
-  if (audience !== "all" && audience !== "team+tenant") {
+  if (audience !== "all" && audience !== "team+tenant" && audience !== "tenant+client") {
     return NextResponse.json({ error: "Invalid audience" }, { status: 400 });
   }
 
@@ -38,6 +38,9 @@ export async function POST(req: Request) {
       id: true,
       metadata: true,
       tenant: { select: { contactEmail: true } },
+      client: { select: { email: true } },
+      otcEmail: true,
+      agent: { select: { email: true } },
       assignments: { select: { teamMember: { select: { email: true } } } },
     },
   });
@@ -58,6 +61,21 @@ export async function POST(req: Request) {
             for (const a of booking?.assignments || []) add(a?.teamMember?.email);
             return emails;
           })()
+        : audience === "tenant+client"
+          ? (() => {
+              const emails: string[] = [];
+              const add = (e?: string | null) => {
+                const v = String(e || "").trim();
+                if (!v) return;
+                if (!emails.includes(v)) emails.push(v);
+              };
+              const clientEmail = String(booking?.client?.email || booking?.otcEmail || "").trim();
+              add(booking?.tenant?.contactEmail);
+              add(clientEmail);
+              const agentEmail = String(booking?.agent?.email || "").trim();
+              if (agentEmail && agentEmail !== clientEmail) add(agentEmail);
+              return emails;
+            })()
         : undefined;
 
     result = await notificationService.sendBookingEmail({ bookingId, type, ...(toOverride ? { toOverride } : {}) });

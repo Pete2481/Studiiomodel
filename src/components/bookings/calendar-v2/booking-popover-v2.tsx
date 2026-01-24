@@ -1860,6 +1860,15 @@ export function BookingPopoverV2(props: {
                                   // Ignore notification send errors in the silent path.
                                 }
                               }
+
+                              // Client portal: always email tenant + client (+ agent if selected) for new Requested bookings.
+                              if (isClient && isCreate && notificationType === "NEW_BOOKING") {
+                                void fetch("/api/tenant/calendar/notifications/send", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ bookingId: String(saved.id), type: notificationType, audience: "tenant+client" }),
+                                }).catch(() => {});
+                              }
                               return;
                             }
                             throw new Error((result as any)?.error || "Save failed");

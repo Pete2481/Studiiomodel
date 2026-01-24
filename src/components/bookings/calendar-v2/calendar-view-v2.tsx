@@ -139,6 +139,7 @@ export function CalendarViewV2(props: {
     isPlaceholder?: boolean;
     isMasked?: boolean;
     client?: { name?: string; businessName?: string } | null;
+    agent?: { name?: string } | null;
     property?: { name?: string } | null;
     teamAvatars?: string[];
     teamCount?: number;
@@ -1132,6 +1133,7 @@ export function CalendarViewV2(props: {
       isPlaceholder: !!evt.extendedProps?.isPlaceholder,
       isMasked: !!evt.extendedProps?.isMasked,
       client: evt.extendedProps?.client || null,
+      agent: evt.extendedProps?.agent || null,
       property: evt.extendedProps?.property || null,
       teamAvatars: Array.isArray(evt.extendedProps?.teamAvatars) ? (evt.extendedProps.teamAvatars as string[]) : [],
       teamCount: Number(evt.extendedProps?.teamCount || 0),
@@ -2440,6 +2442,15 @@ export function CalendarViewV2(props: {
                   )}
                 </div>
               </div>
+
+                {hoveredEvent.event.agent?.name ? (
+                  <div className="flex items-start justify-between gap-4">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase pt-0.5">Agent</span>
+                    <div className="flex flex-col items-end">
+                      <span className="text-xs font-bold text-slate-700 text-right">{hoveredEvent.event.agent?.name}</span>
+                    </div>
+                  </div>
+                ) : null}
 
               <div className="flex items-start justify-between gap-4">
                 <span className="text-[10px] font-bold text-slate-400 uppercase pt-0.5">Team</span>

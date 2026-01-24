@@ -72,6 +72,36 @@ export function ClientDrawer({
   }, [isOpen]);
 
   useEffect(() => {
+    if (!isOpen) return;
+
+    // Always start fresh when creating a new client (prevents stale form data when opening twice).
+    if (!client || !client.id) {
+      setActiveTab("details");
+      setFormData({
+        id: "",
+        name: "",
+        businessName: "",
+        email: "",
+        accountsEmail: "",
+        phone: "",
+        avatarUrl: "",
+        status: "PENDING",
+        watermarkUrl: "",
+        watermarkSettings: { x: 50, y: 50, scale: 100, opacity: 60 },
+        permissions: {
+          canDownloadHighRes: true,
+          canViewAllAgencyGalleries: false,
+          canPlaceBookings: true,
+          canViewInvoices: false,
+          canEditRequests: true,
+        },
+        priceOverrides: {},
+        disabledServices: [],
+      });
+      setPreviewUrl(null);
+      return;
+    }
+
     if (client && client.id) {
       setFormData({
         id: client.id,
@@ -95,31 +125,8 @@ export function ClientDrawer({
         disabledServices: client.disabledServices || [],
       });
       setPreviewUrl(client.avatar || client.avatarUrl ? formatDropboxUrl(client.avatar || client.avatarUrl) : null);
-    } else {
-      setFormData({
-        id: "",
-        name: "",
-        businessName: "",
-        email: "",
-        accountsEmail: "",
-        phone: "",
-        avatarUrl: "",
-        status: "PENDING",
-        watermarkUrl: "",
-        watermarkSettings: { x: 50, y: 50, scale: 100, opacity: 60 },
-        permissions: {
-          canDownloadHighRes: true,
-          canViewAllAgencyGalleries: false,
-          canPlaceBookings: true,
-          canViewInvoices: false,
-          canEditRequests: true,
-        },
-        priceOverrides: {},
-        disabledServices: [],
-      });
-      setPreviewUrl(null);
     }
-  }, [client]);
+  }, [isOpen, client?.id]);
 
   const setAvatarUrl = (raw: string) => {
     const v = String(raw || "").trim();

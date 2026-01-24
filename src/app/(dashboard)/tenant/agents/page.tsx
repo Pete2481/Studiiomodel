@@ -5,7 +5,7 @@ import { AgentPageContent } from "@/components/modules/agents/agent-page-content
 import { headers } from "next/headers";
 import { Suspense } from "react";
 import { ShellSettings } from "@/components/layout/shell-settings";
-import { Loader2 } from "lucide-react";
+import { PageLoader } from "@/components/ui/page-loader";
 
 export const dynamic = "force-dynamic";
 
@@ -27,11 +27,7 @@ export default async function AgentsPage() {
         subtitle={role === "CLIENT" ? "Manage your agency team." : "Manage all agency crew members."} 
       />
       
-      <Suspense fallback={
-        <div className="flex h-[50vh] w-full items-center justify-center">
-          <Loader2 className="h-10 w-10 text-primary animate-spin" />
-        </div>
-      }>
+      <Suspense fallback={<PageLoader message="Loading contacts…" />}>
         <AgentsDataWrapper sessionUser={sessionUser} />
       </Suspense>
     </div>

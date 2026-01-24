@@ -57,6 +57,7 @@ export const UNIFIED_NAV_CONFIG: NavSection[] = [
           { label: "Edit requests", href: "/tenant/edits", module: "edits" },
           { label: "Invoices", href: "/tenant/invoices", module: "invoices" },
           { label: "Services", href: "/tenant/services", module: "services" },
+          { label: "Agents/contacts", href: "/tenant/agents", module: "agents" },
         ],
       },
     ],
