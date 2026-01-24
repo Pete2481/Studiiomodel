@@ -480,7 +480,8 @@ export function CalendarViewV2(props: {
       return `${ms} ${y}`;
     }
     if (viewType === "timeGridDay") {
-      return `${ms} ${ds}, ${y}`;
+      // AU convention: day first (10 FEB 2026)
+      return `${ds} ${ms} ${y}`;
     }
     // Week (or any multi-day): JAN12—17, 2026 (or JAN30—FEB2, 2026)
     if (mns === mne) return `${ms}${ds}—${de}, ${y}`;
@@ -1827,6 +1828,39 @@ export function CalendarViewV2(props: {
           initialView={isMobile ? "timeGridTwoDay" : "timeGridWeek"}
           headerToolbar={false}
           timeZone={tenantTimezone}
+          dayHeaderContent={(arg) => {
+            try {
+              const vt = String(arg.view?.type || "");
+              const weekday = new Intl.DateTimeFormat("en-AU", {
+                timeZone: tenantTimezone,
+                weekday: "short",
+              })
+                .format(arg.date)
+                .toUpperCase()
+                .slice(0, 3);
+
+              // Month view uses weekday-only headers; keep it clean.
+              if (vt === "dayGridMonth") return <span>{weekday}</span>;
+
+              const day = Number(
+                new Intl.DateTimeFormat("en-CA", { timeZone: tenantTimezone, day: "2-digit" }).format(arg.date),
+              );
+              const month = Number(
+                new Intl.DateTimeFormat("en-CA", { timeZone: tenantTimezone, month: "2-digit" }).format(arg.date),
+              );
+
+              return (
+                <div className="flex items-center justify-center gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{weekday}</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-900">
+                    {day}/{month}
+                  </span>
+                </div>
+              );
+            } catch {
+              return <span>{String(arg.text || "")}</span>;
+            }
+          }}
           height={isMobile ? "78vh" : "70vh"}
           events={calendarEvents}
           // Drag/drop + resize (FullCalendar behaves more reliably when enabled at the calendar level)
