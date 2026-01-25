@@ -249,14 +249,16 @@ export function DashboardGalleries({
           <p className="text-sm font-medium text-slate-500">Latest image collections ready for client delivery.</p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
-          <Link 
-            href="/tenant/galleries"
-            prefetch={false}
-            className="h-10 border border-slate-200 bg-white hover:border-slate-300 text-slate-600 rounded-full px-4 sm:px-5 text-xs font-bold transition-all active:scale-95 flex items-center gap-2 flex-1 sm:flex-none justify-center"
-          >
-            See All
-            <ArrowRight className="h-3 w-3" />
-          </Link>
+          <Hint title="All galleries" content="Open the full galleries list for search, filters, and delivery workflows.">
+            <Link 
+              href="/tenant/galleries"
+              prefetch={false}
+              className="h-10 border border-slate-200 bg-white hover:border-slate-300 text-slate-600 rounded-full px-4 sm:px-5 text-xs font-bold transition-all active:scale-95 flex items-center gap-2 flex-1 sm:flex-none justify-center"
+            >
+              See All
+              <ArrowRight className="h-3 w-3" />
+            </Link>
+          </Hint>
           {user.role !== "CLIENT" && (
             <Hint 
               title="New Production" 
@@ -297,16 +299,18 @@ export function DashboardGalleries({
 
       {/* Filter Bar */}
       <div className="flex items-center gap-2 w-full">
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <input 
-            type="text" 
-            placeholder="Search galleries..." 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="ui-input w-full pl-11" 
-          />
-        </div>
+        <Hint title="Search galleries" content="Quickly find a job by address, client, or title.">
+          <div className="relative w-full sm:max-w-xs">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input 
+              type="text" 
+              placeholder="Search galleries..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="ui-input w-full pl-11" 
+            />
+          </div>
+        </Hint>
       </div>
 
       <div className="grid grid-cols-1 w-full gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">

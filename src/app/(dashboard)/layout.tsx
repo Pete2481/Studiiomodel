@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { checkSubscriptionStatus } from "@/lib/tenant-guard";
 import { prisma } from "@/lib/prisma";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
+import { AppProviders } from "@/components/layout/app-providers";
 import { Suspense } from "react";
 import { PageLoader } from "@/components/ui/page-loader";
 
@@ -34,11 +35,13 @@ export default async function DashboardLayout({
 
   // We wrap the shell data fetching in a separate component so the Shell can render INSTANTLY
   return (
-    <Suspense fallback={<DashboardShellPlaceholder user={user} />}>
-      <ShellDataWrapper tenantId={tenantId} user={user} sessionUser={sessionUser}>
-        {children}
-      </ShellDataWrapper>
-    </Suspense>
+    <AppProviders>
+      <Suspense fallback={<DashboardShellPlaceholder user={user} />}>
+        <ShellDataWrapper tenantId={tenantId} user={user} sessionUser={sessionUser}>
+          {children}
+        </ShellDataWrapper>
+      </Suspense>
+    </AppProviders>
   );
 }
 

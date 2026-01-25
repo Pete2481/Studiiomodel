@@ -35,6 +35,7 @@ import { EditTagsDrawer } from "./edit-tags-drawer";
 import { bulkDeleteEditRequests, updateEditRequestStatus, updateEditRequestAssignments, exportGalleryEditRequests, getEditRequestOriginalDownloadLink, getEditRequestEditedDownloadLink, uploadEditedAssetToDropbox } from "@/app/actions/edit-request";
 import { createInvoiceFromEditRequests } from "@/app/actions/invoice";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { Hint } from "@/components/ui";
 
 interface EditRequestsContentProps {
   initialRequests: any[];
@@ -400,33 +401,37 @@ export function EditRequestsContent({ initialRequests, initialTags, teamMembers,
 
         <div className="flex items-center gap-3">
           {showFinancials && (
-            <button 
-              onClick={() => setIsTagsDrawerOpen(true)}
-              className="h-11 px-6 rounded-full bg-white border border-slate-200 text-slate-600 font-bold text-xs uppercase tracking-widest hover:border-rose-200 hover:text-rose-500 transition-all flex items-center gap-2 shadow-sm"
-            >
-              <Tag className="h-3.5 w-3.5" />
-              Tag Settings
-            </button>
+            <Hint title="Tag settings" content="Configure edit tags and pricing rules for your studio.">
+              <button 
+                onClick={() => setIsTagsDrawerOpen(true)}
+                className="h-11 px-6 rounded-full bg-white border border-slate-200 text-slate-600 font-bold text-xs uppercase tracking-widest hover:border-rose-200 hover:text-rose-500 transition-all flex items-center gap-2 shadow-sm"
+              >
+                <Tag className="h-3.5 w-3.5" />
+                Tag Settings
+              </button>
+            </Hint>
           )}
           
           {showFinancials && (
-            <button 
-              onClick={() => {
-                if (isActionLocked) {
-                  window.location.href = "/tenant/settings?tab=billing";
-                  return;
-                }
-                // Open new request modal if one exists, or redirect
-                alert("New requests are created from within galleries.");
-              }}
-              className={cn(
-                "h-11 px-6 rounded-full bg-primary text-white font-bold text-xs uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-primary/20 hover:scale-105 transition-all",
-                isActionLocked && "opacity-50 grayscale hover:grayscale-0 transition-all"
-              )}
-            >
-              <Plus className="h-4 w-4" />
-              {isActionLocked ? "Sub Required" : "New Request"}
-            </button>
+            <Hint title="Create new request" content="Edit requests are created from inside a gallery while reviewing assets.">
+              <button 
+                onClick={() => {
+                  if (isActionLocked) {
+                    window.location.href = "/tenant/settings?tab=billing";
+                    return;
+                  }
+                  // Open new request modal if one exists, or redirect
+                  alert("New requests are created from within galleries.");
+                }}
+                className={cn(
+                  "h-11 px-6 rounded-full bg-primary text-white font-bold text-xs uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-primary/20 hover:scale-105 transition-all",
+                  isActionLocked && "opacity-50 grayscale hover:grayscale-0 transition-all"
+                )}
+              >
+                <Plus className="h-4 w-4" />
+                {isActionLocked ? "Sub Required" : "New Request"}
+              </button>
+            </Hint>
           )}
         </div>
       </div>

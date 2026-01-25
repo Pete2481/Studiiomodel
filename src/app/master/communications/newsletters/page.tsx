@@ -1,4 +1,5 @@
 import { DashboardShell } from "@/components/layout/dashboard-shell";
+import { AppProviders } from "@/components/layout/app-providers";
 import { permissionService } from "@/lib/permission-service";
 import { UNIFIED_NAV_CONFIG } from "@/lib/nav-config";
 import { auth } from "@/auth";
@@ -70,15 +71,16 @@ export default async function MasterNewslettersPage() {
   });
 
   return (
-    <DashboardShell
-      navSections={filteredNav}
-      user={user}
-      title="Newsletters"
-      subtitle="Send platform updates to selected studio contact emails."
-      isMasterMode={true}
-    >
-      <div className="animate-in fade-in duration-500 space-y-10 pb-20 pt-8">
-        <MasterNewsletterComposer tenants={tenantRows} defaultTestEmail={session.user.email || ""} />
+    <AppProviders>
+      <DashboardShell
+        navSections={filteredNav}
+        user={user}
+        title="Newsletters"
+        subtitle="Send platform updates to selected studio contact emails."
+        isMasterMode={true}
+      >
+        <div className="animate-in fade-in duration-500 space-y-10 pb-20 pt-8">
+          <MasterNewsletterComposer tenants={tenantRows} defaultTestEmail={session.user.email || ""} />
 
         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
           <div className="px-10 py-8 border-b border-slate-50 bg-slate-50/30">
@@ -151,8 +153,9 @@ export default async function MasterNewslettersPage() {
             </tbody>
           </table>
         </div>
-      </div>
-    </DashboardShell>
+        </div>
+      </DashboardShell>
+    </AppProviders>
   );
 }
 

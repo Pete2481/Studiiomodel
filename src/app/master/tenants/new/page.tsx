@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { DashboardShell } from "../../../../components/layout/dashboard-shell";
+import { AppProviders } from "@/components/layout/app-providers";
 import { permissionService } from "@/lib/permission-service";
 import { UNIFIED_NAV_CONFIG } from "../../../../lib/nav-config";
 import { 
@@ -76,14 +77,15 @@ const NewTenantPage = () => {
   );
 
   return (
-    <DashboardShell 
-      navSections={filteredNav} 
-      user={user}
-      title="Create Workspace"
-      subtitle="Onboard a new studio team to the platform."
-      isMasterMode={true}
-    >
-      <div className="max-w-4xl mx-auto space-y-8">
+    <AppProviders>
+      <DashboardShell 
+        navSections={filteredNav} 
+        user={user}
+        title="Create Workspace"
+        subtitle="Onboard a new studio team to the platform."
+        isMasterMode={true}
+      >
+        <div className="max-w-4xl mx-auto space-y-8">
         <Link href="/master" className="inline-flex items-center gap-2 text-xs font-bold text-slate-400 hover:text-slate-900 uppercase tracking-widest transition-colors">
           <ArrowLeft className="h-3 w-3" /> Back to dashboard
         </Link>
@@ -220,8 +222,9 @@ const NewTenantPage = () => {
             </button>
           </div>
         </form>
-      </div>
-    </DashboardShell>
+        </div>
+      </DashboardShell>
+    </AppProviders>
   );
 };
 

@@ -1,4 +1,5 @@
 import { DashboardShell } from "@/components/layout/dashboard-shell";
+import { AppProviders } from "@/components/layout/app-providers";
 import { permissionService } from "@/lib/permission-service";
 import { UNIFIED_NAV_CONFIG } from "@/lib/nav-config";
 import Link from "next/link";
@@ -130,14 +131,15 @@ export default async function MasterTenantsPage() {
   }));
 
   return (
-    <DashboardShell 
-      navSections={filteredNav} 
-      user={user}
-      title="All Tenants"
-      subtitle="Complete list of all studios and their operational status."
-      isMasterMode={true}
-    >
-      <div className="space-y-8">
+    <AppProviders>
+      <DashboardShell 
+        navSections={filteredNav} 
+        user={user}
+        title="All Tenants"
+        subtitle="Complete list of all studios and their operational status."
+        isMasterMode={true}
+      >
+        <div className="space-y-8">
         <div className="flex items-center justify-end">
           <Link
             href="/master/tenants/new"
@@ -149,7 +151,8 @@ export default async function MasterTenantsPage() {
         </div>
 
         <MasterTenantsList initialTenants={tenants} />
-      </div>
-    </DashboardShell>
+        </div>
+      </DashboardShell>
+    </AppProviders>
   );
 }

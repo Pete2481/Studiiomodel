@@ -13,6 +13,7 @@ import { deleteBooking, rescheduleBooking } from "@/app/actions/booking-upsert";
 import dynamic from "next/dynamic";
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Loader2, Plus, Settings } from "lucide-react";
 import { getSunTimesForLatLonRange } from "@/app/actions/weather";
+import { Hint } from "@/components/ui";
 import {
   calendarScopeKey,
   clearCachedBookingId,
@@ -1797,53 +1798,57 @@ export function CalendarViewV2(props: {
         </div>
 
         {!isMobile ? (
-        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-full p-1 shadow-sm">
-          <button
-            type="button"
-            onClick={() => void requestView("timeGridDay")}
-            className={cn(
-              "px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all",
-              view === "timeGridDay" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50"
-            )}
-          >
-            Day
-          </button>
-          <button
-            type="button"
-            onClick={() => void requestView("timeGridWeek")}
-            className={cn(
-              "px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all",
-              view === "timeGridWeek" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50"
-            )}
-          >
-            Week
-          </button>
-          <button
-            type="button"
-            onClick={() => void requestView("dayGridMonth")}
-            className={cn(
-              "px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all",
-              view === "dayGridMonth" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50"
-            )}
-          >
-            Month
-          </button>
-        </div>
+          <Hint title="View" content="Switch between day, week, and month views of your bookings.">
+            <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-full p-1 shadow-sm">
+              <button
+                type="button"
+                onClick={() => void requestView("timeGridDay")}
+                className={cn(
+                  "px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all",
+                  view === "timeGridDay" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50"
+                )}
+              >
+                Day
+              </button>
+              <button
+                type="button"
+                onClick={() => void requestView("timeGridWeek")}
+                className={cn(
+                  "px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all",
+                  view === "timeGridWeek" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50"
+                )}
+              >
+                Week
+              </button>
+              <button
+                type="button"
+                onClick={() => void requestView("dayGridMonth")}
+                className={cn(
+                  "px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all",
+                  view === "dayGridMonth" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50"
+                )}
+              >
+                Month
+              </button>
+            </div>
+          </Hint>
         ) : null}
 
         {/* Local-only: Staff filter (multi-select) */}
         {isLocalOnly && !isMobile && user?.role !== "CLIENT" ? (
           <div className="relative">
-            <button
-              type="button"
-              onClick={() => setIsStaffFilterOpen((v) => !v)}
-              className="flex items-center justify-center gap-2 px-4 py-2 bg-white text-slate-700 rounded-full border border-slate-200 text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all shadow-sm"
-              title="Filter by staff"
-              aria-label="Filter by staff"
-            >
-              <span>Staff</span>
-              <span className="text-slate-400">{selectedTeamMemberIds.length ? `(${selectedTeamMemberIds.length})` : ""}</span>
-            </button>
+            <Hint title="Staff filter" content="Filter the calendar to specific photographers/team members.">
+              <button
+                type="button"
+                onClick={() => setIsStaffFilterOpen((v) => !v)}
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-white text-slate-700 rounded-full border border-slate-200 text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all shadow-sm"
+                title="Filter by staff"
+                aria-label="Filter by staff"
+              >
+                <span>Staff</span>
+                <span className="text-slate-400">{selectedTeamMemberIds.length ? `(${selectedTeamMemberIds.length})` : ""}</span>
+              </button>
+            </Hint>
 
             {isStaffFilterOpen ? (
               <>
@@ -1901,30 +1906,36 @@ export function CalendarViewV2(props: {
 
         {!isMobile ? (
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setIsSubscriptionModalOpen(true)}
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-slate-50 text-slate-600 rounded-full border border-slate-200 text-[10px] font-black uppercase tracking-widest hover:bg-white transition-all shadow-sm"
-          >
-            <CalendarIcon className="h-3 w-3" />
-            <span>Sub</span>
-          </button>
-          {user?.role !== "CLIENT" ? (
+          <Hint title="Calendar subscription" content="Subscribe in Apple/Google Calendar to keep your bookings in sync.">
             <button
-              onClick={() => setIsHoursModalOpen(true)}
+              onClick={() => setIsSubscriptionModalOpen(true)}
               className="flex items-center justify-center gap-2 px-4 py-2 bg-slate-50 text-slate-600 rounded-full border border-slate-200 text-[10px] font-black uppercase tracking-widest hover:bg-white transition-all shadow-sm"
             >
-              <Settings className="h-3 w-3" />
-              <span>{aiLogisticsEnabled ? "Hours" : "Hours & Slots"}</span>
+              <CalendarIcon className="h-3 w-3" />
+              <span>Sub</span>
             </button>
+          </Hint>
+          {user?.role !== "CLIENT" ? (
+            <Hint title="Business hours" content="Adjust working hours and sunrise/dusk slot capacity.">
+              <button
+                onClick={() => setIsHoursModalOpen(true)}
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-slate-50 text-slate-600 rounded-full border border-slate-200 text-[10px] font-black uppercase tracking-widest hover:bg-white transition-all shadow-sm"
+              >
+                <Settings className="h-3 w-3" />
+                <span>{aiLogisticsEnabled ? "Hours" : "Hours & Slots"}</span>
+              </button>
+            </Hint>
           ) : null}
-          <button
-            onClick={(e) => void handleNewAppt(e)}
-            className="flex items-center justify-center gap-2 px-6 py-2 bg-primary text-white rounded-full border border-white/10 text-[10px] font-black uppercase tracking-widest hover:opacity-90 transition-all shadow-lg"
-            style={{ boxShadow: `0 10px 15px -3px var(--primary-soft)` }}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <span>New Appt</span>
-          </button>
+          <Hint title="New appointment" content="Create a new booking or block-out directly on the calendar.">
+            <button
+              onClick={(e) => void handleNewAppt(e)}
+              className="flex items-center justify-center gap-2 px-6 py-2 bg-primary text-white rounded-full border border-white/10 text-[10px] font-black uppercase tracking-widest hover:opacity-90 transition-all shadow-lg"
+              style={{ boxShadow: `0 10px 15px -3px var(--primary-soft)` }}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>New Appt</span>
+            </button>
+          </Hint>
         </div>
         ) : null}
       </div>

@@ -1,4 +1,5 @@
 import { DashboardShell } from "@/components/layout/dashboard-shell";
+import { AppProviders } from "@/components/layout/app-providers";
 import { permissionService } from "@/lib/permission-service";
 import { UNIFIED_NAV_CONFIG } from "@/lib/nav-config";
 import { auth } from "@/auth";
@@ -50,23 +51,25 @@ export default async function MasterWelcomeEmailPage() {
   });
 
   return (
-    <DashboardShell
-      navSections={filteredNav}
-      user={user}
-      title="Welcome Email"
-      subtitle="Edit the global welcome email sent to new studios."
-      isMasterMode={true}
-    >
-      <div className="animate-in fade-in duration-500 space-y-10 pb-20 pt-8">
-        <WelcomeEmailEditor
-          initialTemplate={{
-            subject: config.welcomeEmailSubject,
-            blocks: (config.welcomeEmailBlocks as any) || [],
-          }}
-          defaultTestEmail={session.user.email || ""}
-        />
-      </div>
-    </DashboardShell>
+    <AppProviders>
+      <DashboardShell
+        navSections={filteredNav}
+        user={user}
+        title="Welcome Email"
+        subtitle="Edit the global welcome email sent to new studios."
+        isMasterMode={true}
+      >
+        <div className="animate-in fade-in duration-500 space-y-10 pb-20 pt-8">
+          <WelcomeEmailEditor
+            initialTemplate={{
+              subject: config.welcomeEmailSubject,
+              blocks: (config.welcomeEmailBlocks as any) || [],
+            }}
+            defaultTestEmail={session.user.email || ""}
+          />
+        </div>
+      </DashboardShell>
+    </AppProviders>
   );
 }
 

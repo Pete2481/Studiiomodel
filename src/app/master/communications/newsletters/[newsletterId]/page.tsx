@@ -1,4 +1,5 @@
 import { DashboardShell } from "@/components/layout/dashboard-shell";
+import { AppProviders } from "@/components/layout/app-providers";
 import { permissionService } from "@/lib/permission-service";
 import { UNIFIED_NAV_CONFIG } from "@/lib/nav-config";
 import { auth } from "@/auth";
@@ -43,14 +44,16 @@ export default async function MasterNewsletterDetailPage(props: {
 
   if (!newsletter) {
     return (
-      <DashboardShell navSections={filteredNav} user={user} title="Newsletter" subtitle="Not found" isMasterMode={true}>
-        <div className="py-16">
-          <p className="text-sm font-bold text-slate-500">Newsletter not found.</p>
-          <Link className="text-sm font-bold text-primary" href="/master/communications/newsletters">
-            Back to newsletters
-          </Link>
-        </div>
-      </DashboardShell>
+      <AppProviders>
+        <DashboardShell navSections={filteredNav} user={user} title="Newsletter" subtitle="Not found" isMasterMode={true}>
+          <div className="py-16">
+            <p className="text-sm font-bold text-slate-500">Newsletter not found.</p>
+            <Link className="text-sm font-bold text-primary" href="/master/communications/newsletters">
+              Back to newsletters
+            </Link>
+          </div>
+        </DashboardShell>
+      </AppProviders>
     );
   }
 
@@ -62,14 +65,15 @@ export default async function MasterNewsletterDetailPage(props: {
   };
 
   return (
-    <DashboardShell
-      navSections={filteredNav}
-      user={user}
-      title="Newsletter Delivery"
-      subtitle="Per-studio delivery status."
-      isMasterMode={true}
-    >
-      <div className="animate-in fade-in duration-500 space-y-10 pb-20 pt-8">
+    <AppProviders>
+      <DashboardShell
+        navSections={filteredNav}
+        user={user}
+        title="Newsletter Delivery"
+        subtitle="Per-studio delivery status."
+        isMasterMode={true}
+      >
+        <div className="animate-in fade-in duration-500 space-y-10 pb-20 pt-8">
         <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm space-y-4">
           <div className="flex items-start justify-between gap-6">
             <div className="space-y-2">
@@ -150,8 +154,9 @@ export default async function MasterNewsletterDetailPage(props: {
             </tbody>
           </table>
         </div>
-      </div>
-    </DashboardShell>
+        </div>
+      </DashboardShell>
+    </AppProviders>
   );
 }
 

@@ -45,7 +45,7 @@ import { permissionService } from "@/lib/permission-service";
 import { UNIFIED_NAV_CONFIG } from "@/lib/nav-config";
 import { DashboardProvider, useDashboard } from "./dashboard-context";
 import { GlobalSearch } from "./global-search";
-import { GuideProvider, useGuide } from "./guide-context";
+import { useGuide } from "./guide-context";
 import { Hint } from "@/components/ui";
 import { SetupChecklist } from "@/components/onboarding/setup-checklist";
 import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
@@ -125,9 +125,7 @@ export function DashboardShell(props: DashboardShellProps) {
         <NavigationIntentOverlay />
       </Suspense>
       <NavigationPrefetcher />
-      <GuideProvider>
-        <DashboardShellContent {...props} />
-      </GuideProvider>
+      <DashboardShellContent {...props} />
     </DashboardProvider>
   );
 }
@@ -714,6 +712,22 @@ function DashboardShellContent({
             <div className="hidden lg:flex items-center justify-center px-4" />
             
                     <div className="flex items-center gap-3 md:gap-6 flex-shrink-0">
+                      {/* Guide Mode Toggle (always available) */}
+                      <button
+                        type="button"
+                        onClick={() => setShowHints(!showHints)}
+                        className={cn(
+                          "h-10 w-10 rounded-full border flex items-center justify-center transition-all shadow-sm",
+                          showHints
+                            ? "bg-primary text-white border-primary/20 shadow-[0_10px_15px_-3px_var(--primary-soft)]"
+                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                        )}
+                        aria-label="Toggle Guide Mode"
+                        title="Guide Mode"
+                      >
+                        <HelpCircle className="h-4 w-4" />
+                      </button>
+
                       {user.role === "TENANT_ADMIN" && !isMasterMode && (
                         <SetupChecklist />
                       )}

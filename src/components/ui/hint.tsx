@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useGuide } from "../layout/guide-context";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,16 @@ export function Hint({ title, content, children, position = "top", className }: 
   const { showHints } = useGuide();
   const [isVisible, setIsVisible] = useState(false);
   const [coords, setCoords] = useState<{ left: number; top: number } | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  const supportsHover = useMemo(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      return !!window.matchMedia?.("(hover: hover)").matches;
+    } catch {
+      return true;
+    }
+  }, []);
 
   if (!showHints) return <>{children}</>;
 
@@ -28,17 +38,61 @@ export function Hint({ title, content, children, position = "top", className }: 
     right: "left-full top-1/2 -translate-y-1/2 ml-3",
   };
 
+  const computeAndShow = (el: HTMLDivElement) => {
+    const rect = el.getBoundingClientRect();
+    const left = rect.left + rect.width / 2;
+    const top = position === "top" ? rect.top : position === "bottom" ? rect.bottom : rect.top + rect.height / 2;
+    setCoords({ left, top });
+    setIsVisible(true);
+  };
+
+  // Touch behavior: tap-to-open, tap outside to close.
+  useEffect(() => {
+    if (!isVisible) return;
+    if (supportsHover) return;
+
+    const onDocPointerDown = (e: PointerEvent) => {
+      const root = rootRef.current;
+      if (!root) return;
+      if (e.target instanceof Node && root.contains(e.target)) return;
+      setIsVisible(false);
+    };
+
+    document.addEventListener("pointerdown", onDocPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onDocPointerDown, true);
+  }, [isVisible, supportsHover]);
+
   return (
-    <div 
+    <div
+      ref={rootRef}
       className={cn("relative inline-block group", className)}
       onMouseEnter={(e) => {
-        const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-        const left = rect.left + rect.width / 2;
-        const top = position === "top" ? rect.top : position === "bottom" ? rect.bottom : rect.top + rect.height / 2;
-        setCoords({ left, top });
-        setIsVisible(true);
+        if (!supportsHover) return;
+        computeAndShow(e.currentTarget as HTMLDivElement);
       }}
-      onMouseLeave={() => setIsVisible(false)}
+      onMouseLeave={() => {
+        if (!supportsHover) return;
+        setIsVisible(false);
+      }}
+      onPointerDownCapture={(e) => {
+        if (supportsHover) return; // desktop: hover handles it
+        if (e.button !== 0) return;
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+
+        const root = rootRef.current;
+        if (!root) return;
+
+        // First tap: show hint and DO NOT perform the underlying action/navigation.
+        if (!isVisible) {
+          computeAndShow(root);
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+
+        // Second tap: close hint and allow the action to proceed.
+        setIsVisible(false);
+      }}
     >
       {/* Visual Indicator */}
       <div className="absolute -top-1 -right-1 z-10">

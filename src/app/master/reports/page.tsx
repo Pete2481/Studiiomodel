@@ -1,4 +1,5 @@
 import { DashboardShell } from "@/components/layout/dashboard-shell";
+import { AppProviders } from "@/components/layout/app-providers";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -40,14 +41,15 @@ export default async function MasterReportsPage() {
   const totalEdits = await prisma.editRequest.count();
 
   return (
-    <DashboardShell 
-      navSections={filteredNav} 
-      user={user}
-      title="Network Analytics"
-      subtitle="Operational volumes and system engagement metrics."
-      isMasterMode={true}
-    >
-      <div className="animate-in fade-in duration-700 space-y-12 pb-20 pt-8">
+    <AppProviders>
+      <DashboardShell 
+        navSections={filteredNav} 
+        user={user}
+        title="Network Analytics"
+        subtitle="Operational volumes and system engagement metrics."
+        isMasterMode={true}
+      >
+        <div className="animate-in fade-in duration-700 space-y-12 pb-20 pt-8">
         {/* Network Pulse Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <ReportStatCard 
@@ -120,8 +122,9 @@ export default async function MasterReportsPage() {
             <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Compiling network velocity rankings...</p>
           </div>
         </div>
-      </div>
-    </DashboardShell>
+        </div>
+      </DashboardShell>
+    </AppProviders>
   );
 }
 

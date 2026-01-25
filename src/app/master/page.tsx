@@ -1,4 +1,5 @@
 import { DashboardShell } from "@/components/layout/dashboard-shell";
+import { AppProviders } from "@/components/layout/app-providers";
 import { permissionService } from "@/lib/permission-service";
 import { UNIFIED_NAV_CONFIG } from "@/lib/nav-config";
 import { 
@@ -100,14 +101,15 @@ export default async function MasterDashboardPage() {
   const payingTenants = tenants.filter(t => t.subscriptionStatus === 'active' || t.subscriptionOverwrite).length;
 
   return (
-    <DashboardShell 
-      navSections={filteredNav} 
-      user={user}
-      title="Platform Oversight"
-      subtitle="Monitor network growth, subscriptions, and system performance."
-      isMasterMode={true}
-    >
-      <div className="animate-in fade-in duration-700 space-y-12 pb-20 pt-8">
+    <AppProviders>
+      <DashboardShell 
+        navSections={filteredNav} 
+        user={user}
+        title="Platform Oversight"
+        subtitle="Monitor network growth, subscriptions, and system performance."
+        isMasterMode={true}
+      >
+        <div className="animate-in fade-in duration-700 space-y-12 pb-20 pt-8">
         {/* Real-time Metrics Grid (Mobile Style) */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <MasterStatCard title="Traffic Volume" value="--" label="Network Hits (24h)" icon={<Activity className="h-5 w-5" />} color="emerald" />
@@ -249,8 +251,9 @@ export default async function MasterDashboardPage() {
             </button>
           </div>
         </div>
-      </div>
-    </DashboardShell>
+        </div>
+      </DashboardShell>
+    </AppProviders>
   );
 }
 
