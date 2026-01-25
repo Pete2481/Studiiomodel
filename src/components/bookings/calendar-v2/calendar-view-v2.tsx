@@ -13,6 +13,18 @@ import { deleteBooking, rescheduleBooking } from "@/app/actions/booking-upsert";
 import dynamic from "next/dynamic";
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Loader2, Plus, Settings } from "lucide-react";
 import { getSunTimesForLatLonRange } from "@/app/actions/weather";
+import {
+  calendarScopeKey,
+  clearCachedBookingId,
+  getCachedRange,
+  getInflightRange,
+  getLastRange,
+  getSnapshot,
+  setCachedRange,
+  setInflightRange,
+  setLastRange,
+  setSnapshot,
+} from "@/lib/calendar-client-cache";
 
 const BusinessHoursModal = dynamic(() => import("../business-hours-modal").then((m) => m.BusinessHoursModal), { ssr: false });
 const CalendarSubscriptionModal = dynamic(() => import("../calendar-subscription-modal").then((m) => m.CalendarSubscriptionModal), { ssr: false });
@@ -122,20 +134,90 @@ export function CalendarViewV2(props: {
     }
   }, []);
 
-  const [bookings, setBookings] = useState<LiteBooking[]>([]);
+  const initialScopeKey = calendarScopeKey({
+    tenantTimezone,
+    calendarSecret: props.calendarSecret || "",
+    role: user?.role || "",
+    clientId: user?.clientId || "",
+    agentId: user?.agentId || "",
+    teamMemberId: user?.teamMemberId || "",
+  });
+
+  const [bookings, setBookings] = useState<LiteBooking[]>(() => {
+    try {
+      const snap = getSnapshot(initialScopeKey) as LiteBooking[] | null;
+      return Array.isArray(snap) ? snap : [];
+    } catch {
+      return [];
+    }
+  });
   const bookingsRef = useRef<LiteBooking[]>([]);
   useEffect(() => {
     bookingsRef.current = bookings;
+    // Keep an up-to-date snapshot for instant back-nav.
+    try {
+      setSnapshot(scopeKeyRef.current, bookings);
+    } catch {
+      // ignore cache failures
+    }
   }, [bookings]);
   const [sunSlots, setSunSlots] = useState<LiteBooking[]>([]);
   const [tempBooking, setTempBooking] = useState<LiteBooking | null>(null);
   const [rangeTitle, setRangeTitle] = useState<string>("");
   const [clientHoursMsg, setClientHoursMsg] = useState<string | null>(null);
   const lastVisibleRangeRef = useRef<{ start: Date; end: Date } | null>(null);
-  const rangeCacheRef = useRef<Map<string, LiteBooking[]>>(new Map());
-  const rangeInflightRef = useRef<Map<string, Promise<LiteBooking[]>>>(new Map());
   const sunRangeCacheRef = useRef<Map<string, LiteBooking[]>>(new Map());
   const sunRangeInflightRef = useRef<Map<string, Promise<LiteBooking[]>>>(new Map());
+
+  // A stable scope key so cache survives route changes but remains user/tenant scoped.
+  const scopeKeyRef = useRef(
+    calendarScopeKey({
+      tenantTimezone,
+      calendarSecret: props.calendarSecret || "",
+      role: user?.role || "",
+      clientId: user?.clientId || "",
+      agentId: user?.agentId || "",
+      teamMemberId: user?.teamMemberId || "",
+    }),
+  );
+
+  // If scope changes (rare), reset the scope key and attempt to hydrate from the new cache.
+  useEffect(() => {
+    scopeKeyRef.current = calendarScopeKey({
+      tenantTimezone,
+      calendarSecret: props.calendarSecret || "",
+      role: user?.role || "",
+      clientId: user?.clientId || "",
+      agentId: user?.agentId || "",
+      teamMemberId: user?.teamMemberId || "",
+    });
+    const snap = getSnapshot(scopeKeyRef.current) as LiteBooking[] | null;
+    if (snap && snap.length) {
+      setBookings(snap);
+    }
+    const last = getLastRange(scopeKeyRef.current);
+    if (last?.start && last?.end) {
+      try {
+        lastVisibleRangeRef.current = { start: new Date(last.start), end: new Date(last.end) };
+      } catch {}
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantTimezone, props.calendarSecret, user?.role, user?.clientId, user?.agentId, user?.teamMemberId]);
+
+  // On first mount, hydrate instantly from cache to avoid “blank calendar” when back-navigating.
+  useEffect(() => {
+    const snap = getSnapshot(scopeKeyRef.current) as LiteBooking[] | null;
+    if (snap && snap.length) {
+      setBookings(snap);
+    }
+    const last = getLastRange(scopeKeyRef.current);
+    if (last?.start && last?.end) {
+      try {
+        lastVisibleRangeRef.current = { start: new Date(last.start), end: new Date(last.end) };
+      } catch {}
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   type HoverLiteEvent = {
     id: string;
@@ -405,15 +487,10 @@ export function CalendarViewV2(props: {
     const snapshot = bookings.find((b) => String(b?.id) === targetId) || null;
     setBookings((prev) => prev.filter((b) => String(b.id) !== targetId));
 
-    // Purge from cached ranges so it won't reappear until refresh
+    // Purge from shared cached ranges/snapshot so it won't reappear until refresh
     try {
-      for (const [k, arr] of rangeCacheRef.current.entries()) {
-        const next = (arr || []).filter((b) => String((b as any)?.id) !== targetId);
-        rangeCacheRef.current.set(k, next);
-      }
-    } catch {
-      // ignore cache purge issues
-    }
+      clearCachedBookingId(scopeKeyRef.current, targetId);
+    } catch {}
 
     try {
       await deleteBooking(targetId);
@@ -433,31 +510,76 @@ export function CalendarViewV2(props: {
   };
 
   const fetchBookingsForRange = async (start: Date, end: Date) => {
-    const key = `${start.toISOString()}|${end.toISOString()}`;
-    if (rangeCacheRef.current.has(key)) return rangeCacheRef.current.get(key)!;
-    if (rangeInflightRef.current.has(key)) return rangeInflightRef.current.get(key)!;
+    const startIso = start.toISOString();
+    const endIso = end.toISOString();
+    const cached = getCachedRange(scopeKeyRef.current, startIso, endIso) as LiteBooking[] | null;
+    if (cached) return cached;
+    const inflight = getInflightRange(scopeKeyRef.current, startIso, endIso) as Promise<LiteBooking[]> | null;
+    if (inflight) return await inflight;
 
     const p = (async () => {
-      const url = `/api/tenant/calendar/bookings-lite?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`;
+      const url = `/api/tenant/calendar/bookings-lite?start=${encodeURIComponent(startIso)}&end=${encodeURIComponent(endIso)}`;
       const res = await fetch(url);
       const data = await res.json().catch(() => ({}));
       const items = Array.isArray(data?.bookings) ? (data.bookings as LiteBooking[]) : [];
-      rangeCacheRef.current.set(key, items);
-      rangeInflightRef.current.delete(key);
+      setCachedRange(scopeKeyRef.current, startIso, endIso, items);
       return items;
     })().catch((e) => {
-      rangeInflightRef.current.delete(key);
+      // best-effort clear inflight (cache module cleans on setCachedRange, but error path should clear too)
+      try {
+        setCachedRange(scopeKeyRef.current, startIso, endIso, []);
+      } catch {}
       console.error("[CALENDAR_V2] Range fetch failed:", e);
       return [];
     });
 
-    rangeInflightRef.current.set(key, p);
+    setInflightRange(scopeKeyRef.current, startIso, endIso, p as any);
     return p;
+  };
+
+  // Force a background refresh even if we have a cached range (keeps correctness).
+  const refreshBookingsForRange = async (start: Date, end: Date) => {
+    const startIso = start.toISOString();
+    const endIso = end.toISOString();
+    const inflight = getInflightRange(scopeKeyRef.current, startIso, endIso) as Promise<LiteBooking[]> | null;
+    if (inflight) return await inflight;
+
+    const p = (async () => {
+      const url = `/api/tenant/calendar/bookings-lite?start=${encodeURIComponent(startIso)}&end=${encodeURIComponent(endIso)}`;
+      const res = await fetch(url);
+      const data = await res.json().catch(() => ({}));
+      const items = Array.isArray(data?.bookings) ? (data.bookings as LiteBooking[]) : [];
+      setCachedRange(scopeKeyRef.current, startIso, endIso, items);
+      return items;
+    })().catch((e) => {
+      try {
+        // Don't overwrite a good cache with error data; just clear inflight.
+        setInflightRange(scopeKeyRef.current, startIso, endIso, Promise.resolve(getCachedRange(scopeKeyRef.current, startIso, endIso) || []) as any);
+      } catch {}
+      console.error("[CALENDAR_V2] Range refresh failed:", e);
+      return [];
+    });
+
+    setInflightRange(scopeKeyRef.current, startIso, endIso, p as any);
+    return await p;
   };
 
   const handleVisibleRange = async (start: Date, end: Date) => {
     lastVisibleRangeRef.current = { start, end };
-    const items = await fetchBookingsForRange(start, end);
+    try {
+      setLastRange(scopeKeyRef.current, start.toISOString(), end.toISOString());
+    } catch {}
+
+    // 1) Instant: hydrate from cache if available (no loading state)
+    const startIso = start.toISOString();
+    const endIso = end.toISOString();
+    const cached = getCachedRange(scopeKeyRef.current, startIso, endIso) as LiteBooking[] | null;
+    if (cached?.length) {
+      setBookings((prev) => mergeBookingsById(prev, cached));
+    }
+
+    // 2) Background refresh: always fetch (keeps correctness)
+    const items = await refreshBookingsForRange(start, end);
     setBookings((prev) => mergeBookingsById(prev, items));
   };
 
@@ -1183,13 +1305,9 @@ export function CalendarViewV2(props: {
       })
     );
     try {
-      for (const [k, arr] of rangeCacheRef.current.entries()) {
-        const next = (arr || []).map((b) => {
-          if (!b || String((b as any).id) !== id) return b;
-          return { ...(b as any), startAt: String(startAt), endAt: String(endAt) };
-        });
-        rangeCacheRef.current.set(k, next as any);
-      }
+      // Update cached snapshots/ranges best-effort by clearing this booking ID.
+      // Next range fetch will re-hydrate it with correct times.
+      clearCachedBookingId(scopeKeyRef.current, id);
     } catch {
       // ignore cache update issues
     }
