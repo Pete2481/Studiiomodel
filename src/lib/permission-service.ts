@@ -11,6 +11,7 @@ export type Module =
   | "reports"
   | "tenants"     // Master only
   | "bookings"
+  | "maps"
   | "galleries"
   | "edits"
   | "clients"
@@ -130,6 +131,7 @@ export class PermissionService {
       if (module === "bookings") return true; // They can see their bookings
       if (module === "galleries") return true; // They can see their galleries
       if (module === "services") return true; // Client/Agent view-only access to the catalogue
+      if (module === "maps") return true; // Client/Agent can see their delivered jobs map (scoped server-side)
     }
 
     // Map modules to granular permissions
@@ -153,6 +155,9 @@ export class PermissionService {
       case "dashboard": 
         return role !== "EDITOR" && role !== "TEAM_MEMBER";
       case "reports": return role === "ACCOUNTS";
+      case "maps":
+        // Allow tenant staff + client/agent portal. (Role scoping is enforced in the API.)
+        return role !== "EDITOR";
       case "edits":
         return true;
       case "agents":

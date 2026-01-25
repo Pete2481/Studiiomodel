@@ -5,6 +5,7 @@ export type Module =
   | "reports"
   | "tenants"
   | "bookings"
+  | "maps"
   | "galleries"
   | "edits"
   | "clients"
@@ -37,6 +38,7 @@ export const UNIFIED_NAV_CONFIG: NavSection[] = [
       { label: "Dashboard", href: "/", icon: "LayoutDashboard", module: "dashboard" },
       { label: "WIP", href: "/tenant/wip", icon: "Activity", module: "dashboard" },
       { label: "Calendar", href: "/tenant/calendar", icon: "Calendar", module: "bookings" },
+      { label: "Maps", href: "/maps", icon: "MapPin", module: "maps" },
     ],
   },
 

@@ -36,6 +36,7 @@ import {
   Link as LinkIcon, 
   Copy, 
   Check, 
+  MapPin,
   TrendingUp, 
   LayoutDashboard as DashboardIcon, 
   Activity
@@ -71,6 +72,7 @@ const IconMap: Record<string, any> = {
   Building2,
   Calendar,
   Image: ImageIcon,
+  MapPin,
   Paintbrush,
   Bell,
   Newspaper,

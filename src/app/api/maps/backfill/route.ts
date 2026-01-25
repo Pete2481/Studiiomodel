@@ -27,13 +27,13 @@ export async function POST(req: Request) {
         tenantId,
         deletedAt: null,
         OR: [{ latitude: null }, { longitude: null }],
-        addressLine1: { not: null },
         galleries: { some: { deletedAt: null, status: "DELIVERED" } },
       },
       take: limit,
       orderBy: { updatedAt: "asc" },
       select: {
         id: true,
+        name: true,
         addressLine1: true,
         city: true,
         state: true,
@@ -50,7 +50,7 @@ export async function POST(req: Request) {
     // Geocode sequentially to avoid rate limiting and keep predictable performance.
     for (const p of candidates) {
       processed++;
-      const address = formatPropertyAddress(p);
+      const address = formatPropertyAddress(p) || String((p as any)?.name || "").trim();
       if (!address) {
         skipped++;
         continue;
@@ -77,7 +77,6 @@ export async function POST(req: Request) {
         tenantId,
         deletedAt: null,
         OR: [{ latitude: null }, { longitude: null }],
-        addressLine1: { not: null },
         galleries: { some: { deletedAt: null, status: "DELIVERED" } },
       },
     });

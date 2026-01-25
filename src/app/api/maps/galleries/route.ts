@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { cached, tenantTag } from "@/lib/server-cache";
+import { formatDropboxUrl } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -52,8 +53,14 @@ export async function GET() {
             createdAt: true,
             clientId: true,
             agentId: true,
+            bannerImageUrl: true,
             client: { select: { name: true, businessName: true } },
             agent: { select: { name: true } },
+            media: {
+              take: 1,
+              orderBy: { createdAt: "asc" },
+              select: { url: true, thumbnailUrl: true },
+            },
             property: {
               select: {
                 id: true,
@@ -81,6 +88,10 @@ export async function GET() {
           ]
             .map((s: any) => String(s || "").trim())
             .filter(Boolean);
+          const fallbackAddress = String(g?.property?.name || "").trim();
+          // Prefer a true thumbnail (fast) and only fall back to banner/full urls.
+          const rawCover = String(g?.media?.[0]?.thumbnailUrl || g?.bannerImageUrl || g?.media?.[0]?.url || "").trim();
+          const coverUrl = rawCover ? formatDropboxUrl(rawCover) : null;
 
           return {
             id: String(g.id),
@@ -90,10 +101,11 @@ export async function GET() {
             createdAt: g.createdAt ? new Date(g.createdAt).toISOString() : null,
             client: g.client ? String(g.client.businessName || g.client.name || "") : "",
             agent: g.agent ? String(g.agent.name || "") : "",
+            coverUrl,
             property: {
               id: String(g.property.id),
               name: String(g.property.name || ""),
-              address: addressParts.join(", "),
+              address: addressParts.join(", ") || fallbackAddress,
               lat,
               lon,
             },
