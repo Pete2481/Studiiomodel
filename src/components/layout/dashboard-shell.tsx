@@ -444,7 +444,7 @@ function DashboardShellContent({
                           <Link
                             key={sub.href}
                             href={sub.href}
-                            prefetch={false}
+                            prefetch={sub.href?.startsWith("/tenant/calendar")}
                             onPointerDown={(e) => handleNavPointerDown(e, sub.href, sub.label)}
                             onClick={(e) => handleNavClick(e, sub.href)}
                             onPointerEnter={() => {
@@ -483,7 +483,7 @@ function DashboardShellContent({
               >
                 <Link
                   href={item.href}
-                  prefetch={false}
+                  prefetch={item.href?.startsWith("/tenant/calendar")}
                   onPointerDown={(e) => handleNavPointerDown(e, item.href, item.label)}
                   onClick={(e) => handleNavClick(e, item.href)}
                   onPointerEnter={() => {
