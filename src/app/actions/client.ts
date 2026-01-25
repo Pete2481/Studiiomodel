@@ -9,14 +9,110 @@ import { prisma } from "@/lib/prisma";
 import { randomInt } from "crypto";
 import { cleanDropboxLink } from "@/lib/utils";
 
-function normalizePublicImageUrl(url: string | null | undefined) {
+function isPrivateHost(hostname: string): boolean {
+  const h = String(hostname || "").toLowerCase().trim();
+  if (!h) return true;
+  if (h === "localhost" || h === "127.0.0.1" || h === "::1") return true;
+  if (h.endsWith(".local") || h.endsWith(".internal")) return true;
+
+  // Basic private IPv4 ranges (no DNS resolution; best-effort SSRF guard)
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return false;
+  const [a, b] = [Number(m[1]), Number(m[2])];
+  if (![a, b].every((n) => Number.isFinite(n) && n >= 0 && n <= 255)) return true;
+
+  if (a === 10) return true;
+  if (a === 127) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  return false;
+}
+
+function looksLikeDirectImageUrl(u: URL): boolean {
+  const p = u.pathname.toLowerCase();
+  return (
+    p.endsWith(".png") ||
+    p.endsWith(".jpg") ||
+    p.endsWith(".jpeg") ||
+    p.endsWith(".webp") ||
+    p.endsWith(".gif") ||
+    p.endsWith(".svg")
+  );
+}
+
+function tryExtractMetaImage(html: string): string | null {
+  const og = html.match(/property=["']og:image["'][^>]*content=["']([^"']+)["']/i)?.[1];
+  if (og) return og;
+  const tw = html.match(/name=["']twitter:image["'][^>]*content=["']([^"']+)["']/i)?.[1];
+  if (tw) return tw;
+  // Favicon as last resort
+  const icon = html.match(/rel=["'](?:shortcut icon|icon)["'][^>]*href=["']([^"']+)["']/i)?.[1];
+  return icon || null;
+}
+
+async function resolveWebsiteToImageUrl(pageUrl: URL): Promise<string | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+  try {
+    const res = await fetch(pageUrl.toString(), {
+      signal: controller.signal,
+      headers: {
+        accept: "text/html,*/*",
+        "user-agent": "studiio/1.0",
+      },
+      cache: "no-store",
+    });
+
+    if (!res.ok) return null;
+    const ct = String(res.headers.get("content-type") || "").toLowerCase();
+    if (ct.startsWith("image/")) return pageUrl.toString();
+
+    // Try to parse HTML for og:image / twitter:image / icon
+    const html = await res.text().catch(() => "");
+    if (!html) return null;
+    const raw = tryExtractMetaImage(html);
+    if (!raw) return null;
+    const resolved = new URL(raw, pageUrl.toString()).toString();
+    return resolved;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function normalizePublicImageUrl(url: string | null | undefined): Promise<string | null> {
   if (!url) return null;
   const trimmed = String(url).trim();
   if (!trimmed) return null;
 
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith("data:") || lower.startsWith("blob:")) return null;
+
+  // Add scheme for common inputs like "www.example.com/logo.png"
+  let candidate = trimmed;
+  if (!/^https?:\/\//i.test(candidate)) {
+    // Only auto-prefix when it looks like a hostname (has a dot before the first slash).
+    if (/^[a-z0-9-]+\.[a-z0-9.-]+(\/|$)/i.test(candidate)) {
+      candidate = `https://${candidate}`;
+    }
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    return null;
+  }
+
+  // Enforce https (upgrade http → https when possible).
+  if (parsed.protocol === "http:") parsed = new URL(parsed.toString().replace(/^http:/i, "https:"));
+  if (parsed.protocol !== "https:") return null;
+  if (isPrivateHost(parsed.hostname)) return null;
+
   // Dropbox: normalize to a stable public direct URL for consistent rendering + server-side watermarking.
-  if (trimmed.includes("dropbox.com") || trimmed.includes("dropboxusercontent.com")) {
-    const cleaned = cleanDropboxLink(trimmed);
+  if (parsed.hostname.includes("dropbox.com") || parsed.hostname.includes("dropboxusercontent.com")) {
+    const cleaned = cleanDropboxLink(parsed.toString());
     const directBase = cleaned.replace("www.dropbox.com", "dl.dropboxusercontent.com");
     // Ensure raw=1 is present
     if (directBase.includes("?")) {
@@ -25,7 +121,14 @@ function normalizePublicImageUrl(url: string | null | undefined) {
     return `${directBase}?raw=1`;
   }
 
-  return trimmed;
+  // If it already looks like a direct image, keep it.
+  if (looksLikeDirectImageUrl(parsed)) return parsed.toString();
+
+  // Otherwise, treat it like a website page and try to extract a representative image.
+  const resolved = await resolveWebsiteToImageUrl(parsed);
+  if (!resolved) return parsed.toString(); // fall back to the page url (may not preview, but still stored)
+  // Ensure https
+  return resolved.replace(/^http:/i, "https:");
 }
 
 export async function upsertClient(data: any, skipNotification = false) {
@@ -62,8 +165,16 @@ export async function upsertClient(data: any, skipNotification = false) {
     // SAFETY: Never store massive base64 images in the DB.
     const avatarUrl = (rawAvatarUrl && rawAvatarUrl.length > 5000)
       ? null
-      : normalizePublicImageUrl(rawAvatarUrl);
-    const normalizedWatermarkUrl = normalizePublicImageUrl(watermarkUrl);
+      : await normalizePublicImageUrl(rawAvatarUrl);
+    const normalizedWatermarkUrl = await normalizePublicImageUrl(watermarkUrl);
+
+    // If user provided values but they were invalid, fail with a clear message.
+    if (rawAvatarUrl && String(rawAvatarUrl).trim() && !avatarUrl) {
+      return { success: false, error: "Client icon link must be a public https:// URL or Dropbox link." };
+    }
+    if (watermarkUrl && String(watermarkUrl).trim() && !normalizedWatermarkUrl) {
+      return { success: false, error: "Branding logo link must be a public https:// URL or Dropbox link." };
+    }
     
     console.log(`[ACTION_CLIENT] Upserting client. ID provided: "${id}"`);
 

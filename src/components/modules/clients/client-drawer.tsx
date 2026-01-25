@@ -238,7 +238,10 @@ export function ClientDrawer({
                     <button
                       type="button"
                       onClick={() => {
-                        const url = promptForImageLink("Paste a public Dropbox image link for the client icon (logo/avatar):", formData.avatarUrl);
+                        const url = promptForImageLink(
+                          "Paste a public image link (https) or Dropbox image link for the client icon (logo/avatar):",
+                          formData.avatarUrl,
+                        );
                         if (!url) return;
                         setAvatarUrl(url);
                       }}
@@ -249,16 +252,21 @@ export function ClientDrawer({
                   </div>
                   <p className="mt-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client Profile Photo</p>
                   <div className="mt-4 w-full max-w-sm">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Client icon link (Dropbox)</label>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
+                      Client icon link (Dropbox or https)
+                    </label>
                     <input
                       value={formData.avatarUrl || ""}
                       onChange={(e) => {
                         setAvatarUrl(e.target.value);
                       }}
                       type="url"
-                      placeholder="Paste Dropbox link…"
+                      placeholder="Paste Dropbox or https link…"
                       className="ui-input-tight mt-2"
                     />
+                    <p className="mt-2 text-[11px] text-slate-500 font-medium ml-1">
+                      Tip: you can paste a website page URL too — we’ll try to pull the logo/image automatically on save.
+                    </p>
                   </div>
                 </div>
 
@@ -421,7 +429,11 @@ export function ClientDrawer({
                       <div className="relative">
                         <div className="h-24 w-40 rounded-2xl bg-white shadow-sm flex items-center justify-center overflow-hidden border border-slate-100 p-4">
                           {formData.watermarkUrl ? (
-                            <img src={formData.watermarkUrl} className="max-h-full max-w-full object-contain" alt="Watermark preview" />
+                            <img
+                              src={formatDropboxUrl(formData.watermarkUrl)}
+                              className="max-h-full max-w-full object-contain"
+                              alt="Watermark preview"
+                            />
                           ) : (
                             <div className="flex flex-col items-center gap-2">
                               <Upload className="h-6 w-6 text-slate-300" />
@@ -447,7 +459,10 @@ export function ClientDrawer({
                         <button
                           type="button"
                           onClick={() => {
-                            const url = promptForImageLink("Paste a public Dropbox image link for the branding watermark/logo:", formData.watermarkUrl);
+                            const url = promptForImageLink(
+                              "Paste a public image link (https) or Dropbox image link for the branding watermark/logo:",
+                              formData.watermarkUrl,
+                            );
                             if (!url) return;
                             setFormData(prev => ({ ...prev, watermarkUrl: url }));
                           }}
@@ -458,14 +473,19 @@ export function ClientDrawer({
                       </div>
                     </div>
                     <div className="mt-4">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Branding logo link (Dropbox)</label>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
+                        Branding logo link (Dropbox or https)
+                      </label>
                       <input
                         value={formData.watermarkUrl || ""}
                         onChange={(e) => setFormData(prev => ({ ...prev, watermarkUrl: e.target.value }))}
                         type="url"
-                        placeholder="Paste Dropbox link…"
+                        placeholder="Paste Dropbox or https link…"
                         className="ui-input-tight mt-2"
                       />
+                      <p className="mt-2 text-[11px] text-slate-500 font-medium ml-1">
+                        Tip: you can paste a website page URL too — we’ll try to pull the logo/image automatically on save.
+                      </p>
                     </div>
                   </div>
 
@@ -541,7 +561,11 @@ export function ClientDrawer({
                               document.addEventListener('mouseup', onMouseUp);
                             }}
                           >
-                            <img src={formData.watermarkUrl} className="w-full h-auto pointer-events-none" alt="Watermark" />
+                            <img
+                              src={formatDropboxUrl(formData.watermarkUrl)}
+                              className="w-full h-auto pointer-events-none"
+                              alt="Watermark"
+                            />
                             <div className="absolute -inset-2 border-2 border-emerald-500/50 border-dashed rounded-lg opacity-0 group-logo:opacity-100 transition-opacity pointer-events-none" />
                           </div>
 
