@@ -49,6 +49,19 @@ function FitBounds({ points }: { points: Array<{ lat: number; lon: number }> }) 
 export function GalleriesMap() {
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillMsg, setBackfillMsg] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/maps/galleries", { cache: "no-store" });
+      const json = (await res.json().catch(() => null)) as Payload | null;
+      setData(json);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -73,6 +86,32 @@ export function GalleriesMap() {
 
   const center = points.length ? ([points[0].lat, points[0].lon] as [number, number]) : ([-33.8688, 151.2093] as [number, number]); // Sydney fallback
 
+  const runBackfill = async () => {
+    setBackfillMsg(null);
+    setBackfilling(true);
+    try {
+      let loops = 0;
+      while (loops < 200) {
+        loops++;
+        const res = await fetch(`/api/maps/backfill?limit=20`, { method: "POST" });
+        const json = await res.json().catch(() => ({} as any));
+        if (!res.ok || !json?.success) {
+          setBackfillMsg(String(json?.error || "Backfill failed (admin only)."));
+          break;
+        }
+        const remaining = Number(json?.remaining || 0);
+        setBackfillMsg(`Geocoding… updated ${Number(json?.updated || 0)} (remaining ${remaining})`);
+        if (remaining <= 0) break;
+        // small delay to be kind to rate limits
+        await new Promise((r) => setTimeout(r, 150));
+      }
+    } finally {
+      await load();
+      setBackfilling(false);
+      setTimeout(() => setBackfillMsg(null), 4000);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -82,13 +121,32 @@ export function GalleriesMap() {
             Visual map of delivered galleries (private to your account).
           </p>
         </div>
-        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-          {loading ? "Loading…" : data?.success ? `${markers.length} pins` : "Failed"}
-          {data?.success && typeof data.missingCoordsCount === "number" && data.missingCoordsCount > 0
-            ? ` • ${data.missingCoordsCount} missing locations`
-            : null}
+        <div className="flex items-center gap-3">
+          {data?.success && Number(data?.missingCoordsCount || 0) > 0 ? (
+            <button
+              type="button"
+              onClick={() => void runBackfill()}
+              disabled={backfilling}
+              className="h-10 px-5 rounded-full bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+              title="Geocode missing properties (admin only)"
+            >
+              {backfilling ? "Geocoding…" : "Fix missing locations"}
+            </button>
+          ) : null}
+          <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+            {loading ? "Loading…" : data?.success ? `${markers.length} pins` : "Failed"}
+            {data?.success && typeof data.missingCoordsCount === "number" && data.missingCoordsCount > 0
+              ? ` • ${data.missingCoordsCount} missing locations`
+              : null}
+          </div>
         </div>
       </div>
+
+      {backfillMsg ? (
+        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700">
+          {backfillMsg}
+        </div>
+      ) : null}
 
       <div className="rounded-[32px] border border-slate-200 bg-white overflow-hidden shadow-sm">
         <div className="h-[70vh] w-full">
