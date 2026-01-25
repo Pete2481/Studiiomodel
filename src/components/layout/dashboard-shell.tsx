@@ -170,6 +170,7 @@ function DashboardShellContent({
   const router = useRouter();
   const [pendingNavHref, setPendingNavHref] = useState<string | null>(null);
   const isCalendarV2FullWidth = pathname?.startsWith("/tenant/calendar");
+  const isMobileCalendarRoute = pathname?.startsWith("/tenant/calendar");
   // Full-width layout rollout (now live): dashboard home + galleries.
   const isDashboardHomeFullWidth = pathname === "/";
   const isTenantGalleriesFullWidth = pathname?.startsWith("/tenant/galleries");
@@ -184,6 +185,7 @@ function DashboardShellContent({
   });
   const pointerNavHrefRef = useRef<string | null>(null);
   const didFetchCountsRef = useRef(false);
+  const isMobileMenuLabelsVisible = isMobileMenuOpen; // when mobile drawer is open, always show labels (no hover on touch)
 
   // While navigation is in-flight, treat the pending href as the “active” route for instant UI feedback.
   const effectivePath = pendingNavHref ?? pathname;
@@ -196,6 +198,12 @@ function DashboardShellContent({
     pointerNavHrefRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
+
+  // Mobile nav should never be "collapsed" (icons-only). Tooltips don’t work on touch.
+  useEffect(() => {
+    if (isMobileMenuOpen) setIsSidebarCollapsed(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobileMenuOpen]);
 
   const toggleExpand = (label: string) => {
     setExpandedItems(prev => ({
@@ -381,7 +389,7 @@ function DashboardShellContent({
   const sidebarContent = useMemo(() => {
     return filteredNav.map((section: any, idx: number) => (
       <div key={section.heading || idx} className="flex flex-col gap-3">
-        {section.heading && !isSidebarCollapsed && (
+        {section.heading && (!isSidebarCollapsed || isMobileMenuLabelsVisible) && (
           <p className="px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 animate-in fade-in">
             {section.heading}
           </p>
@@ -399,7 +407,7 @@ function DashboardShellContent({
               : 0;
             const count = hasSubItems ? totalSubCount : counts[item.module as keyof typeof counts];
             
-            if (hasSubItems && !isSidebarCollapsed) {
+            if (hasSubItems && (!isSidebarCollapsed || isMobileMenuLabelsVisible)) {
               return (
                 <div key={item.label} className="flex flex-col gap-1">
                   <button
@@ -507,9 +515,9 @@ function DashboardShellContent({
                         </span>
                       )}
                     </span>
-                    {!isSidebarCollapsed && <span className="animate-in fade-in">{item.label}</span>}
+                    {(!isSidebarCollapsed || isMobileMenuLabelsVisible) && <span className="animate-in fade-in">{item.label}</span>}
                   </span>
-                  {!isSidebarCollapsed && count && count > 0 && (
+                  {(!isSidebarCollapsed || isMobileMenuLabelsVisible) && count && count > 0 && (
                     <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white shadow-sm ring-2 ring-white animate-in zoom-in">
                       {count}
                     </span>
@@ -521,7 +529,7 @@ function DashboardShellContent({
         </div>
       </div>
     ));
-  }, [filteredNav, isSidebarCollapsed, pathname, counts, setIsMobileMenuOpen, expandedItems]);
+  }, [filteredNav, isSidebarCollapsed, isMobileMenuLabelsVisible, pathname, counts, setIsMobileMenuOpen, expandedItems]);
 
   const memoizedChildren = useMemo(() => children, [children]);
 
@@ -546,8 +554,14 @@ function DashboardShellContent({
 
       {/* Sidebar */}
       <aside 
-        onMouseEnter={() => setIsSidebarCollapsed(false)}
-        onMouseLeave={() => setIsSidebarCollapsed(true)}
+        onMouseEnter={() => {
+          if (isMobileMenuOpen) return;
+          setIsSidebarCollapsed(false);
+        }}
+        onMouseLeave={() => {
+          if (isMobileMenuOpen) return;
+          setIsSidebarCollapsed(true);
+        }}
         className={cn(
           "fixed inset-y-0 left-0 border-r border-slate-200 bg-white flex flex-col z-50 transition-all duration-300 ease-in-out",
           isMobileMenuOpen ? "translate-x-0 w-72" : "-translate-x-full lg:translate-x-0",
@@ -586,7 +600,7 @@ function DashboardShellContent({
               </span>
             )}
           </div>
-          {!isSidebarCollapsed && (
+          {(!isSidebarCollapsed || isMobileMenuLabelsVisible) && (
             <div className="min-w-0 transition-opacity duration-300 animate-in fade-in">
               <p className="text-sm font-bold text-slate-900 leading-tight truncate">
                 {isMasterMode ? "Studiio Master" : workspaceName || "Studiio Tenant"}
@@ -630,7 +644,7 @@ function DashboardShellContent({
             <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-rose-50 text-rose-500 group-hover:bg-rose-500 group-hover:text-white transition-colors">
               <LogOut className="h-4 w-4" />
             </span>
-            {!isSidebarCollapsed && <span className="text-sm font-bold text-slate-700 animate-in fade-in">Logout</span>}
+            {(!isSidebarCollapsed || isMobileMenuLabelsVisible) && <span className="text-sm font-bold text-slate-700 animate-in fade-in">Logout</span>}
           </button>
 
           {/* Desktop Collapse Toggle */}
@@ -659,7 +673,7 @@ function DashboardShellContent({
                 <Menu className="h-5 w-5" />
               </button>
 
-              <div className="min-w-0">
+              <div className={cn("min-w-0", isMobileCalendarRoute && "hidden sm:block")}>
                 <div className="flex items-center gap-4">
                   <h1 className="text-xl md:text-2xl font-bold text-slate-900 tracking-tight truncate">{title}</h1>
                   <div className="hidden md:flex items-center gap-4">
@@ -761,11 +775,11 @@ function DashboardShellContent({
             </div>
           </div>
           {/* Mobile Search - Visible only on very small screens */}
-          <div className="mt-4 sm:hidden">
-            <GlobalSearch 
-              placeholder={isRestrictedRole ? "Search edits..." : "Search..."}
-            />
-          </div>
+          {!isMobileCalendarRoute ? (
+            <div className="mt-4 sm:hidden">
+              <GlobalSearch placeholder={isRestrictedRole ? "Search edits..." : "Search..."} />
+            </div>
+          ) : null}
         </header>
 
         <div

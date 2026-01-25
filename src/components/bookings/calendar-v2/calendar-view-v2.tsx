@@ -99,7 +99,14 @@ export function CalendarViewV2(props: {
   const [isStaffFilterOpen, setIsStaffFilterOpen] = useState(false);
 
   // Mobile responsiveness (keep desktop unchanged)
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return !!window.matchMedia("(max-width: 640px)").matches;
+    } catch {
+      return false;
+    }
+  });
   useEffect(() => {
     if (typeof window === "undefined") return;
     const mq = window.matchMedia("(max-width: 640px)");
@@ -1631,7 +1638,7 @@ export function CalendarViewV2(props: {
   return (
     <div className="relative">
       {/* Top menu (V1 parity) */}
-      <div className={cn("flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4", isMobile && "mb-3")}>
+      <div className={cn("flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4", isMobile && "mb-2")}>
         {/* Prev / Today / Next + range title (iOS style) */}
         <div className={cn("flex items-center justify-between gap-3", isMobile && "w-full")}>
           <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-full p-1 shadow-sm">
@@ -1825,7 +1832,7 @@ export function CalendarViewV2(props: {
           ref={calendarRef}
           plugins={[luxonPlugin, timeGridPlugin, interactionPlugin, ...(dayGridPlugin ? [dayGridPlugin] : [])]}
           views={{ timeGridTwoDay: { type: "timeGrid", duration: { days: 2 } } } as any}
-          initialView={isMobile ? "timeGridTwoDay" : "timeGridWeek"}
+          initialView={isMobile ? "timeGridDay" : "timeGridWeek"}
           headerToolbar={false}
           timeZone={tenantTimezone}
           dayHeaderContent={(arg) => {
@@ -1861,7 +1868,7 @@ export function CalendarViewV2(props: {
               return <span>{String(arg.text || "")}</span>;
             }
           }}
-          height={isMobile ? "78vh" : "70vh"}
+          height={isMobile ? "82vh" : "70vh"}
           events={calendarEvents}
           // Drag/drop + resize (FullCalendar behaves more reliably when enabled at the calendar level)
           editable={!isRestrictedRole || canClientPlaceBookings}
