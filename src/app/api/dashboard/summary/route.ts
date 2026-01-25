@@ -8,7 +8,8 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: Request) {
+  const startedAt = Date.now();
   try {
     const session = await auth();
     if (!session?.user?.tenantId) {
@@ -21,10 +22,11 @@ export async function GET() {
     const agentId = sessionUser.agentId ? String(sessionUser.agentId) : "";
     const clientId = sessionUser.clientId ? String(sessionUser.clientId) : "";
     const seeAll = !!sessionUser.permissions?.seeAll;
+    const includeGalleries = new URL(req.url).searchParams.get("includeGalleries") !== "0";
 
     const payload = await cached(
       "api:dashboardSummary",
-      [tenantId, role, agentId, clientId, seeAll],
+      [tenantId, role, agentId, clientId, seeAll, includeGalleries ? "g1" : "g0"],
       async () => {
         const user = {
           name: sessionUser.name || "User",
@@ -71,58 +73,63 @@ export async function GET() {
         const isActionLocked = !isSubscribed;
         const tenantTz = tenant?.timezone || "Australia/Sydney";
 
-        const [
-          editRequestsCount,
-          completedOrdersCount,
-          pendingBookingsCount,
-          pendingInvoicesCount,
-          undeliveredGalleriesCount,
-          dbGalleries,
-          dbBookingsList,
-        ] = await prisma.$transaction([
+        const ops: any[] = [
           prisma.editRequest.count({ where: { ...editWhere, status: "NEW" } }),
           prisma.gallery.count({ where: { ...galleryWhere, status: "DELIVERED" } }),
           prisma.booking.count({
-            where: { ...bookingWhere, status: { in: ["REQUESTED", "PENCILLED"] }, isPlaceholder: false, clientId: { not: null } },
+            where: {
+              ...bookingWhere,
+              status: { in: ["REQUESTED", "PENCILLED"] },
+              isPlaceholder: false,
+              clientId: { not: null },
+            },
           }),
           prisma.invoice.count({ where: { ...invoiceWhere, status: { not: "PAID" } } }),
           prisma.gallery.count({ where: { ...galleryWhere, status: { in: ["DRAFT", "READY"] } } }),
-          prisma.gallery.findMany({
-            where: galleryWhere,
-            orderBy: { createdAt: "desc" },
-            take: 12,
-            select: {
-              id: true,
-              title: true,
-              status: true,
-              isLocked: true,
-              watermarkEnabled: true,
-              bannerImageUrl: true,
-              clientId: true,
-              otcName: true,
-              otcEmail: true,
-              otcPhone: true,
-              otcNotes: true,
-              agentId: true,
-              bookingId: true,
-              metadata: true,
-              client: { select: { id: true, name: true, businessName: true } },
-              property: { select: { id: true, name: true } },
-              media: {
-                take: 1,
-                orderBy: { createdAt: "asc" },
-                select: { url: true, thumbnailUrl: true },
-              },
-              _count: { select: { favorites: true } },
-              booking: {
-                select: {
-                  assignments: {
-                    select: { teamMember: { select: { displayName: true } } },
+        ];
+
+        if (includeGalleries) {
+          ops.push(
+            prisma.gallery.findMany({
+              where: galleryWhere,
+              orderBy: { createdAt: "desc" },
+              take: 12,
+              select: {
+                id: true,
+                title: true,
+                status: true,
+                isLocked: true,
+                watermarkEnabled: true,
+                bannerImageUrl: true,
+                clientId: true,
+                otcName: true,
+                otcEmail: true,
+                otcPhone: true,
+                otcNotes: true,
+                agentId: true,
+                bookingId: true,
+                metadata: true,
+                client: { select: { id: true, name: true, businessName: true } },
+                property: { select: { id: true, name: true } },
+                media: {
+                  take: 1,
+                  orderBy: { createdAt: "asc" },
+                  select: { url: true, thumbnailUrl: true },
+                },
+                _count: { select: { favorites: true } },
+                booking: {
+                  select: {
+                    assignments: {
+                      select: { teamMember: { select: { displayName: true } } },
+                    },
                   },
                 },
               },
-            },
-          }),
+            }),
+          );
+        }
+
+        ops.push(
           prisma.booking.findMany({
             where: {
               ...bookingWhere,
@@ -139,7 +146,18 @@ export async function GET() {
               assignments: { include: { teamMember: { select: { displayName: true } } } },
             },
           }),
-        ]);
+        );
+
+        const results = await prisma.$transaction(ops);
+
+        const editRequestsCount = results[0];
+        const completedOrdersCount = results[1];
+        const pendingBookingsCount = results[2];
+        const pendingInvoicesCount = results[3];
+        const undeliveredGalleriesCount = results[4];
+
+        const dbGalleries = includeGalleries ? results[5] : [];
+        const dbBookingsList = includeGalleries ? results[6] : results[5];
 
         const metrics = {
           editRequests: Number(editRequestsCount),
@@ -149,7 +167,8 @@ export async function GET() {
           undeliveredGalleries: Number(undeliveredGalleriesCount),
         };
 
-        const featuredGalleries = dbGalleries.map((g: any) => {
+        const featuredGalleries = includeGalleries
+          ? dbGalleries.map((g: any) => {
           const safeMetadata = g.metadata ? (g.metadata as any) : {};
           const bannerUrl = g.bannerImageUrl ? formatDropboxUrl(g.bannerImageUrl) : null;
           const firstMediaUrl = g.media?.[0] ? formatDropboxUrl(String(g.media[0].thumbnailUrl || g.media[0].url)) : null;
@@ -177,7 +196,8 @@ export async function GET() {
             photographers: g.booking?.assignments?.map((a: any) => String(a.teamMember.displayName)).join(", ") || "No team assigned",
             cover: bannerUrl || firstMediaUrl || "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80",
           };
-        });
+        })
+          : [];
 
         const bookingPipeline = dbBookingsList.map((b: any) => {
           let status = String(b.status || "").toLowerCase();
@@ -208,6 +228,9 @@ export async function GET() {
       { revalidateSeconds: 30, tags: [tenantTag(tenantId), `tenant:${tenantId}:dashboard`] },
     );
 
+    console.log(
+      `[api/dashboard/summary] tenant=${tenantId} includeGalleries=${includeGalleries ? "1" : "0"} durationMs=${Date.now() - startedAt}`,
+    );
     return NextResponse.json(payload);
   } catch (err: any) {
     console.error("[dashboard/summary] error", err);
