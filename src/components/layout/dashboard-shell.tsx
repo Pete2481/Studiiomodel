@@ -221,15 +221,11 @@ function DashboardShellContent({
     return true;
   };
 
-  const handleNavPointerDown = (e: ReactPointerEvent, href: string, label?: string) => {
+  const handleNavPointerDown = (e: ReactPointerEvent, href: string, _label?: string) => {
     if (!shouldHandlePointerNav(e, href)) return;
     // Trigger nav on pointer-down so touch feels instant (click can come later).
     pointerNavHrefRef.current = href;
     setPendingNavHref(href);
-    if (label) {
-      setTitle(label);
-      setSubtitle("Loading…");
-    }
     setIsMobileMenuOpen(false);
     router.push(href);
   };
