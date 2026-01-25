@@ -77,6 +77,7 @@ const IconMap: Record<string, any> = {
   Bell,
   Newspaper,
   Users,
+  UserPlus,
   Receipt,
   Wrench,
   Camera,

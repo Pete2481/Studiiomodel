@@ -39,6 +39,8 @@ export const UNIFIED_NAV_CONFIG: NavSection[] = [
       { label: "WIP", href: "/tenant/wip", icon: "Activity", module: "dashboard" },
       { label: "Calendar", href: "/tenant/calendar", icon: "Calendar", module: "bookings" },
       { label: "Maps", href: "/maps", icon: "MapPin", module: "maps" },
+      { label: "Clients", href: "/tenant/clients", icon: "Users", module: "clients" },
+      { label: "Agents/contacts", href: "/tenant/agents", icon: "UserPlus", module: "agents" },
     ],
   },
 
@@ -59,7 +61,6 @@ export const UNIFIED_NAV_CONFIG: NavSection[] = [
           { label: "Edit requests", href: "/tenant/edits", module: "edits" },
           { label: "Invoices", href: "/tenant/invoices", module: "invoices" },
           { label: "Services", href: "/tenant/services", module: "services" },
-          { label: "Agents/contacts", href: "/tenant/agents", module: "agents" },
         ],
       },
     ],
@@ -75,7 +76,6 @@ export const UNIFIED_NAV_CONFIG: NavSection[] = [
         icon: "Settings",
         module: "dashboard",
         items: [
-          { label: "Clients", href: "/tenant/clients", module: "clients" },
           { label: "Team Members", href: "/tenant/photographers", module: "team" },
           { label: "Reminder", href: "/tenant/reminders", module: "reminders" },
           { label: "Newsletter", href: "/tenant/newsletter", module: "newsletter" },
