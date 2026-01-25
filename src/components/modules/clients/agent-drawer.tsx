@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, User, Camera, Trash2, Check, Phone, Mail } from "lucide-react";
+import { X, User, Camera, Trash2, Check, Phone, Mail, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { upsertAgent, deleteAgent } from "@/app/actions/agent";
+import { formatDropboxUrl } from "@/lib/utils";
 
 interface AgentDrawerProps {
   isOpen: boolean;
@@ -79,15 +80,16 @@ export function AgentDrawer({
 
   if (!mounted) return null;
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData({ ...formData, avatarUrl: reader.result as string });
-      };
-      reader.readAsDataURL(file);
-    }
+  const promptForImageLink = (title: string, current?: string) => {
+    if (typeof window === "undefined") return null;
+    const next = window.prompt(title, current || "");
+    if (next === null) return null;
+    return next.trim();
+  };
+
+  const setAvatarUrl = (raw: string) => {
+    const v = String(raw || "").trim();
+    setFormData((prev) => ({ ...prev, avatarUrl: v }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -165,25 +167,51 @@ export function AgentDrawer({
                 <div className="relative group">
                   <div className="h-24 w-24 rounded-3xl bg-slate-50 border-2 border-dashed border-slate-200 flex items-center justify-center overflow-hidden transition-colors group-hover:border-primary/50">
                     {formData.avatarUrl ? (
-                      <img src={formData.avatarUrl} className="h-full w-full object-cover" alt="Preview" />
+                      <img
+                        src={formatDropboxUrl(formData.avatarUrl)}
+                        className="h-full w-full object-cover"
+                        alt="Preview"
+                      />
                     ) : (
                       <Camera className="h-8 w-8 text-slate-300 group-hover:text-primary transition-colors" />
                     )}
                   </div>
-                  <input 
-                    type="file" 
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    className="absolute inset-0 opacity-0 cursor-pointer" 
-                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const url = promptForImageLink(
+                        "Paste a public image link (https) or Dropbox image link:",
+                        formData.avatarUrl,
+                      );
+                      if (!url) return;
+                      setAvatarUrl(url);
+                    }}
+                    className="absolute -bottom-2 -right-2 h-10 w-10 bg-primary rounded-2xl text-white flex items-center justify-center shadow-lg hover:opacity-90 transition-all active:scale-95 border-2 border-white"
+                    title="Paste image link"
+                  >
+                    <Plus className="h-5 w-5" />
+                  </button>
                 </div>
                 <div className="space-y-1">
                   <h3 className="font-bold text-slate-900">Profile Picture</h3>
-                  <p className="text-xs text-slate-400">Click to upload contact avatar.</p>
+                  <p className="text-xs text-slate-400">Paste a public image link (https) or Dropbox link.</p>
                 </div>
               </div>
 
               <div className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Avatar image link</label>
+                  <input
+                    value={formData.avatarUrl}
+                    onChange={(e) => setAvatarUrl(e.target.value)}
+                    type="url"
+                    placeholder="https://…"
+                    className="ui-input-tight"
+                  />
+                  <p className="text-[11px] font-semibold text-slate-400">
+                    Uploads are disabled — use a direct `https://` image URL or a public Dropbox link.
+                  </p>
+                </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Full Name</label>
                   <input 

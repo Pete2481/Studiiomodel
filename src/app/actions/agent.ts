@@ -4,6 +4,7 @@ import { getTenantPrisma } from "@/lib/tenant-guard";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { permissionService } from "@/lib/permission-service";
+import { formatDropboxUrl } from "@/lib/utils";
 
 export async function getAgentsByClient(clientId: string) {
   try {
@@ -56,6 +57,24 @@ export async function upsertAgent(data: any) {
 
     const tPrisma = await getTenantPrisma();
     const { id, clientId, ...rest } = data;
+
+    // Enforce URL-only avatars:
+    // - auto-clear `data:` / `blob:` values (legacy uploads)
+    // - require https for any non-empty value
+    const rawAvatar = String((rest as any)?.avatarUrl || "").trim();
+    if (rawAvatar) {
+      const lower = rawAvatar.toLowerCase();
+      if (lower.startsWith("data:") || lower.startsWith("blob:")) {
+        (rest as any).avatarUrl = "";
+      } else if (!lower.startsWith("https://")) {
+        return { success: false, error: "Avatar image link must be a public https:// URL (or Dropbox link)." };
+      } else {
+        // Normalize Dropbox/Drive share links into embeddable URLs.
+        (rest as any).avatarUrl = formatDropboxUrl(rawAvatar);
+      }
+    } else {
+      (rest as any).avatarUrl = "";
+    }
 
     if (id) {
       // Client can only edit agents in their own agency.
