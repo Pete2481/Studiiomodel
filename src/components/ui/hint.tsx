@@ -29,15 +29,6 @@ export function Hint({ title, content, children, position = "top", className }: 
     }
   }, []);
 
-  if (!showHints) return <>{children}</>;
-
-  const positionClasses = {
-    top: "bottom-full left-1/2 -translate-x-1/2 mb-3",
-    bottom: "top-full left-1/2 -translate-x-1/2 mt-3",
-    left: "right-full top-1/2 -translate-y-1/2 mr-3",
-    right: "left-full top-1/2 -translate-y-1/2 ml-3",
-  };
-
   const computeAndShow = (el: HTMLDivElement) => {
     const rect = el.getBoundingClientRect();
     const left = rect.left + rect.width / 2;
@@ -48,6 +39,7 @@ export function Hint({ title, content, children, position = "top", className }: 
 
   // Touch behavior: tap-to-open, tap outside to close.
   useEffect(() => {
+    if (!showHints) return;
     if (!isVisible) return;
     if (supportsHover) return;
 
@@ -60,7 +52,10 @@ export function Hint({ title, content, children, position = "top", className }: 
 
     document.addEventListener("pointerdown", onDocPointerDown, true);
     return () => document.removeEventListener("pointerdown", onDocPointerDown, true);
-  }, [isVisible, supportsHover]);
+  }, [showHints, isVisible, supportsHover]);
+
+  // IMPORTANT: after all hooks are declared, it's safe to return early.
+  if (!showHints) return <>{children}</>;
 
   return (
     <div
