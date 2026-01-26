@@ -7,6 +7,7 @@ import {
   Trash2, 
   Plus, 
   Send, 
+  Save,
   Upload, 
   ChevronDown,
   X,
@@ -33,12 +34,22 @@ interface NewsletterTemplate {
   blocks: Block[];
 }
 
+interface NewsletterDraft {
+  id: string;
+  template: NewsletterTemplate;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 interface NewsletterEditorProps {
   clients: { id: string; name: string }[];
   onSend: (template: NewsletterTemplate, recipientIds: string[]) => Promise<{ success: boolean; error?: string }>;
+  initialDrafts?: NewsletterDraft[];
+  onSaveDraft?: (template: NewsletterTemplate, draftId?: string | null) => Promise<{ success: boolean; drafts?: NewsletterDraft[]; error?: string }>;
+  onDeleteDraft?: (draftId: string) => Promise<{ success: boolean; drafts?: NewsletterDraft[]; error?: string }>;
 }
 
-export function NewsletterEditor({ clients, onSend }: NewsletterEditorProps) {
+export function NewsletterEditor({ clients, onSend, initialDrafts = [], onSaveDraft, onDeleteDraft }: NewsletterEditorProps) {
   const [template, setTemplate] = useState<NewsletterTemplate>({
     subject: "Newsletter Update from @studio_name",
     blocks: [
@@ -48,10 +59,13 @@ export function NewsletterEditor({ clients, onSend }: NewsletterEditorProps) {
 
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<string[]>([]);
   const [isSending, setIsSending] = useState(false);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
   const [clientSearchQuery, setClientSearchQuery] = useState("");
+  const [drafts, setDrafts] = useState<NewsletterDraft[]>(Array.isArray(initialDrafts) ? initialDrafts : []);
+  const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
 
   const filteredClients = clients.filter(c => 
     c.name.toLowerCase().includes(clientSearchQuery.toLowerCase())
@@ -133,6 +147,69 @@ export function NewsletterEditor({ clients, onSend }: NewsletterEditorProps) {
       setMessage({ type: 'error', text: "An unexpected error occurred" });
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const handleSaveDraft = async () => {
+    if (!onSaveDraft) {
+      setMessage({ type: "error", text: "Draft saving is not available right now." });
+      return;
+    }
+    const subject = String(template.subject || "").trim();
+    if (!subject) {
+      setMessage({ type: "error", text: "Please enter an email subject before saving a draft." });
+      return;
+    }
+    setIsSavingDraft(true);
+    setMessage(null);
+    try {
+      const result = await onSaveDraft(template, activeDraftId);
+      if (!result?.success) {
+        setMessage({ type: "error", text: result?.error || "Failed to save draft" });
+        return;
+      }
+      if (Array.isArray(result.drafts)) {
+        setDrafts(result.drafts);
+      }
+      setMessage({ type: "success", text: activeDraftId ? "Draft updated." : "Draft saved." });
+    } catch (e: any) {
+      setMessage({ type: "error", text: e?.message || "Failed to save draft" });
+    } finally {
+      setIsSavingDraft(false);
+    }
+  };
+
+  const handleLoadDraft = (d: NewsletterDraft) => {
+    setTemplate(d.template);
+    setActiveDraftId(d.id);
+    setMessage({ type: "success", text: "Draft loaded." });
+  };
+
+  const handleDeleteDraft = async (draftId: string) => {
+    if (!onDeleteDraft) {
+      setMessage({ type: "error", text: "Draft deletion is not available right now." });
+      return;
+    }
+    if (!confirm("Delete this draft?")) return;
+    setIsSavingDraft(true);
+    setMessage(null);
+    try {
+      const result = await onDeleteDraft(draftId);
+      if (!result?.success) {
+        setMessage({ type: "error", text: result?.error || "Failed to delete draft" });
+        return;
+      }
+      if (Array.isArray(result.drafts)) {
+        setDrafts(result.drafts);
+      } else {
+        setDrafts((prev) => prev.filter((d) => d.id !== draftId));
+      }
+      if (activeDraftId === draftId) setActiveDraftId(null);
+      setMessage({ type: "success", text: "Draft deleted." });
+    } catch (e: any) {
+      setMessage({ type: "error", text: e?.message || "Failed to delete draft" });
+    } finally {
+      setIsSavingDraft(false);
     }
   };
 
@@ -230,6 +307,16 @@ export function NewsletterEditor({ clients, onSend }: NewsletterEditorProps) {
           </div>
 
           <div className="flex items-center gap-3">
+            <button
+              onClick={handleSaveDraft}
+              disabled={isSending || isSavingDraft}
+              className="h-14 px-8 rounded-2xl bg-white border border-slate-100 text-slate-700 font-black text-xs flex items-center gap-2 hover:bg-slate-50 transition-all active:scale-95 shadow-sm disabled:opacity-50"
+              type="button"
+              title={drafts.length >= 5 && !activeDraftId ? "Draft limit reached (5). Delete a draft to save another." : "Save draft"}
+            >
+              {isSavingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {activeDraftId ? "Update Draft" : "Save Draft"} ({Math.min(drafts.length, 5)}/5)
+            </button>
             <button 
               onClick={handleSend}
               disabled={isSending}
@@ -243,6 +330,69 @@ export function NewsletterEditor({ clients, onSend }: NewsletterEditorProps) {
               {isSending ? "Sending..." : "Send Email"}
             </button>
           </div>
+        </div>
+
+        {/* Drafts Panel */}
+        <div className="pt-2 border-t border-slate-50">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Saved drafts</div>
+              <div className="text-xs font-bold text-slate-600 mt-1">
+                {drafts.length === 0 ? "No drafts saved yet." : `You have ${drafts.length} saved draft${drafts.length === 1 ? "" : "s"}.`}
+                {activeDraftId ? <span className="text-primary"> (editing a saved draft)</span> : null}
+              </div>
+            </div>
+            {activeDraftId ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveDraftId(null);
+                  setMessage({ type: "success", text: "Now saving as a new draft." });
+                }}
+                className="h-10 px-4 rounded-xl bg-slate-50 text-slate-700 text-[10px] font-black uppercase tracking-widest hover:bg-slate-100 transition-all active:scale-95"
+              >
+                Save as new
+              </button>
+            ) : null}
+          </div>
+
+          {drafts.length > 0 ? (
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+              {drafts.slice(0, 5).map((d) => (
+                <div
+                  key={d.id}
+                  className={cn(
+                    "rounded-[24px] border p-4 bg-white flex items-start justify-between gap-4",
+                    activeDraftId === d.id ? "border-primary/30 bg-primary/5" : "border-slate-100"
+                  )}
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm font-black text-slate-900 truncate">{d.template?.subject || "Untitled"}</div>
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">
+                      {d.updatedAt ? `Updated ${new Date(d.updatedAt).toLocaleString()}` : "Saved draft"}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleLoadDraft(d)}
+                      className="h-9 px-3 rounded-xl bg-slate-50 text-slate-700 text-[10px] font-black uppercase tracking-widest hover:bg-slate-100 transition-all active:scale-95"
+                    >
+                      Load
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteDraft(d.id)}
+                      className="h-9 w-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-100 transition-all active:scale-95"
+                      title="Delete draft"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
 
