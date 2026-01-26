@@ -248,6 +248,8 @@ export async function upsertInvoice(data: any) {
       paidAmount, 
       // UI-only fields (not persisted on Invoice in Prisma schema)
       taxInclusive,
+      // UI-only flag: allow saving as SENT without triggering email delivery
+      sendEmail,
       ...rest 
     } = data;
 
@@ -260,6 +262,7 @@ export async function upsertInvoice(data: any) {
     const discountNum = Number(discount ?? 0) || 0;
     const taxRateNum = Number(taxRate ?? 0) || 0;
     const paidAmountNum = Number(paidAmount ?? 0) || 0;
+    const shouldSendEmail = sendEmail !== false;
 
     if (id) {
       const { bookingId, galleryId, clientId, tenantId, ...updateRest } = rest;
@@ -275,7 +278,9 @@ export async function upsertInvoice(data: any) {
           discount: discountNum,
           taxRate: taxRateNum,
           paidAmount: paidAmountNum,
-          sentAt: rest.status === 'SENT' ? new Date() : undefined,
+          // Only stamp sentAt when we are actually emailing the invoice.
+          // If sendEmail=false, keep any existing sentAt unchanged.
+          sentAt: rest.status === 'SENT' && shouldSendEmail ? new Date() : undefined,
           lineItems: {
             deleteMany: {}, 
             create: lineItems.map((li: any) => ({
@@ -289,7 +294,7 @@ export async function upsertInvoice(data: any) {
       });
 
       // TRIGGER EMAIL IF STATUS IS 'SENT'
-      if (rest.status === 'SENT') {
+      if (rest.status === 'SENT' && shouldSendEmail) {
         try {
           await notificationService.sendInvoiceNotification(id);
         } catch (emailErr) {
@@ -333,7 +338,8 @@ export async function upsertInvoice(data: any) {
           discount: discountNum,
           taxRate: taxRateNum,
           paidAmount: paidAmountNum,
-          sentAt: rest.status === 'SENT' ? new Date() : undefined,
+          // Only stamp sentAt when we are actually emailing the invoice.
+          sentAt: rest.status === 'SENT' && shouldSendEmail ? new Date() : undefined,
           lineItems: {
             create: lineItems.map((li: any) => ({
               description: li.description,
@@ -346,7 +352,7 @@ export async function upsertInvoice(data: any) {
       });
 
       // TRIGGER EMAIL IF STATUS IS 'SENT'
-      if (rest.status === 'SENT') {
+      if (rest.status === 'SENT' && shouldSendEmail) {
         try {
           await notificationService.sendInvoiceNotification(newInvoice.id);
         } catch (emailErr) {

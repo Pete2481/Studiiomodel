@@ -25,13 +25,15 @@ import {
   Sun,
   Box,
   Edit3,
-  Plane
+  Plane,
+  Eye
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AddressAutocomplete } from "@/components/ui/address-autocomplete";
 import { format, addDays } from "date-fns";
 import { useRouter } from "next/navigation";
 import { upsertInvoice, getNextInvoiceNumberAction } from "@/app/actions/invoice";
+import { InvoicePreviewModal } from "@/components/modules/invoices/invoice-preview-modal";
 
 interface LineItem {
   id: string;
@@ -55,6 +57,7 @@ export function InvoiceEditor({ clients, services, bookings, initialData, prefil
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
   const tenantSettings = (tenant?.settings as any) || {};
   const isTaxInclusive = tenant?.taxInclusive ?? true;
@@ -206,7 +209,7 @@ export function InvoiceEditor({ clients, services, bookings, initialData, prefil
     return { subtotal, taxAmount, total, balance, exTaxSubtotal };
   }, [formData.lineItems, formData.discount, formData.taxRate, formData.paidAmount, isTaxInclusive]);
 
-  const handleSubmit = async (status: string) => {
+  const handleSubmit = async (status: string, opts?: { sendEmail?: boolean }) => {
     if (!formData.clientId) {
       setError("Please select a client");
       return;
@@ -219,7 +222,7 @@ export function InvoiceEditor({ clients, services, bookings, initialData, prefil
     setIsSubmitting(true);
     setError(null);
 
-    const result = await upsertInvoice({ ...formData, status });
+    const result = await upsertInvoice({ ...formData, status, ...(opts?.sendEmail === false ? { sendEmail: false } : {}) });
     if (result.success) {
       if (formData.galleryId) {
         router.push("/tenant/galleries");
@@ -249,43 +252,6 @@ export function InvoiceEditor({ clients, services, bookings, initialData, prefil
             </h1>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Studio Billing Engine</p>
           </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={() => {
-              if (isActionLocked) {
-                window.location.href = "/tenant/settings?tab=billing";
-                return;
-              }
-              handleSubmit("DRAFT");
-            }}
-            disabled={isSubmitting}
-            className={cn(
-              "h-12 px-6 rounded-2xl bg-white border border-slate-100 text-slate-600 font-black text-xs flex items-center gap-2 hover:bg-slate-50 transition-all active:scale-95 shadow-sm disabled:opacity-50",
-              isActionLocked && "opacity-50 grayscale hover:grayscale-0 hover:opacity-100 transition-all"
-            )}
-          >
-            <Save className="h-4 w-4" />
-            {isActionLocked ? "SUB REQUIRED" : "SAVE AS DRAFT"}
-          </button>
-          <button 
-            onClick={() => {
-              if (isActionLocked) {
-                window.location.href = "/tenant/settings?tab=billing";
-                return;
-              }
-              handleSubmit("SENT");
-            }}
-            disabled={isSubmitting}
-            className={cn(
-              "h-12 px-8 rounded-2xl bg-primary text-white font-black text-xs flex items-center gap-2 hover:opacity-90 transition-all active:scale-95 shadow-lg shadow-primary/20 disabled:opacity-50",
-              isActionLocked && "opacity-50 grayscale hover:grayscale-0 hover:opacity-100 transition-all"
-            )}
-          >
-            <Send className="h-4 w-4" />
-            {isActionLocked ? "SUB REQUIRED" : "SAVE & SEND"}
-          </button>
         </div>
       </div>
 
@@ -911,6 +877,84 @@ export function InvoiceEditor({ clients, services, bookings, initialData, prefil
             </div>
 
             <div className="pt-6 space-y-3">
+              {/* Bottom Actions (moved from top) */}
+              <div className="grid grid-cols-1 gap-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <button 
+                    onClick={() => {
+                      if (isActionLocked) {
+                        window.location.href = "/tenant/settings?tab=billing";
+                        return;
+                      }
+                      handleSubmit("DRAFT");
+                    }}
+                    disabled={isSubmitting}
+                    className={cn(
+                      "h-12 px-5 rounded-2xl bg-white border border-slate-100 text-slate-600 font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-slate-50 transition-all active:scale-95 shadow-sm disabled:opacity-50",
+                      isActionLocked && "opacity-50 grayscale hover:grayscale-0 hover:opacity-100 transition-all"
+                    )}
+                  >
+                    <Save className="h-4 w-4" />
+                    {isActionLocked ? "SUB REQUIRED" : "SAVE AS DRAFT"}
+                  </button>
+                  <button 
+                    onClick={() => {
+                      if (isActionLocked) {
+                        window.location.href = "/tenant/settings?tab=billing";
+                        return;
+                      }
+                      handleSubmit("SENT");
+                    }}
+                    disabled={isSubmitting}
+                    className={cn(
+                      "h-12 px-5 rounded-2xl bg-primary text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:opacity-90 transition-all active:scale-95 shadow-lg shadow-primary/20 disabled:opacity-50",
+                      isActionLocked && "opacity-50 grayscale hover:grayscale-0 hover:opacity-100 transition-all"
+                    )}
+                  >
+                    <Send className="h-4 w-4" />
+                    {isActionLocked ? "SUB REQUIRED" : "SAVE & SEND"}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => {
+                      if (isActionLocked) {
+                        window.location.href = "/tenant/settings?tab=billing";
+                        return;
+                      }
+                      handleSubmit("SENT", { sendEmail: false });
+                    }}
+                    disabled={isSubmitting}
+                    className={cn(
+                      "h-12 px-5 rounded-2xl bg-white border-2 border-rose-200 text-rose-600 font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-rose-50 transition-all active:scale-95 shadow-sm disabled:opacity-50"
+                    )}
+                  >
+                    Save only
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (isActionLocked) {
+                        window.location.href = "/tenant/settings?tab=billing";
+                        return;
+                      }
+                      if (!formData.id) {
+                        setError("Save the invoice first to preview the PDF.");
+                        return;
+                      }
+                      setIsPreviewOpen(true);
+                    }}
+                    disabled={isSubmitting || !formData.id}
+                    className={cn(
+                      "h-12 px-5 rounded-2xl bg-white border-2 border-slate-200 text-slate-700 font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-slate-50 transition-all active:scale-95 shadow-sm disabled:opacity-40"
+                    )}
+                  >
+                    <Eye className="h-4 w-4" />
+                    Preview
+                  </button>
+                </div>
+              </div>
+
               <button 
                 onClick={() => router.push("/tenant/invoices")}
                 className="w-full py-3 rounded-2xl bg-white border border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-rose-500 hover:border-rose-100 hover:bg-rose-50 transition-all flex items-center justify-center gap-2"
@@ -921,6 +965,20 @@ export function InvoiceEditor({ clients, services, bookings, initialData, prefil
           </div>
         </div>
       </div>
+
+      <InvoicePreviewModal
+        isOpen={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        invoice={
+          formData.id
+            ? {
+                id: formData.id,
+                number: formData.number,
+                tenantId: tenant?.id,
+              }
+            : null
+        }
+      />
     </div>
   );
 }
