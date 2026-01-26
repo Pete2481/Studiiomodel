@@ -298,6 +298,11 @@ export function WipBookingsList(props: {
 
           <div className="space-y-3">
             {canEdit ? (
+              status === "COMPLETED" ? (
+                <div className="inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-black shadow-sm border border-emerald-200 bg-emerald-50 text-emerald-700 w-full">
+                  COMPLETED
+                </div>
+              ) : (
               <div className="flex flex-col gap-2">
                 <button
                   onClick={() => markComplete(b.id)}
@@ -317,6 +322,7 @@ export function WipBookingsList(props: {
                   Still in progress
                 </button>
               </div>
+              )
             ) : (
               <div className="text-xs font-bold text-slate-400">Status updates are controlled by the studio.</div>
             )}
