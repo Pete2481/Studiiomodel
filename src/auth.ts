@@ -179,6 +179,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // Refresh permissions periodically so access changes take effect without requiring logout/login.
       if (token?.tenantId && token?.id) {
         try {
+          // CRITICAL: This callback runs in middleware (edge runtime) too.
+          // Prisma Client cannot run in Edge, and attempting it causes errors + can delay requests.
+          if (process.env.NEXT_RUNTIME === "edge") {
+            return token;
+          }
+
           const now = Date.now();
           const last = typeof (token as any)._permRefreshedAt === "number" ? (token as any)._permRefreshedAt : 0;
           const shouldRefresh = !last || now - last > 30_000; // 30s TTL
