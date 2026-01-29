@@ -6,6 +6,7 @@ import { bookingService } from "@/server/services/booking.service";
 import { auth } from "@/auth";
 import { permissionService } from "@/lib/permission-service";
 import { tenantTag } from "@/lib/server-cache";
+import { notificationService } from "@/server/services/notification.service";
 
 function toIso(d: any) {
   if (!d) return null;
@@ -149,6 +150,20 @@ export async function deleteBooking(id: string) {
 
     const tPrisma = await getTenantPrisma();
 
+    // SECURITY: If client portal, ensure the booking belongs to this client.
+    const sessionUser = session.user as any;
+    const role = String(sessionUser?.role || "");
+    if (role === "CLIENT") {
+      const clientId = String(sessionUser?.clientId || "");
+      if (!clientId) return { success: false, error: "Missing client context." };
+      const existing = await (tPrisma as any).booking.findFirst({
+        where: { id, deletedAt: null },
+        select: { id: true, clientId: true },
+      });
+      if (!existing) return { success: false, error: "Not found." };
+      if (String(existing.clientId || "") !== clientId) return { success: false, error: "Permission Denied" };
+    }
+
     // Soft delete (automatically handled by tPrisma where)
     await tPrisma.booking.update({
       where: { id },
@@ -173,6 +188,71 @@ export async function deleteBooking(id: string) {
   } catch (error: any) {
     console.error("DELETE ERROR:", error);
     return { success: false, error: error.message || "Failed to delete booking." };
+  }
+}
+
+export async function cancelBookingAsClient(bookingId: string) {
+  try {
+    const session = await auth();
+    const tenantId = session?.user?.tenantId as string | undefined;
+    if (!session?.user || !tenantId) return { success: false, error: "Unauthorized" } as const;
+
+    const sessionUser = session.user as any;
+    const role = String(sessionUser?.role || "");
+    if (role !== "CLIENT") return { success: false, error: "Permission Denied" } as const;
+
+    const clientId = String(sessionUser?.clientId || "");
+    if (!clientId) return { success: false, error: "Missing client context." } as const;
+
+    const tPrisma = (await getTenantPrisma()) as any;
+
+    const booking = await tPrisma.booking.findFirst({
+      where: { id: String(bookingId || ""), deletedAt: null },
+      select: {
+        id: true,
+        clientId: true,
+        tenant: { select: { contactEmail: true } },
+        assignments: { select: { teamMember: { select: { email: true } } } },
+      },
+    });
+
+    if (!booking) return { success: false, error: "Not found." } as const;
+    if (String(booking.clientId || "") !== clientId) return { success: false, error: "Permission Denied" } as const;
+
+    // Email tenant + assigned team
+    const toOverride: string[] = [];
+    const add = (e?: string | null) => {
+      const v = String(e || "").trim();
+      if (!v) return;
+      if (!toOverride.includes(v)) toOverride.push(v);
+    };
+    add(booking?.tenant?.contactEmail);
+    for (const a of booking?.assignments || []) add(a?.teamMember?.email);
+
+    if (toOverride.length) {
+      await notificationService.sendBookingEmail({
+        bookingId: String(booking.id),
+        type: "BOOKING_CANCELLED",
+        toOverride,
+      });
+    }
+
+    // Soft delete + status cancel
+    await tPrisma.booking.update({
+      where: { id: String(booking.id) },
+      data: { deletedAt: new Date(), status: "CANCELLED" },
+    });
+
+    revalidatePath("/tenant/bookings");
+    revalidatePath("/tenant/calendar");
+    revalidatePath("/");
+    revalidateTag(tenantTag(tenantId));
+    revalidateTag(`tenant:${tenantId}:calendar`);
+
+    return { success: true } as const;
+  } catch (error: any) {
+    console.error("CLIENT CANCEL ERROR:", error);
+    return { success: false, error: error?.message || "Failed to cancel booking." } as const;
   }
 }
 
