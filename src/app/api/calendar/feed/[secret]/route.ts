@@ -1,6 +1,31 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
+function toNumber(v: any): number | null {
+  if (v == null) return null;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function icsEscape(v: any): string {
+  const s = String(v ?? "");
+  return s
+    .replace(/\\/g, "\\\\")
+    .replace(/\r\n|\n|\r/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+}
+
+function formatFullAddress(property: any): string {
+  const p = property || {};
+  const parts = [p.addressLine1, p.addressLine2, p.city, p.state, p.postcode, p.country]
+    .map((x: any) => String(x || "").trim())
+    .filter(Boolean);
+  const structured = parts.join(", ");
+  const fallback = String(p.name || "").trim();
+  return structured || fallback || "TBC";
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ secret: string }> }
@@ -52,10 +77,23 @@ export async function GET(
   const bookings = await prisma.booking.findMany({
     where,
     include: {
-      property: true,
+      property: {
+        select: {
+          name: true,
+          addressLine1: true,
+          addressLine2: true,
+          city: true,
+          state: true,
+          postcode: true,
+          country: true,
+          latitude: true,
+          longitude: true,
+        },
+      },
       client: true,
       services: { include: { service: true } },
-      assignments: { include: { teamMember: true } }
+      assignments: { include: { teamMember: { select: { displayName: true, phone: true } } } },
+      agent: { select: { name: true, phone: true } },
     },
     orderBy: { startAt: 'asc' }
   });
@@ -83,32 +121,54 @@ export async function GET(
     const end = new Date(booking.endAt).toISOString().replace(/-|:|\.\d\d\d/g, "");
     
     const clientName = booking.client?.businessName || booking.client?.name || "No Client";
-    const title = `${clientName} | ${booking.title}`;
+    const fullAddress = formatFullAddress(booking.property);
+    const summary = fullAddress;
     
     const teamNames = booking.assignments?.map(a => a.teamMember.displayName).join(", ") || "TBC";
+    const photographers = (booking.assignments || [])
+      .map((a: any) => {
+        const n = String(a?.teamMember?.displayName || "").trim();
+        const ph = String(a?.teamMember?.phone || "").trim();
+        if (!n) return "";
+        return ph ? `${n} (${ph})` : n;
+      })
+      .filter(Boolean)
+      .join(", ");
+    const teamLine = photographers ? `Photographer(s): ${photographers}` : "";
     const services = booking.services?.map(s => s.service.name).join(", ") || "No Services";
+    const agentLine =
+      booking.agent?.name
+        ? `Agent: ${booking.agent.name}${booking.agent.phone ? ` (${booking.agent.phone})` : ""}`
+        : "";
 
     const descriptionLines = [
       `Job: ${booking.title}`,
       `Agency: ${clientName}`,
-      `Team: ${teamNames}`,
+      `Address: ${fullAddress}`,
+      agentLine,
+      teamLine || `Team: ${teamNames}`,
       `Services: ${services}`,
       `Access: ${booking.propertyStatus || "TBC"}`,
       `--------------------------`,
       booking.clientNotes ? `Client Notes: ${booking.clientNotes}` : "",
       booking.internalNotes ? `Instructions: ${booking.internalNotes}` : ""
-    ].filter(Boolean).map(line => line.replace(/,/g, '\\,')).join("\\n");
+    ].filter(Boolean).map(icsEscape).join("\\n");
 
-    const location = booking.property?.name || "TBC";
+    const location = fullAddress;
+    const lat = toNumber(booking.property?.latitude);
+    const lon = toNumber(booking.property?.longitude);
 
     icsLines.push("BEGIN:VEVENT");
     icsLines.push(`UID:${booking.id}@studiio.au`);
     icsLines.push(`DTSTAMP:${now}`);
     icsLines.push(`DTSTART:${start}`);
     icsLines.push(`DTEND:${end}`);
-    icsLines.push(`SUMMARY:${title}`);
+    icsLines.push(`SUMMARY:${icsEscape(summary)}`);
     icsLines.push(`DESCRIPTION:${descriptionLines}`);
-    icsLines.push(`LOCATION:${location}`);
+    icsLines.push(`LOCATION:${icsEscape(location)}`);
+    if (lat != null && lon != null) {
+      icsLines.push(`GEO:${lat};${lon}`);
+    }
     icsLines.push("END:VEVENT");
   });
 

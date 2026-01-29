@@ -51,8 +51,9 @@ export async function POST(
 
     const role = (session.user as any)?.role;
     const sessionTenantId = (session.user as any)?.tenantId;
-    const isAdminLike = isTenantStaffRole(role);
-    if (!isAdminLike) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+    const sessionClientId = (session.user as any)?.clientId ? String((session.user as any).clientId) : "";
+    const isStaff = isTenantStaffRole(role);
+    const isClient = String(role || "").toUpperCase() === "CLIENT";
 
     const { galleryId } = await params;
     if (!galleryId) return NextResponse.json({ error: "Missing galleryId" }, { status: 400 });
@@ -73,6 +74,35 @@ export async function POST(
       return NextResponse.json({ error: "Invalid file" }, { status: 400 });
     }
 
+    // Access rules:
+    // - Staff: OK
+    // - Client: only if they own this published gallery (and we ignore originalPath for safety)
+    let forcedGalleryDir: string | null = null;
+    if (!isStaff) {
+      if (!isClient) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+      if (!sessionClientId) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+
+      const gallery = await prisma.gallery.findFirst({
+        where: { id: String(galleryId), deletedAt: null },
+        select: { tenantId: true, clientId: true, status: true, metadata: true },
+      });
+      if (!gallery) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      if (String(gallery.tenantId) !== String(tenantId)) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+      if (!gallery.clientId || String(gallery.clientId) !== sessionClientId) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+      if (String(gallery.status) !== "READY" && String(gallery.status) !== "DELIVERED") {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+      }
+
+      const meta: any = (gallery as any)?.metadata || {};
+      const mappedFolderPath = meta?.imageFolders?.[0]?.path;
+      if (typeof mappedFolderPath === "string" && mappedFolderPath.startsWith("/")) {
+        forcedGalleryDir = mappedFolderPath;
+      } else if (typeof meta?.dropboxLink === "string" && meta.dropboxLink.trim()) {
+        // We will resolve this after we have the tenant token below.
+        forcedGalleryDir = "/";
+      }
+    }
+
     const tPrisma = await getTenantPrisma(tenantId);
     const tenant = await tPrisma.tenant.findUnique({
       where: { id: tenantId },
@@ -83,10 +113,10 @@ export async function POST(
     }
 
     // Resolve target directory (same logic shape as saveAIResultSiblingToDropbox)
-    let resolvedDir = path.posix.dirname(originalPath || "/");
+    let resolvedDir = forcedGalleryDir && forcedGalleryDir !== "/" ? forcedGalleryDir : path.posix.dirname(originalPath || "/");
     resolvedDir = resolvedDir === "." ? "/" : resolvedDir;
 
-    if (resolvedDir === "/" || resolvedDir === "") {
+    if ((resolvedDir === "/" || resolvedDir === "") || forcedGalleryDir === "/") {
       try {
         const gallery = await prisma.gallery.findUnique({
           where: { id: galleryId },
@@ -123,19 +153,18 @@ export async function POST(
       .replace(/\.[^.]+$/, "")
       .replace(/-MARKUP$/i, "")
       .replace(/-AI$/i, "");
-    const targetPath = path.posix.join(resolvedDir || "/", `${baseName}-MARKUP.jpg`);
 
     let accessToken = tenant.dropboxAccessToken;
-    const upload = async (token: string) => {
+    const upload = async (token: string, dropboxPath: string) => {
       return fetch("https://content.dropboxapi.com/2/files/upload", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/octet-stream",
           "Dropbox-API-Arg": JSON.stringify({
-            path: targetPath,
+            path: dropboxPath,
             mode: "add",
-            autorename: true,
+            autorename: false,
             mute: false,
             strict_conflict: true,
           }),
@@ -144,26 +173,40 @@ export async function POST(
       });
     };
 
-    let res = await upload(accessToken);
-    if (res.status === 401 && tenant.dropboxRefreshToken) {
-      const newToken = await refreshDropboxAccessToken(tenantId, tenant.dropboxRefreshToken);
-      if (newToken) {
-        accessToken = newToken;
-        res = await upload(accessToken);
+    // Save naming: baseName-MARKUP.jpg, then baseName-MARKUP1.jpg, baseName-MARKUP2.jpg, ...
+    let lastErrorText = "";
+    for (let i = 0; i <= 20; i++) {
+      const suffix = i === 0 ? "" : String(i);
+      const candidatePath = path.posix.join(resolvedDir || "/", `${baseName}-MARKUP${suffix}.jpg`);
+
+      let res = await upload(accessToken, candidatePath);
+      if (res.status === 401 && tenant.dropboxRefreshToken) {
+        const newToken = await refreshDropboxAccessToken(tenantId, tenant.dropboxRefreshToken);
+        if (newToken) {
+          accessToken = newToken;
+          res = await upload(accessToken, candidatePath);
+        }
       }
+
+      if (res.status === 409) continue;
+
+      if (!res.ok) {
+        lastErrorText = await res.text().catch(() => "");
+        return NextResponse.json({ error: `Failed to save to Dropbox: ${lastErrorText}` }, { status: 502 });
+      }
+
+      const data: any = await res.json().catch(() => null);
+      return NextResponse.json({
+        success: true,
+        path: data?.path_display || data?.path_lower || candidatePath,
+        name: data?.name || `${baseName}-MARKUP${suffix}.jpg`,
+      });
     }
 
-    if (!res.ok) {
-      const errorText = await res.text();
-      return NextResponse.json({ error: `Failed to save to Dropbox: ${errorText}` }, { status: 502 });
-    }
-
-    const data: any = await res.json().catch(() => null);
-    return NextResponse.json({
-      success: true,
-      path: data?.path_display || data?.path_lower || targetPath,
-      name: data?.name || `${baseName}-MARKUP.jpg`,
-    });
+    return NextResponse.json(
+      { error: `Failed to save to Dropbox: too many filename conflicts${lastErrorText ? ` (${lastErrorText})` : ""}` },
+      { status: 502 },
+    );
   } catch (e: any) {
     console.error("[upload-markup-sibling] error", e);
     return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });

@@ -838,8 +838,10 @@ export async function saveAIResultSiblingToDropbox({
 
     const sessionTenantId = (session.user as any)?.tenantId;
     const role = (session.user as any)?.role;
-    const isAdminLike = isTenantStaffRole(role);
-    if (!isAdminLike || (sessionTenantId && sessionTenantId !== tenantId)) {
+    const sessionClientId = (session.user as any)?.clientId ? String((session.user as any).clientId) : "";
+    const isStaff = isTenantStaffRole(role);
+    const isClient = String(role || "").toUpperCase() === "CLIENT";
+    if (sessionTenantId && String(sessionTenantId) !== String(tenantId)) {
       return { success: false, error: "Unauthorized" };
     }
 
@@ -849,6 +851,53 @@ export async function saveAIResultSiblingToDropbox({
       select: { dropboxAccessToken: true, dropboxRefreshToken: true },
     });
     if (!tenant?.dropboxAccessToken) throw new Error("Dropbox not connected");
+
+    // Client access: only allow saving for their own published gallery.
+    // We still upload using the tenant's Dropbox token (shared studio folder).
+    let forcedGalleryDir: string | null = null;
+    if (!isStaff) {
+      if (!isClient) return { success: false, error: "Unauthorized" };
+      if (!galleryId) return { success: false, error: "Missing galleryId" };
+      if (!sessionClientId) return { success: false, error: "Unauthorized" };
+
+      const gallery = await prisma.gallery.findFirst({
+        where: { id: String(galleryId), deletedAt: null },
+        select: { tenantId: true, clientId: true, status: true, metadata: true },
+      });
+      if (!gallery) return { success: false, error: "Not found" };
+      if (String(gallery.tenantId) !== String(tenantId)) return { success: false, error: "Unauthorized" };
+      if (!gallery.clientId || String(gallery.clientId) !== sessionClientId) return { success: false, error: "Unauthorized" };
+      if (String(gallery.status) !== "READY" && String(gallery.status) !== "DELIVERED") {
+        return { success: false, error: "Unauthorized" };
+      }
+
+      // For clients, never trust the provided originalPath. Always resolve the gallery's real folder.
+      const meta: any = (gallery as any)?.metadata || {};
+      const mappedFolderPath = meta?.imageFolders?.[0]?.path;
+      if (typeof mappedFolderPath === "string" && mappedFolderPath.startsWith("/")) {
+        forcedGalleryDir = mappedFolderPath;
+      } else if (typeof meta?.dropboxLink === "string" && meta.dropboxLink.trim()) {
+        const metaRes = await fetch("https://api.dropboxapi.com/2/sharing/get_shared_link_metadata", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${tenant.dropboxAccessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ url: meta.dropboxLink }),
+        });
+        if (metaRes.ok) {
+          const sharedMeta: any = await metaRes.json().catch(() => null);
+          const p = sharedMeta?.path_lower || sharedMeta?.path_display;
+          if (typeof p === "string" && p.startsWith("/")) {
+            forcedGalleryDir = sharedMeta?.[".tag"] === "folder" ? p : path.posix.dirname(p);
+          }
+        }
+      }
+
+      if (!forcedGalleryDir || !forcedGalleryDir.startsWith("/")) {
+        return { success: false, error: "Could not resolve Dropbox folder for this gallery" };
+      }
+    }
 
     // Basic allowlist for safety (match external-image route hosts)
     const parsed = new URL(resultUrl);
@@ -874,10 +923,10 @@ export async function saveAIResultSiblingToDropbox({
     // - Prefer the original file's directory
     // - If the original path is a "share-link relative" path like "/DSC0001.jpg",
     //   try to resolve a real folder path from gallery metadata (imageFolders or dropboxLink).
-    let resolvedDir = path.posix.dirname(originalPath || "/");
+    let resolvedDir = forcedGalleryDir || path.posix.dirname(originalPath || "/");
     resolvedDir = resolvedDir === "." ? "/" : resolvedDir;
 
-    if ((resolvedDir === "/" || resolvedDir === "") && galleryId) {
+    if (!forcedGalleryDir && (resolvedDir === "/" || resolvedDir === "") && galleryId) {
       try {
         const gallery = await prisma.gallery.findUnique({
           where: { id: galleryId },
@@ -910,19 +959,17 @@ export async function saveAIResultSiblingToDropbox({
       }
     }
 
-    const targetPath = path.posix.join(resolvedDir || "/", `${baseName}-AI.jpg`);
-
     let accessToken = tenant.dropboxAccessToken;
-    const uploadFile = async (token: string) => {
+    const uploadFile = async (token: string, dropboxPath: string) => {
       return fetch("https://content.dropboxapi.com/2/files/upload", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/octet-stream",
           "Dropbox-API-Arg": JSON.stringify({
-            path: targetPath,
+            path: dropboxPath,
             mode: "add",
-            autorename: true,
+            autorename: false,
             mute: false,
             strict_conflict: true,
           }),
@@ -931,44 +978,61 @@ export async function saveAIResultSiblingToDropbox({
       });
     };
 
-    let response = await uploadFile(accessToken);
-    if (response.status === 401 && tenant.dropboxRefreshToken) {
-      const newToken = await refreshDropboxAccessToken(tenantId, tenant.dropboxRefreshToken);
-      if (newToken) {
-        accessToken = newToken;
-        response = await uploadFile(accessToken);
-      }
-    }
+    // Save naming: baseName-AI.jpg, then baseName-AI1.jpg, baseName-AI2.jpg, ...
+    // This matches the desired "-AI / -AI1" pattern and avoids Dropbox "(1)" autorenames.
+    let lastErrorText = "";
+    for (let i = 0; i <= 20; i++) {
+      const suffix = i === 0 ? "" : String(i);
+      const candidatePath = path.posix.join(resolvedDir || "/", `${baseName}-AI${suffix}.jpg`);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      // Try to surface a friendlier error for common Dropbox OAuth scope issues.
-      try {
-        const parsedErr: any = JSON.parse(errorText);
-        const tag = parsedErr?.error?.[".tag"];
-        const requiredScope = parsedErr?.error?.required_scope;
-        if (tag === "missing_scope") {
-          return {
-            success: false,
-            code: "MISSING_SCOPE" as const,
-            requiredScope: String(requiredScope || ""),
-            error:
-              `Dropbox permission missing (${String(requiredScope || "unknown")}). ` +
-              "Please disconnect and reconnect Dropbox to grant the new permission.",
-          };
+      let response = await uploadFile(accessToken, candidatePath);
+      if (response.status === 401 && tenant.dropboxRefreshToken) {
+        const newToken = await refreshDropboxAccessToken(tenantId, tenant.dropboxRefreshToken);
+        if (newToken) {
+          accessToken = newToken;
+          response = await uploadFile(accessToken, candidatePath);
         }
-      } catch {
-        // ignore JSON parse errors
       }
 
-      return { success: false, error: `Failed to save to Dropbox: ${errorText}` };
+      if (response.status === 409) {
+        // conflict: try next suffix
+        continue;
+      }
+
+      if (!response.ok) {
+        lastErrorText = await response.text().catch(() => "");
+        // Try to surface a friendlier error for common Dropbox OAuth scope issues.
+        try {
+          const parsedErr: any = JSON.parse(lastErrorText);
+          const tag = parsedErr?.error?.[".tag"];
+          const requiredScope = parsedErr?.error?.required_scope;
+          if (tag === "missing_scope") {
+            return {
+              success: false,
+              code: "MISSING_SCOPE" as const,
+              requiredScope: String(requiredScope || ""),
+              error:
+                `Dropbox permission missing (${String(requiredScope || "unknown")}). ` +
+                "Please disconnect and reconnect Dropbox to grant the new permission.",
+            };
+          }
+        } catch {
+          // ignore JSON parse errors
+        }
+        return { success: false, error: `Failed to save to Dropbox: ${lastErrorText}` };
+      }
+
+      const data = await response.json().catch(() => null);
+      return {
+        success: true,
+        path: (data as any)?.path_display || (data as any)?.path_lower || candidatePath,
+        name: (data as any)?.name || `${baseName}-AI${suffix}.jpg`,
+      };
     }
 
-    const data = await response.json().catch(() => null);
     return {
-      success: true,
-      path: (data as any)?.path_display || (data as any)?.path_lower || targetPath,
-      name: (data as any)?.name || `${baseName}-AI.jpg`,
+      success: false,
+      error: `Failed to save to Dropbox: too many filename conflicts${lastErrorText ? ` (${lastErrorText})` : ""}`,
     };
   } catch (error: any) {
     console.error("SAVE AI SIBLING ERROR:", error);
