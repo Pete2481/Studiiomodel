@@ -26,6 +26,7 @@ export async function GET() {
     const agentId = sessionUser.agentId ? String(sessionUser.agentId) : "";
     const clientId = sessionUser.clientId ? String(sessionUser.clientId) : "";
     const seeAll = !!sessionUser.permissions?.seeAll;
+    const canBackfill = role === "TENANT_ADMIN" || role === "ADMIN";
 
     const payload = await cached(
       "api:mapsDeliveredGalleries",
@@ -118,6 +119,7 @@ export async function GET() {
         return {
           success: true,
           tenantId,
+          canBackfill,
           total: markers.length,
           missingCoordsCount,
           markers: withCoords,

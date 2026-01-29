@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { permissionService } from "@/lib/permission-service";
 import { getGalleryAssets } from "@/app/actions/dropbox";
+import { subDays } from "date-fns";
 
 /**
  * Creates or updates a gallery with full production metadata.
@@ -252,6 +253,7 @@ export async function getGalleryReferenceData() {
     if (!session || !tenantId) return { success: false, error: "Unauthorized" };
 
     const canViewAll = session.user.role === "TENANT_ADMIN" || session.user.role === "ADMIN";
+    const startAtGte = subDays(new Date(), 7);
 
     const [clients, bookings, agents, services] = await Promise.all([
       prisma.client.findMany({ 
@@ -259,11 +261,21 @@ export async function getGalleryReferenceData() {
         select: { id: true, name: true, businessName: true, settings: true, avatarUrl: true } 
       }),
       prisma.booking.findMany({ 
-        where: { tenantId, deletedAt: null, isPlaceholder: false, clientId: !canViewAll && (session.user as any).clientId ? (session.user as any).clientId : undefined },
+        where: {
+          tenantId,
+          deletedAt: null,
+          isPlaceholder: false,
+          startAt: { gte: startAtGte },
+          // Hide bookings that already have a linked (non-deleted) gallery.
+          galleries: { none: { deletedAt: null } },
+          clientId: !canViewAll && (session.user as any).clientId ? (session.user as any).clientId : undefined,
+        },
+        orderBy: { startAt: "desc" },
         select: { 
           id: true, 
           title: true, 
           clientId: true, 
+          startAt: true,
           property: { select: { name: true } }, 
           services: { include: { service: { select: { id: true, name: true, price: true } } } } 
         } 
@@ -292,6 +304,7 @@ export async function getGalleryReferenceData() {
           id: String(b.id), 
           title: String(b.title), 
           clientId: String(b.clientId), 
+          startAt: b.startAt ? new Date(b.startAt).toISOString() : null,
           property: { name: String(b.property?.name || "") }, 
           services: b.services.map(s => ({ 
             id: String(s.id),

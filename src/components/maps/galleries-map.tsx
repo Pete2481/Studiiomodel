@@ -22,6 +22,7 @@ type MapMarker = {
 type Payload = {
   success: boolean;
   tenantId: string;
+  canBackfill?: boolean;
   total: number;
   missingCoordsCount: number;
   markers: MapMarker[];
@@ -70,6 +71,7 @@ export function GalleriesMap() {
   const [backfilling, setBackfilling] = useState(false);
   const [backfillMsg, setBackfillMsg] = useState<string | null>(null);
   const [userCenter, setUserCenter] = useState<[number, number] | null>(null);
+  const [autoBackfillStarted, setAutoBackfillStarted] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -154,6 +156,32 @@ export function GalleriesMap() {
     }
   };
 
+  // Automatically backfill missing locations in the background (no button press needed).
+  // Throttled to avoid hammering geocoding APIs; only runs for roles allowed by the server.
+  useEffect(() => {
+    if (!data?.success) return;
+    if (!data.canBackfill) return;
+    if (backfilling) return;
+    if (autoBackfillStarted) return;
+    if (!(Number(data.missingCoordsCount || 0) > 0)) return;
+
+    const key = `studiio:maps:autoBackfill:lastRun:${String(data.tenantId || "unknown")}`;
+    const now = Date.now();
+    const last = Number((typeof window !== "undefined" && window.localStorage.getItem(key)) || 0);
+    const minIntervalMs = 10 * 60 * 1000; // 10 minutes
+    if (Number.isFinite(last) && last > 0 && now - last < minIntervalMs) return;
+
+    try {
+      window.localStorage.setItem(key, String(now));
+    } catch {
+      // ignore storage issues (private mode, etc.)
+    }
+
+    setAutoBackfillStarted(true);
+    setBackfillMsg("Auto-fixing missing locations in the background…");
+    void runBackfill();
+  }, [data, backfilling, autoBackfillStarted]);
+
   const MarkerContent = ({ m, delivered }: { m: MapMarker; delivered: string }) => {
     return (
       <div className="space-y-2">
@@ -225,7 +253,7 @@ export function GalleriesMap() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {data?.success && Number(data?.missingCoordsCount || 0) > 0 ? (
+          {data?.success && data?.canBackfill && Number(data?.missingCoordsCount || 0) > 0 ? (
             <button
               type="button"
               onClick={() => void runBackfill()}

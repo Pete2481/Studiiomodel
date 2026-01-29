@@ -40,6 +40,15 @@ export function BookingPopoverV2(props: {
 }) {
   const { open, mode, user, bookingId, startAt, endAt, presetSlotType, anchorRect, tenantTimezone, reference, restoreForm, restoreKey, onRequestReopen, onUpserted, onDeleted, onClose } = props;
   const isClient = user?.role === "CLIENT";
+  const hasBookingId = !!bookingId;
+  const isRealBookingId =
+    !!bookingId &&
+    !String(bookingId).startsWith("optimistic-") &&
+    String(bookingId) !== "temp-booking" &&
+    String(bookingId) !== "temp-booking-id";
+  // We show the cancel CTA whenever the drawer is in "edit" mode (has a bookingId),
+  // but only run server-side cancel/delete for real persisted ids.
+  const canCancelExistingBooking = hasBookingId;
   const [tab, setTab] = useState<"booking" | "blockout">(mode === "blockout" && isClient ? "booking" : mode);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const [measured, setMeasured] = useState<{ w: number; h: number }>({ w: 420, h: 420 });
@@ -49,6 +58,7 @@ export function BookingPopoverV2(props: {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [notifyPref, setNotifyPref] = useState<"silent" | "send">("silent");
   const notifyTouchedRef = useRef(false);
   const [preview, setPreview] = useState<null | { type: string; bookingId: string; subject: string; html: string; to: string[] }>(null);
@@ -759,28 +769,26 @@ export function BookingPopoverV2(props: {
                 {bookingId ? "Edit booking" : "New booking"}
               </div>
               <div className="flex items-center gap-2">
-                {!isClient && bookingId && (
+                {/* Top-right delete/cancel shortcut */}
+                {isRealBookingId ? (
                   <button
                     className="h-9 w-9 rounded-full bg-white border border-slate-200 text-slate-500 hover:text-rose-600 hover:border-rose-200"
                     onClick={async () => {
                       if (!bookingId) return;
-                      setIsDeleting(true);
-                      try {
-                        // Optimistic UI: remove immediately from calendar and close popover
-                        onDeleted?.(String(bookingId));
-                        onClose();
-                        await deleteBooking(String(bookingId));
-                      } finally {
-                        setIsDeleting(false);
+                      // Clients: cancel flow (confirm modal). Staff: cancel/delete confirm modal.
+                      if (isClient) {
+                        setIsCancelConfirmOpen(true);
+                        return;
                       }
+                      setIsDeleteConfirmOpen(true);
                     }}
-                    title="Delete"
-                    aria-label="Delete"
-                    disabled={isDeleting}
+                    title={isClient ? "Cancel booking" : "Cancel booking"}
+                    aria-label={isClient ? "Cancel booking" : "Cancel booking"}
+                    disabled={isDeleting || isCancelling}
                   >
-                    {isDeleting ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : <Trash2 className="h-4 w-4 mx-auto" />}
+                    {(isDeleting || isCancelling) ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : <Trash2 className="h-4 w-4 mx-auto" />}
                   </button>
-                )}
+                ) : null}
                 <button
                   className="h-9 w-9 rounded-full bg-slate-50 border border-slate-100 text-slate-600 hover:bg-slate-100"
                   onClick={onClose}
@@ -1748,10 +1756,10 @@ export function BookingPopoverV2(props: {
                 </div>
 
                 <div className="flex justify-end gap-3 pt-2">
-                  {isClient && !!bookingId ? (
+                  {canCancelExistingBooking ? (
                     <button
                       type="button"
-                      onClick={() => setIsCancelConfirmOpen(true)}
+                      onClick={() => (isClient ? setIsCancelConfirmOpen(true) : setIsDeleteConfirmOpen(true))}
                       className="mr-auto h-12 px-6 rounded-full bg-white border border-rose-200 text-rose-600 font-black hover:bg-rose-50 transition-all active:scale-95 disabled:opacity-50"
                       disabled={isSaving || isCancelling || isDeleting}
                     >
@@ -1948,7 +1956,7 @@ export function BookingPopoverV2(props: {
                 </div>
 
                 {/* Client cancel confirmation modal */}
-                {isCancelConfirmOpen && isClient && !!bookingId ? (
+                {isCancelConfirmOpen && isClient && canCancelExistingBooking ? (
                   <>
                     <div className="fixed inset-0 z-[260] bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsCancelConfirmOpen(false)} />
                     <div className="fixed inset-0 z-[270] flex items-center justify-center p-4">
@@ -1979,9 +1987,11 @@ export function BookingPopoverV2(props: {
                                 // Optimistically remove from calendar + close drawer
                                 onDeleted?.(id);
                                 onClose();
-                                const res = await cancelBookingAsClient(id);
-                                if (!(res as any)?.success) {
-                                  window.alert((res as any)?.error || "Failed to cancel booking");
+                                if (isRealBookingId) {
+                                  const res = await cancelBookingAsClient(id);
+                                  if (!(res as any)?.success) {
+                                    window.alert((res as any)?.error || "Failed to cancel booking");
+                                  }
                                 }
                               } catch (e: any) {
                                 window.alert(e?.message || "Failed to cancel booking");
@@ -1992,6 +2002,57 @@ export function BookingPopoverV2(props: {
                             }}
                           >
                             {isCancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                            Cancel booking
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+
+                {/* Staff delete confirmation modal */}
+                {isDeleteConfirmOpen && !isClient && canCancelExistingBooking ? (
+                  <>
+                    <div className="fixed inset-0 z-[260] bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsDeleteConfirmOpen(false)} />
+                    <div className="fixed inset-0 z-[270] flex items-center justify-center p-4">
+                      <div className="w-full max-w-md rounded-[32px] border border-slate-200 bg-white shadow-2xl p-7">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Cancel booking</div>
+                        <div className="mt-2 text-xl font-black text-slate-900">Cancel this booking?</div>
+                        <div className="mt-2 text-sm font-semibold text-slate-500">
+                          This will cancel the booking and remove it from the calendar.
+                        </div>
+                        <div className="mt-6 flex justify-end gap-3">
+                          <button
+                            type="button"
+                            className="h-11 px-5 rounded-full bg-slate-100 text-slate-700 font-black hover:bg-slate-200 transition-all active:scale-95"
+                            onClick={() => setIsDeleteConfirmOpen(false)}
+                            disabled={isDeleting}
+                          >
+                            Keep booking
+                          </button>
+                          <button
+                            type="button"
+                            className="h-11 px-6 rounded-full bg-rose-600 text-white font-black hover:opacity-95 transition-all active:scale-95 disabled:opacity-60"
+                            disabled={isDeleting}
+                            onClick={async () => {
+                              if (!bookingId) return;
+                              setIsDeleting(true);
+                              try {
+                                const id = String(bookingId);
+                                onDeleted?.(id);
+                                onClose();
+                                if (isRealBookingId) {
+                                  await deleteBooking(id);
+                                }
+                              } catch (e: any) {
+                                window.alert(e?.message || "Failed to cancel booking");
+                              } finally {
+                                setIsDeleting(false);
+                                setIsDeleteConfirmOpen(false);
+                              }
+                            }}
+                          >
+                            {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                             Cancel booking
                           </button>
                         </div>

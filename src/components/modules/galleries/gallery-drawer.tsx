@@ -93,6 +93,7 @@ export function GalleryDrawer({
   const [localServices, setLocalServices] = useState<any[]>([]);
   const [localAgents, setLocalAgents] = useState<any[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
+  const [bookingSelectionMsg, setBookingSelectionMsg] = useState<string | null>(null);
 
   // Prefer prefetched reference data (instant), then fall back to on-demand fetch.
   useEffect(() => {
@@ -389,6 +390,27 @@ export function GalleryDrawer({
       }
     }
   }, [formData.bookingId]);
+
+  // Safety: if a booking becomes ineligible (older than 7 days or already linked to a gallery),
+  // it may disappear from the reference list. For new galleries, clear the selection and show a message.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (formData.id) return; // editing existing gallery: don't clear (may be intentionally linked)
+    if (!formData.bookingId) {
+      if (bookingSelectionMsg) setBookingSelectionMsg(null);
+      return;
+    }
+    const exists = bookings.some((b) => b.id === formData.bookingId);
+    if (exists) {
+      if (bookingSelectionMsg) setBookingSelectionMsg(null);
+      return;
+    }
+    setFormData((prev: any) => ({ ...prev, bookingId: "" }));
+    setBookingSelectionMsg(
+      "That booking is no longer available to link (it may be older than 7 days or already linked to a gallery).",
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, formData.id, formData.bookingId, bookings]);
 
   // Filter services based on client visibility
   const visibleServices = React.useMemo(() => {
@@ -789,6 +811,12 @@ export function GalleryDrawer({
                         className="ui-input-tight bg-white appearance-none disabled:opacity-50 pr-10 text-slate-700 font-bold"
                       >
                         <option value="">No Booking (Standalone)</option>
+                        {/* If editing and the linked booking is filtered out of reference data, keep it visible */}
+                        {formData.id && formData.bookingId && !bookings.some((b) => b.id === formData.bookingId) ? (
+                          <option value={formData.bookingId}>
+                            {String((initialGallery as any)?.property?.name || (initialGallery as any)?.title || "Linked booking")}
+                          </option>
+                        ) : null}
                         {formData.clientMode === "existing" &&
                           bookings
                             .filter(b => b.clientId === formData.clientId)
@@ -798,6 +826,9 @@ export function GalleryDrawer({
                       </select>
                       <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 pointer-events-none" />
                     </div>
+                    {bookingSelectionMsg ? (
+                      <p className="text-xs font-medium text-amber-700">{bookingSelectionMsg}</p>
+                    ) : null}
                   </div>
 
                   <div className="space-y-2">
