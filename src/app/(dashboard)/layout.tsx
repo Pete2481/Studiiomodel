@@ -59,26 +59,62 @@ async function ShellDataWrapper({
   // 1. Fetch Shared Shell Data (Parallel)
   let tenant = null;
   let isSubscribed = true; // Default to true to not lock UI while loading
+  let clientBrand: any = null;
 
   try {
-    [tenant, isSubscribed] = await Promise.all([
+    const wantsClientBrand = user?.role === "CLIENT" || user?.role === "AGENT";
+    const clientId = wantsClientBrand ? String(user?.clientId || "") : "";
+
+    [tenant, isSubscribed, clientBrand] = await Promise.all([
       prisma.tenant.findUnique({
         where: { id: tenantId },
         select: { id: true, name: true, logoUrl: true, brandColor: true, slug: true }
       }),
-      checkSubscriptionStatus(tenantId)
+      checkSubscriptionStatus(tenantId),
+      wantsClientBrand && clientId
+        ? prisma.client.findFirst({
+            where: { id: clientId, tenantId, deletedAt: null },
+            select: {
+              id: true,
+              name: true,
+              businessName: true,
+              avatarUrl: true,
+              watermarkUrl: true,
+              settings: true,
+            },
+          })
+        : Promise.resolve(null),
     ]);
   } catch (error) {
     console.error("Layout Data Fetch Error:", error);
   }
 
+  const workspaceName =
+    (clientBrand?.businessName || clientBrand?.name) ||
+    tenant?.name ||
+    "Studiio Tenant";
+
+  // Prefer client branding when in Client/Agent portal.
+  // Use watermarkUrl as the “brand mark” if provided; fallback to client avatar; then tenant logo.
+  const resolvedLogoUrl =
+    clientBrand?.watermarkUrl ||
+    clientBrand?.avatarUrl ||
+    tenant?.logoUrl ||
+    undefined;
+
+  // Optional: if client.settings.brandColor exists, use it; else tenant brandColor.
+  const resolvedBrandColor =
+    (clientBrand?.settings as any)?.brandColor ||
+    tenant?.brandColor ||
+    undefined;
+
   return (
     <DashboardShell 
       user={user}
-      workspaceName={tenant?.name || "Studiio Tenant"}
+      workspaceName={workspaceName}
       workspaceSlug={tenant?.slug}
-      logoUrl={tenant?.logoUrl || undefined}
-      brandColor={tenant?.brandColor || undefined}
+      logoUrl={resolvedLogoUrl}
+      brandColor={resolvedBrandColor}
       isActionLocked={!isSubscribed}
     >
       {children}

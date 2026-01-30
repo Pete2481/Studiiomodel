@@ -1978,10 +1978,14 @@ export function GalleryPublicViewer({
                                 ...selectedAsset,
                                 id: `version-${selectedAsset.id}-${activeVersion.id}`,
                                 name: `${activeVersion.label}-${selectedAsset.name}`,
+                                // IMPORTANT: This is an edited result hosted externally (Replicate/CDN/etc).
+                                // We must NOT download using the original Dropbox `path`, or we'll get the unedited original.
                                 url: activeVersion.src,
+                                path: undefined,
                                 originalPath: selectedAsset.path,
                                 originalName: selectedAsset.name,
-                                isAiResult: activeVersion.tool === "ai",
+                                // Treat ALL URL-based edited versions (AI + Item Removal) as “AI result” for downloads + Save-to-Dropbox.
+                                isAiResult: true,
                               };
                               setDownloadAssets([vAsset]);
                             }

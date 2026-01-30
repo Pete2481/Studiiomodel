@@ -44,7 +44,17 @@ async function buildSessionUserFromUser(user: any, tenantId: string) {
   let teamMemberId = null;
   let sessionRole = membership.role as string;
 
-  if (membership.role === "AGENT" && membership.clientId) {
+  if (membership.role === "CLIENT" && membership.clientId) {
+    const client = await prisma.client.findFirst({
+      where: {
+        id: membership.clientId,
+        tenantId: membership.tenantId,
+        deletedAt: null,
+      },
+      select: { name: true },
+    });
+    if (client?.name) displayName = client.name;
+  } else if (membership.role === "AGENT" && membership.clientId) {
     const agent = await prisma.agent.findFirst({
       where: {
         clientId: membership.clientId,
