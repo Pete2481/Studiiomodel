@@ -357,6 +357,19 @@ export function GalleryPublicViewer({
   const [isSpotRemovalOpen, setIsSpotRemovalOpen] = useState(false);
   const [isSpotRemovalProcessing, setIsSpotRemovalProcessing] = useState(false);
   const [spotRemovalError, setSpotRemovalError] = useState<string | null>(null);
+  const [spotRemovalElapsedSec, setSpotRemovalElapsedSec] = useState(0);
+
+  useEffect(() => {
+    if (!isSpotRemovalProcessing) {
+      setSpotRemovalElapsedSec(0);
+      return;
+    }
+    const startedAt = Date.now();
+    const id = window.setInterval(() => {
+      setSpotRemovalElapsedSec(Math.floor((Date.now() - startedAt) / 1000));
+    }, 250);
+    return () => window.clearInterval(id);
+  }, [isSpotRemovalProcessing]);
 
   const toggleSelectImage = (item: any) => {
     const key = getAssetKey(item);
@@ -3292,7 +3305,14 @@ export function GalleryPublicViewer({
             <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/35 backdrop-blur-[2px]">
               <div className="px-6 py-4 rounded-2xl bg-slate-950 border border-white/10 shadow-2xl flex items-center gap-3">
                 <Loader2 className="h-5 w-5 text-white animate-spin" />
-                <p className="text-xs font-black uppercase tracking-widest text-white/90">Removing item…</p>
+                <div className="space-y-1">
+                  <p className="text-xs font-black uppercase tracking-widest text-white/90">
+                    Removing item… {spotRemovalElapsedSec}s
+                  </p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-white/50">
+                    This can take 1–3 minutes on live.
+                  </p>
+                </div>
               </div>
             </div>
           )}

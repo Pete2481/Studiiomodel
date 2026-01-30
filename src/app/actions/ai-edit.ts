@@ -36,6 +36,16 @@ interface AIProcessResult {
   error?: string;
 }
 
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let t: NodeJS.Timeout | null = null;
+  const timeout = new Promise<T>((_, reject) => {
+    t = setTimeout(() => reject(new Error(label)), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => {
+    if (t) clearTimeout(t);
+  }) as Promise<T>;
+}
+
 async function readImageBytes(input: string): Promise<Buffer> {
   const s = String(input || "").trim();
   if (!s) throw new Error("Missing image input");
@@ -219,6 +229,9 @@ export async function processImageWithAI(
 ): Promise<AIProcessResult> {
   // Move instantiation inside to ensure we pick up the latest .env values
   // without requiring a full server restart
+  if (!process.env.REPLICATE_API_TOKEN) {
+    return { success: false, error: "AI is not configured (missing REPLICATE_API_TOKEN)." };
+  }
   const replicate = new Replicate({
     auth: process.env.REPLICATE_API_TOKEN,
     // When passing browser-generated masks (data URLs), prefer uploading Buffer inputs.
@@ -475,9 +488,17 @@ export async function processImageWithAI(
           )
         );
 
-        output = await replicate.run(model, { input: runInput });
+        // Safety: prevent “forever” hangs in production. Some models can be slow; allow up to 4 minutes.
+        output = await withTimeout(
+          replicate.run(model, { input: runInput }),
+          4 * 60 * 1000,
+          "AI is taking longer than expected. Please try again."
+        );
         break; // Success!
       } catch (runError: any) {
+        if (String(runError?.message || "").includes("taking longer than expected")) {
+          return { success: false, error: "AI is taking longer than expected. Please try again." };
+        }
         if (runError.status === 429 && retries < maxRetries) {
           console.log(`[AI_EDIT] Rate limited (429). Retrying in 3s... (Attempt ${retries + 1})`);
           await new Promise(resolve => setTimeout(resolve, 3000));
