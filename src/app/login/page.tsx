@@ -23,7 +23,7 @@ import { formatDropboxUrl } from "@/lib/utils";
 import { useSearchParams } from "next/navigation";
 import { CameraLoader } from "@/components/ui/camera-loader";
 
-type LoginStep = "EMAIL" | "TENANT_SELECT" | "OTP";
+type LoginStep = "EMAIL" | "TENANT_SELECT" | "AUTH";
 
 interface TenantOption {
   id: string;
@@ -41,6 +41,8 @@ export default function LoginPage() {
   const [selectedTenant, setSelectedTenant] = useState<TenantOption | null>(null);
   const [tenants, setTenants] = useState<TenantOption[]>([]);
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
+  const [showOtp, setShowOtp] = useState(false);
+  const [password, setPassword] = useState("");
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,8 +73,10 @@ export default function LoginPage() {
     setError(null);
     setEmail(e);
     setSelectedTenant({ id: t, name: "Workspace", slug: "", role: "TENANT_ADMIN" });
-    setStep("OTP");
+    setStep("AUTH");
+    setShowOtp(true);
     setOtp(code.split(""));
+    setPassword("");
 
     setLoading(true);
     void (async () => {
@@ -91,6 +95,8 @@ export default function LoginPage() {
         setStep("EMAIL");
         setSelectedTenant(null);
         setOtp(["", "", "", "", "", ""]);
+        setShowOtp(false);
+        setPassword("");
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -124,8 +130,10 @@ export default function LoginPage() {
       } else {
         const tenant = data.tenants[0];
         setSelectedTenant(tenant);
-        await sendOtp(email, tenant.id);
-        setStep("OTP");
+        setOtp(["", "", "", "", "", ""]);
+        setShowOtp(false);
+        setPassword("");
+        setStep("AUTH");
       }
     } catch (err: any) {
       setError(err.message);
@@ -151,8 +159,10 @@ export default function LoginPage() {
     setError(null);
     try {
       setSelectedTenant(tenant);
-      await sendOtp(email, tenant.id);
-      setStep("OTP");
+      setOtp(["", "", "", "", "", ""]);
+      setShowOtp(false);
+      setPassword("");
+      setStep("AUTH");
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -229,6 +239,36 @@ export default function LoginPage() {
     }
   };
 
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTenant?.id) return;
+    if (!password.trim()) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const result = await signIn("password", {
+        email,
+        tenantId: selectedTenant.id,
+        password,
+        redirect: false,
+      });
+      if (result?.error) {
+        throw new Error("Incorrect email or password.");
+      }
+      if (selectedTenant?.id === "MASTER") {
+        window.location.href = "/master/tenants";
+      } else {
+        window.location.href = "/";
+      }
+    } catch (err: any) {
+      setError(err.message || "Password sign-in failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#FDFDFD] flex flex-col items-center justify-center p-6 relative overflow-hidden">
       {loading && (
@@ -236,7 +276,7 @@ export default function LoginPage() {
           <div className="flex flex-col items-center gap-6">
             <CameraLoader size="md" color="var(--primary)" className="text-primary" />
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 animate-pulse">
-              {step === "TENANT_SELECT" ? "Sending code…" : step === "OTP" ? "Authorizing…" : "Loading…"}
+              {step === "TENANT_SELECT" ? "Preparing…" : step === "AUTH" ? "Authorizing…" : "Loading…"}
             </p>
           </div>
         </div>
@@ -398,15 +438,17 @@ export default function LoginPage() {
             </div>
           )}
 
-          {step === "OTP" && (
+          {step === "AUTH" && (
             <div className="space-y-10 animate-in fade-in slide-in-from-right-4 duration-700">
               <div className="space-y-3 text-center">
                 <div className="h-16 w-16 rounded-full bg-slate-50 text-slate-900 flex items-center justify-center mx-auto mb-8 relative">
                   <Lock className="h-7 w-7" />
                   <div className="absolute inset-0 rounded-full border-2 border-slate-100 animate-ping opacity-20" />
                 </div>
-                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Security Code</h2>
-                <p className="text-[14px] text-slate-500 font-medium leading-relaxed">Verification sent to <span className="font-bold text-slate-900 underline underline-offset-4 decoration-emerald-200">{email}</span></p>
+                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Sign in</h2>
+                <p className="text-[14px] text-slate-500 font-medium leading-relaxed">
+                  Signing in as <span className="font-bold text-slate-900 underline underline-offset-4 decoration-emerald-200">{email}</span>
+                </p>
                 <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold uppercase tracking-[0.15em] mt-6 shadow-sm shadow-emerald-500/5">
                   {(() => {
                     const hasSelectedLogo =
@@ -439,46 +481,97 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <form onSubmit={handleOtpSubmit} noValidate className="space-y-10">
-                <div className="grid grid-cols-6 gap-3">
-                  {otp.map((digit, i) => (
-                    <input 
-                      key={i}
-                      ref={el => { otpRefs.current[i] = el; }}
-                      type="tel" 
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      maxLength={1}
-                      value={digit}
-                      onChange={(e) => handleOtpChange(e.target.value, i)}
-                      onKeyDown={(e) => handleKeyDown(e, i)}
-                      onPaste={i === 0 ? handlePaste : undefined}
-                      className="w-full aspect-square rounded-[18px] border border-slate-100 bg-slate-50/50 text-center text-xl font-bold text-slate-900 outline-none transition-all focus:border-slate-900 focus:bg-white focus:ring-[10px] focus:ring-slate-900/5"
-                    />
-                  ))}
+              <form onSubmit={handlePasswordSubmit} noValidate className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Password</label>
+                  <input
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    type="password"
+                    autoComplete="current-password"
+                    placeholder="Enter your password"
+                    className="w-full h-14 rounded-[22px] border border-slate-100 bg-white px-5 text-[15px] font-bold text-slate-900 outline-none transition-all focus:border-slate-900 focus:ring-[10px] focus:ring-slate-900/5"
+                  />
                 </div>
 
-                <div className="space-y-5">
-                  <button 
-                    type="submit" 
-                    disabled={loading || otp.some(d => !d)}
-                    className="w-full h-15 bg-slate-900 hover:bg-slate-800 text-white rounded-[22px] font-bold text-[16px] shadow-2xl shadow-slate-900/10 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] h-14"
-                  >
-                    {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Authorize Session"}
-                  </button>
-
-                  <div className="text-center">
-                    <button 
-                      type="button"
-                      disabled={loading}
-                      onClick={() => sendOtp(email, selectedTenant!.id)}
-                      className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 uppercase tracking-[0.25em] transition-colors py-3"
-                    >
-                      Resend Code
-                    </button>
-                  </div>
-                </div>
+                <button
+                  type="submit"
+                  disabled={loading || !password.trim()}
+                  className="w-full h-15 bg-slate-900 hover:bg-slate-800 text-white rounded-[22px] font-bold text-[16px] shadow-2xl shadow-slate-900/10 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] h-14"
+                >
+                  {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Sign in with password"}
+                </button>
               </form>
+
+              <div className="pt-2 text-center">
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={async () => {
+                    if (!selectedTenant?.id) return;
+                    try {
+                      setError(null);
+                      setLoading(true);
+                      await sendOtp(email, selectedTenant.id);
+                      setShowOtp(true);
+                      setOtp(["", "", "", "", "", ""]);
+                      queueMicrotask(() => otpRefs.current[0]?.focus());
+                    } catch (err: any) {
+                      setError(err?.message || "Failed to send code.");
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                  className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 uppercase tracking-[0.25em] transition-colors py-3"
+                >
+                  {showOtp ? "Send a new one-time code" : "Use a one-time code instead"}
+                </button>
+              </div>
+
+              {showOtp && (
+                <form onSubmit={handleOtpSubmit} noValidate className="space-y-10">
+                  <div className="grid grid-cols-6 gap-3">
+                    {otp.map((digit, i) => (
+                      <input
+                        key={i}
+                        ref={(el) => {
+                          otpRefs.current[i] = el;
+                        }}
+                        type="tel"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        maxLength={1}
+                        value={digit}
+                        onChange={(e) => handleOtpChange(e.target.value, i)}
+                        onKeyDown={(e) => handleKeyDown(e, i)}
+                        onPaste={i === 0 ? handlePaste : undefined}
+                        className="w-full aspect-square rounded-[18px] border border-slate-100 bg-slate-50/50 text-center text-xl font-bold text-slate-900 outline-none transition-all focus:border-slate-900 focus:bg-white focus:ring-[10px] focus:ring-slate-900/5"
+                      />
+                    ))}
+                  </div>
+
+                  <div className="space-y-5">
+                    <button
+                      type="submit"
+                      disabled={loading || otp.some((d) => !d)}
+                      className="w-full h-15 bg-slate-900 hover:bg-slate-800 text-white rounded-[22px] font-bold text-[16px] shadow-2xl shadow-slate-900/10 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] h-14"
+                    >
+                      {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Authorize Session"}
+                    </button>
+
+                    <div className="text-center">
+                      <button
+                        type="button"
+                        disabled={loading}
+                        onClick={() => sendOtp(email, selectedTenant!.id)}
+                        className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 uppercase tracking-[0.25em] transition-colors py-3"
+                      >
+                        Resend Code
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              )}
 
               <button 
                 type="button"

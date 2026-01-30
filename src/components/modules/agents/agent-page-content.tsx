@@ -183,6 +183,7 @@ export function AgentPageContent({ initialAgents, role, clientId, clientInfo }: 
           setIsAgentDrawerOpen(false);
           setSelectedAgent(null);
         }}
+        currentUserRole={role}
         clientId={clientId}
         agencyName={clientInfo?.businessName || "Your Agency"}
         agents={agents}

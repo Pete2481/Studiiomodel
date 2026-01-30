@@ -2,6 +2,105 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
+import { verifyPassword } from "@/lib/password";
+
+async function buildSessionUserFromUser(user: any, tenantId: string) {
+  if (!user) return null;
+
+  // For MASTER login, just check the flag
+  if (tenantId === "MASTER") {
+    if (!user.isMasterAdmin) return null;
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      image: user.image,
+      tenantId: undefined,
+      role: "MASTER_ADMIN",
+      isMasterAdmin: true,
+    };
+  }
+
+  // SAFETY: Master Admins are NOT allowed to act as Tenant Admins or Team Members
+  if (user.isMasterAdmin) {
+    console.warn(`[AUTH] Master Admin (${user.email}) attempted to login to tenant ${tenantId}. Blocked.`);
+    return null;
+  }
+
+  if (!Array.isArray(user.memberships) || user.memberships.length === 0) {
+    return null;
+  }
+
+  const membership = user.memberships[0];
+
+  // Ensure the membership isn't for a deleted team member
+  if (membership.teamMember?.deletedAt) {
+    return null;
+  }
+
+  // Contextual Name: Use Agent/TeamMember name if applicable
+  let displayName = user.name;
+  let agentId = null;
+  let teamMemberId = null;
+  let sessionRole = membership.role as string;
+
+  if (membership.role === "AGENT" && membership.clientId) {
+    const agent = await prisma.agent.findFirst({
+      where: {
+        clientId: membership.clientId,
+        tenantId: membership.tenantId,
+        email: user.email,
+        deletedAt: null, // Ensure agent isn't deleted
+      },
+      select: { id: true, name: true },
+    });
+    if (agent) {
+      displayName = agent.name;
+      agentId = agent.id;
+    }
+  } else if (membership.role === "TEAM_MEMBER" || membership.role === "TENANT_ADMIN") {
+    const member = await prisma.teamMember.findFirst({
+      where: {
+        tenantId: membership.tenantId,
+        email: user.email,
+        deletedAt: null, // Ensure team member isn't deleted
+      },
+      select: { id: true, displayName: true, role: true },
+    });
+    if (member) {
+      displayName = member.displayName;
+      teamMemberId = member.id;
+
+      // Promote sub-role to session role ONLY if the user isn't already a TENANT_ADMIN
+      // This prevents downgrading an admin who happens to have a team member record for assignments.
+      if (membership.role === "TEAM_MEMBER") {
+        sessionRole = member.role;
+      }
+    } else if (membership.role === "TEAM_MEMBER") {
+      // If we're here, it means we have a TEAM_MEMBER membership but no non-deleted TeamMember record
+      return null;
+    }
+  }
+
+  // SAFETY: Only return what is NECESSARY for the session.
+  // We strip the 'image' if it's too large to prevent header/cookie overflow.
+  const safeImage = user.image && user.image.length > 2000 ? null : user.image;
+
+  return {
+    id: user.id,
+    email: user.email,
+    name: displayName,
+    image: safeImage,
+    tenantId: membership.tenantId,
+    tenantSlug: membership.tenant.slug,
+    membershipId: membership.id,
+    role: sessionRole,
+    clientId: membership.clientId ?? undefined,
+    agentId: agentId ?? undefined,
+    teamMemberId: teamMemberId ?? undefined,
+    isMasterAdmin: user.isMasterAdmin,
+  };
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma) as any,
@@ -10,6 +109,48 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     signIn: "/login",
   },
   providers: [
+    Credentials({
+      id: "password",
+      name: "Password",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        tenantId: { label: "Tenant ID", type: "text" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password || !credentials?.tenantId) {
+          return null;
+        }
+
+        const email = (credentials.email as string).toLowerCase().trim();
+        const password = String(credentials.password || "");
+        const tenantId = credentials.tenantId as string;
+
+        const user = await prisma.user.findUnique({
+          where: { email },
+          include: {
+            memberships: {
+              where:
+                tenantId === "MASTER"
+                  ? undefined
+                  : {
+                      id: tenantId,
+                      tenant: { deletedAt: null }, // Ensure tenant isn't deleted
+                    },
+              include: {
+                tenant: true,
+                teamMember: true, // Include teamMember to check deletion
+              },
+            },
+          },
+        });
+
+        if (!user) return null;
+        if (!(await verifyPassword(password, (user as any).passwordHash))) return null;
+
+        return await buildSessionUserFromUser(user, tenantId);
+      },
+    }),
     Credentials({
       name: "OTP",
       credentials: {
@@ -62,102 +203,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           }
         });
 
-        if (!user) return null;
-
-        // For MASTER login, just check the flag
-        if (tenantId === "MASTER") {
-          if (!user.isMasterAdmin) return null;
-          return {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            image: user.image,
-            tenantId: undefined,
-            role: "MASTER_ADMIN",
-            isMasterAdmin: true
-          };
-        }
-
-        // SAFETY: Master Admins are NOT allowed to act as Tenant Admins or Team Members
-        if (user.isMasterAdmin) {
-          console.warn(`[AUTH] Master Admin (${user.email}) attempted to login to tenant ${tenantId}. Blocked.`);
-          return null;
-        }
-
-        if (user.memberships.length === 0) {
-          return null;
-        }
-
-        const membership = user.memberships[0];
-
-        // Ensure the membership isn't for a deleted team member
-        if (membership.teamMember?.deletedAt) {
-          return null;
-        }
-
-        // 4. Contextual Name: Use Agent/TeamMember name if applicable
-        let displayName = user.name;
-        let agentId = null;
-        let teamMemberId = null;
-        let sessionRole = membership.role as string;
-        
-        if (membership.role === "AGENT" && membership.clientId) {
-          const agent = await prisma.agent.findFirst({
-            where: { 
-              clientId: membership.clientId,
-              tenantId: membership.tenantId,
-              email: user.email,
-              deletedAt: null // Ensure agent isn't deleted
-            },
-            select: { id: true, name: true }
-          });
-          if (agent) {
-            displayName = agent.name;
-            agentId = agent.id;
-          }
-        } else if (membership.role === "TEAM_MEMBER" || membership.role === "TENANT_ADMIN") {
-          const member = await prisma.teamMember.findFirst({
-            where: { 
-              tenantId: membership.tenantId,
-              email: user.email,
-              deletedAt: null // Ensure team member isn't deleted
-            },
-            select: { id: true, displayName: true, role: true }
-          });
-          if (member) {
-            displayName = member.displayName;
-            teamMemberId = member.id;
-            
-            // Promote sub-role to session role ONLY if the user isn't already a TENANT_ADMIN
-            // This prevents downgrading an admin who happens to have a team member record for assignments.
-            if (membership.role === "TEAM_MEMBER") {
-              sessionRole = member.role;
-            }
-          } else if (membership.role === "TEAM_MEMBER") {
-            // If we're here, it means we have a TEAM_MEMBER membership but no non-deleted TeamMember record
-            return null;
-          }
-        }
-
-        // 5. Return User object for JWT
-        // SAFETY: Only return what is NECESSARY for the session.
-        // We strip the 'image' if it's too large to prevent header/cookie overflow.
-        const safeImage = (user.image && user.image.length > 2000) ? null : user.image;
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: displayName,
-          image: safeImage,
-          tenantId: membership.tenantId,
-          tenantSlug: membership.tenant.slug,
-          membershipId: membership.id,
-          role: sessionRole,
-          clientId: membership.clientId ?? undefined,
-          agentId: agentId ?? undefined,
-          teamMemberId: teamMemberId ?? undefined,
-          isMasterAdmin: user.isMasterAdmin
-        };
+        return await buildSessionUserFromUser(user, tenantId);
       },
     }),
   ],

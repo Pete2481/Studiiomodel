@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { X, ChevronDown, Camera, ShieldCheck, Mail, Phone, User, Globe, Trash2, Plus, Copy } from "lucide-react";
 import { cn, formatDropboxUrl } from "@/lib/utils";
+import { adminSetUserPasswordByEmail } from "@/app/actions/password";
 
 interface TeamMemberDrawerProps {
   isOpen: boolean;
@@ -390,6 +391,32 @@ export function TeamMemberDrawer({
                     className="ui-input-tight pl-12" 
                   />
                 </div>
+              </div>
+
+              {/* Portal Password (admin sets temporary password; user can change later) */}
+              <div className="p-6 rounded-3xl bg-slate-50 border border-slate-100 flex items-center justify-between gap-6">
+                <div className="space-y-1">
+                  <h4 className="text-sm font-bold text-slate-900">Portal Password</h4>
+                  <p className="text-xs text-slate-400">
+                    Sets a new password for this email (global per email). They can change it later in Settings.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const targetEmail = String(formData.email || "").trim();
+                    if (!targetEmail) return alert("Add an email first.");
+                    const pw = window.prompt("Set a new temporary password (min 8 chars):", "");
+                    if (pw === null) return;
+                    if (pw.trim().length < 8) return alert("Password must be at least 8 characters.");
+                    const res = await adminSetUserPasswordByEmail({ email: targetEmail, newPassword: pw.trim() });
+                    if (!res.success) return alert(res.error || "Failed to set password.");
+                    alert("Password saved.");
+                  }}
+                  className="h-11 px-5 rounded-2xl bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-700 hover:text-emerald-600 hover:border-emerald-200 transition-all shadow-sm active:scale-95"
+                >
+                  Set Password
+                </button>
               </div>
 
               <div className="space-y-2">

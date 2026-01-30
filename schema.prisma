@@ -13,6 +13,8 @@ model User {
   emailVerified   DateTime?
   name            String?
   image           String?
+  passwordHash    String?
+  passwordUpdatedAt DateTime?
   isMasterAdmin   Boolean            @default(false)
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
@@ -852,6 +854,10 @@ enum NewsletterRecipientStatus {
 // Singleton-style config row used for global templates (Master Admin).
 model SystemConfig {
   id                 String @id @default("system")
+  // Legacy master email branding fields (kept to avoid destructive schema drift on db push)
+  masterFromName     String?
+  masterReplyTo      String?
+  masterLogoUrl      String?
   welcomeEmailSubject String @default("Welcome to Studiio")
   welcomeEmailBlocks  Json   @default("[]")
   updatedAt          DateTime @updatedAt

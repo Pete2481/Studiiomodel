@@ -5,10 +5,12 @@ import { X, User, Camera, Trash2, Check, Phone, Mail, Plus } from "lucide-react"
 import { cn } from "@/lib/utils";
 import { upsertAgent, deleteAgent } from "@/app/actions/agent";
 import { formatDropboxUrl } from "@/lib/utils";
+import { adminSetUserPasswordByEmail, enableAgentPortalAccess } from "@/app/actions/password";
 
 interface AgentDrawerProps {
   isOpen: boolean;
   onClose: () => void;
+  currentUserRole?: string;
   clientId: string;
   agencyName: string;
   agents: any[];
@@ -19,6 +21,7 @@ interface AgentDrawerProps {
 export function AgentDrawer({ 
   isOpen, 
   onClose, 
+  currentUserRole,
   clientId, 
   agencyName, 
   agents,
@@ -246,6 +249,47 @@ export function AgentDrawer({
                     />
                   </div>
                 </div>
+
+                {(String(currentUserRole || "") === "TENANT_ADMIN" || String(currentUserRole || "") === "ADMIN") && (
+                  <div className="p-6 rounded-3xl bg-slate-50 border border-slate-100 flex items-center justify-between gap-6">
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-bold text-slate-900">Portal Password</h4>
+                      <p className="text-xs text-slate-400">
+                        Set a new password for this agent email (global per email). They can change it later in Settings.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!selectedAgent?.id) return alert("Save this contact first, then enable portal access.");
+                          const res = await enableAgentPortalAccess({ agentId: String(selectedAgent.id) });
+                          if (!res.success) return alert(res.error || "Failed to enable portal access.");
+                          alert("Portal access enabled for this agent email.");
+                        }}
+                        className="h-11 px-5 rounded-2xl bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-700 hover:text-slate-900 hover:border-slate-300 transition-all shadow-sm active:scale-95"
+                      >
+                        Enable Access
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const targetEmail = String(formData.email || "").trim();
+                          if (!targetEmail) return alert("Add an email first.");
+                          const pw = window.prompt("Set a new temporary password (min 8 chars):", "");
+                          if (pw === null) return;
+                          if (pw.trim().length < 8) return alert("Password must be at least 8 characters.");
+                          const res = await adminSetUserPasswordByEmail({ email: targetEmail, newPassword: pw.trim() });
+                          if (!res.success) return alert(res.error || "Failed to set password.");
+                          alert("Password saved.");
+                        }}
+                        className="h-11 px-5 rounded-2xl bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-700 hover:text-primary hover:border-primary/30 transition-all shadow-sm active:scale-95"
+                      >
+                        Set Password
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</label>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { 
   Palette, 
@@ -37,6 +37,7 @@ import { AddressAutocomplete } from "@/components/ui/address-autocomplete";
 import { updateTenantBranding, updateTenantContactInfo, updateTenantInvoicingSettings, updateTenantNotificationSettings, updateTenantSecuritySettings, updateTenantStorageSettings, updateTenantLogisticsSettings, updateTenantCalendarSyncSettings, triggerCalendarSync } from "@/app/actions/tenant-settings";
 import { createStripeCheckoutAction, createStripePortalAction } from "@/app/actions/stripe";
 import { format, differenceInDays } from "date-fns";
+import { setMyPassword } from "@/app/actions/password";
 
 interface SettingsPageContentProps {
   tenant: any;
@@ -92,17 +93,38 @@ const DEFAULT_INVOICE_TERMS = "All services are provided in accordance with stan
 
 export function SettingsPageContent({ tenant, user, teamMember }: SettingsPageContentProps) {
   const searchParams = useSearchParams();
-  const [activeTab, setActiveTab] = useState(teamMember ? "profile" : "branding");
+  const [activeTab, setActiveTab] = useState(() => {
+    if (teamMember) return "profile";
+    if (user.role === "TENANT_ADMIN" || user.role === "ADMIN") return "branding";
+    return "account";
+  });
+
+  const allowedTabs = useMemo(
+    () => [
+      "account",
+      ...(teamMember ? ["profile"] : []),
+      ...(user.role === "TENANT_ADMIN" || user.role === "ADMIN"
+        ? ["branding", "contact", "invoicing", "data", "scheduling", "integrations", "notifications", "security", "billing", "booking-link"]
+        : []),
+    ],
+    [teamMember, user.role],
+  );
 
   useEffect(() => {
     const tab = searchParams.get("tab");
-    if (tab) {
+    if (tab && allowedTabs.includes(tab)) {
       setActiveTab(tab);
     }
-  }, [searchParams]);
+  }, [searchParams, allowedTabs]);
 
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  const [passwordForm, setPasswordForm] = useState({
+    current: "",
+    next: "",
+    confirm: "",
+  });
   
   const [formData, setFormData] = useState({
     name: tenant.name || "",
@@ -267,6 +289,12 @@ export function SettingsPageContent({ tenant, user, teamMember }: SettingsPageCo
     <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-12">
       {/* Sidebar Nav */}
       <div className="space-y-2">
+        <SettingsTab
+          label="My Account"
+          icon={<Lock className="h-4 w-4" />}
+          active={activeTab === "account"}
+          onClick={() => setActiveTab("account")}
+        />
         {teamMember && (
           <SettingsTab 
             label="Personal Profile" 
@@ -357,6 +385,118 @@ export function SettingsPageContent({ tenant, user, teamMember }: SettingsPageCo
             <button onClick={() => setMessage(null)} className="p-1 hover:bg-black/5 rounded-full transition-colors">
               <X className="h-4 w-4" />
             </button>
+          </div>
+        )}
+
+        {activeTab === "account" && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="ui-card space-y-8 border-slate-100 p-10">
+              <div className="flex items-start justify-between border-b border-slate-50 pb-8">
+                <div className="space-y-1">
+                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">My Account</h2>
+                  <p className="text-sm font-medium text-slate-500">
+                    Your password is global per email and works across all workspaces.
+                  </p>
+                </div>
+                <div className="h-14 w-14 rounded-[20px] bg-slate-900 flex items-center justify-center text-white">
+                  <Lock className="h-7 w-7" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Email</label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={
+                      String((user as any)?.email || "")
+                        ? (user?.name ? `${user.name} (${String((user as any)?.email || "")})` : String((user as any)?.email || ""))
+                        : (user?.name || "")
+                    }
+                    className="ui-input-tight bg-slate-50 cursor-not-allowed opacity-70"
+                  />
+                  <p className="text-[11px] font-semibold text-slate-400">
+                    If you need to change the email used to log in, ask your studio admin.
+                  </p>
+                </div>
+
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Current password</label>
+                    <input
+                      type="password"
+                      autoComplete="current-password"
+                      value={passwordForm.current}
+                      onChange={(e) => setPasswordForm((p) => ({ ...p, current: e.target.value }))}
+                      className="ui-input-tight"
+                      placeholder="Required if you already set one"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">New password</label>
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      value={passwordForm.next}
+                      onChange={(e) => setPasswordForm((p) => ({ ...p, next: e.target.value }))}
+                      className="ui-input-tight"
+                      placeholder="At least 8 characters"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Confirm new password</label>
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      value={passwordForm.confirm}
+                      onChange={(e) => setPasswordForm((p) => ({ ...p, confirm: e.target.value }))}
+                      className="ui-input-tight"
+                      placeholder="Re-enter new password"
+                    />
+                  </div>
+
+                  <button
+                    onClick={async () => {
+                      if (isSaving) return;
+                      if (!passwordForm.next || passwordForm.next.length < 8) {
+                        setMessage({ type: "error", text: "Password must be at least 8 characters." });
+                        return;
+                      }
+                      if (passwordForm.next !== passwordForm.confirm) {
+                        setMessage({ type: "error", text: "New password and confirmation do not match." });
+                        return;
+                      }
+
+                      setIsSaving(true);
+                      setMessage(null);
+                      const result = await setMyPassword({
+                        currentPassword: passwordForm.current || undefined,
+                        newPassword: passwordForm.next,
+                      });
+                      setIsSaving(false);
+
+                      if (result.success) {
+                        setPasswordForm({ current: "", next: "", confirm: "" });
+                        setMessage({ type: "success", text: "Password saved." });
+                      } else {
+                        setMessage({ type: "error", text: result.error || "Failed to save password." });
+                      }
+                    }}
+                    disabled={isSaving}
+                    className="ui-button-primary flex items-center justify-center gap-2 px-6 w-full"
+                    style={{ boxShadow: `0 10px 15px -3px var(--primary-soft)` }}
+                  >
+                    <Save className="h-4 w-4" />
+                    {isSaving ? "Saving..." : "Save Password"}
+                  </button>
+
+                  <p className="text-[11px] font-semibold text-slate-400">
+                    Prefer a one-time code? You can always use the OTP option on the login screen.
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

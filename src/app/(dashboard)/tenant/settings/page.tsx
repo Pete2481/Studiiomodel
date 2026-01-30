@@ -55,6 +55,7 @@ async function SettingsDataWrapper({ session, tenantId }: { session: any, tenant
   const user = {
     id: session.user.id,
     name: session.user.name || "User",
+    email: session.user.email || "",
     role: (session.user as any).role || "CLIENT",
     teamMemberId: (session.user as any).teamMemberId || null,
     initials: session.user.name?.split(' ').map((n: string) => n[0]).join('') || "U"
