@@ -35,7 +35,7 @@ export async function setMyPassword(input: { currentPassword?: string; newPasswo
 
     return { success: true };
   } catch (error: any) {
-    return { success: false, error: error?.message || "Failed to set password" };
+    return { success: false, error: (error as any)?.message || "Failed to set password" };
   }
 }
 
@@ -45,7 +45,7 @@ export async function adminSetUserPasswordByEmail(input: { email: string; newPas
     if (!session?.user) return { success: false, error: "Unauthorized" };
 
     const role = String((session.user as any).role || "");
-    if (role !== "TENANT_ADMIN" && role !== "ADMIN") {
+    if (role !== "TENANT_ADMIN" && role !== "ADMIN" && role !== "CLIENT") {
       return { success: false, error: "Permission denied" };
     }
 
@@ -86,7 +86,7 @@ export async function enableAgentPortalAccess(input: { agentId: string }) {
     if (!session?.user) return { success: false, error: "Unauthorized" };
 
     const role = String((session.user as any).role || "");
-    if (role !== "TENANT_ADMIN" && role !== "ADMIN") {
+    if (role !== "TENANT_ADMIN" && role !== "ADMIN" && role !== "CLIENT") {
       return { success: false, error: "Permission denied" };
     }
 
@@ -101,6 +101,13 @@ export async function enableAgentPortalAccess(input: { agentId: string }) {
       select: { id: true, email: true, clientId: true },
     });
     if (!agent) return { success: false, error: "Agent not found" };
+
+    // Client can only enable access for agents in their own agency.
+    if (role === "CLIENT") {
+      const myClientId = String((session.user as any).clientId || "");
+      if (!myClientId) return { success: false, error: "Client account not found" };
+      if (String(agent.clientId) !== myClientId) return { success: false, error: "Permission denied" };
+    }
 
     const email = String(agent.email || "").toLowerCase().trim();
     if (!email) return { success: false, error: "Agent must have an email to enable portal access." };
@@ -139,3 +146,73 @@ export async function enableAgentPortalAccess(input: { agentId: string }) {
   }
 }
 
+export async function setAgentPortalPassword(input: { agentId: string; newPassword: string }) {
+  try {
+    const session = await auth();
+    if (!session?.user) return { success: false, error: "Unauthorized" };
+
+    const role = String((session.user as any).role || "");
+    if (role !== "TENANT_ADMIN" && role !== "ADMIN" && role !== "CLIENT") {
+      return { success: false, error: "Permission denied" };
+    }
+
+    const tenantId = String((session.user as any).tenantId || "");
+    if (!tenantId) return { success: false, error: "Tenant not found" };
+
+    const agentId = String(input?.agentId || "").trim();
+    if (!agentId) return { success: false, error: "Agent ID is required" };
+
+    const agent = await prisma.agent.findFirst({
+      where: { id: agentId, tenantId, deletedAt: null },
+      select: { id: true, email: true, clientId: true },
+    });
+    if (!agent) return { success: false, error: "Agent not found" };
+
+    // Client can only set passwords for agents in their own agency.
+    if (role === "CLIENT") {
+      const myClientId = String((session.user as any).clientId || "");
+      if (!myClientId) return { success: false, error: "Client account not found" };
+      if (String(agent.clientId) !== myClientId) return { success: false, error: "Permission denied" };
+    }
+
+    const email = String(agent.email || "").toLowerCase().trim();
+    if (!email) return { success: false, error: "Agent must have an email to set a password." };
+
+    // Ensure user + membership exist (auto-enables portal access)
+    let user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+    if (!user) {
+      user = await prisma.user.create({ data: { email }, select: { id: true } });
+    }
+
+    const existingMembership = await prisma.tenantMembership.findFirst({
+      where: {
+        tenantId,
+        userId: user.id,
+        role: "AGENT",
+        clientId: agent.clientId,
+      },
+      select: { id: true },
+    });
+    if (!existingMembership) {
+      await prisma.tenantMembership.create({
+        data: {
+          tenantId,
+          userId: user.id,
+          role: "AGENT" as any,
+          clientId: agent.clientId,
+          permissions: {},
+        },
+      });
+    }
+
+    const nextHash = await hashPassword(String(input?.newPassword || ""));
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: nextHash, passwordUpdatedAt: new Date() },
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error?.message || "Failed to set agent password" };
+  }
+}

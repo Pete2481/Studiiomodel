@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { addDays } from "date-fns";
 import { notificationService } from "@/server/services/notification.service";
 import { randomInt } from "crypto";
+import { hashPassword } from "@/lib/password";
 
 function randomId(prefix: string) {
   return `${prefix}${Math.random().toString(36).substring(2, 11)}`;
@@ -21,6 +22,7 @@ export type TenantOnboardingInput = {
   contactName?: string;
   contactEmail?: string;
   contactPhone?: string;
+  contactPassword?: string;
   settings?: any;
   trialDays?: number; // default 90
   starter?: {
@@ -43,6 +45,7 @@ export async function createTenantWithDefaults(input: TenantOnboardingInput) {
   const contactEmail = String(input.contactEmail || "").toLowerCase().trim();
   const contactName = String(input.contactName || name).trim();
   const contactPhone = String(input.contactPhone || "").trim();
+  const contactPassword = String(input.contactPassword || "");
 
   // Slug uniqueness
   const existing = await prisma.tenant.findUnique({ where: { slug }, select: { id: true } });
@@ -79,6 +82,15 @@ export async function createTenantWithDefaults(input: TenantOnboardingInput) {
       create: { email: contactEmail, name: contactName },
       select: { id: true },
     });
+
+    // If a password was provided during signup, set/replace it (global per email).
+    if (contactPassword && contactPassword.length >= 8) {
+      const passwordHash = await hashPassword(contactPassword);
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash, passwordUpdatedAt: new Date() },
+      });
+    }
 
     const existingMembership = await prisma.tenantMembership.findFirst({
       where: { tenantId: tenant.id, userId: user.id, role: "TENANT_ADMIN" },

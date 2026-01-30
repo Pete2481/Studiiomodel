@@ -12,6 +12,7 @@ export type Module =
   | "tenants"     // Master only
   | "bookings"
   | "maps"
+  | "profile"
   | "galleries"
   | "edits"
   | "clients"
@@ -121,8 +122,9 @@ export class PermissionService {
 
     if (role === "MASTER_ADMIN") return true;
 
+    // Tenant admins have full power within their tenant, but should not see client-portal profile UX.
     if (role === "TENANT_ADMIN" || role === "ADMIN") {
-      return module !== "tenants";
+      return module !== "tenants" && module !== "profile";
     }
 
     // Special handling for CLIENT/AGENT granular flags
@@ -132,6 +134,7 @@ export class PermissionService {
       if (module === "galleries") return true; // They can see their galleries
       if (module === "services") return true; // Client/Agent view-only access to the catalogue
       if (module === "maps") return true; // Client/Agent can see their delivered jobs map (scoped server-side)
+      if (module === "profile") return true; // Client/Agent can edit their own profile
     }
 
     // Map modules to granular permissions

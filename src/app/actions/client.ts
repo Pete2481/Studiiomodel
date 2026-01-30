@@ -81,7 +81,7 @@ async function resolveWebsiteToImageUrl(pageUrl: URL): Promise<string | null> {
   }
 }
 
-async function normalizePublicImageUrl(url: string | null | undefined): Promise<string | null> {
+export async function normalizePublicImageUrl(url: string | null | undefined): Promise<string | null> {
   if (!url) return null;
   const trimmed = String(url).trim();
   if (!trimmed) return null;

@@ -45,11 +45,15 @@ export async function POST(request: Request) {
     const contactName = String((body as any).contactName || "").trim();
     const contactEmail = String((body as any).contactEmail || "").toLowerCase().trim();
     const contactPhone = String((body as any).contactPhone || "").trim();
+    const contactPassword = String((body as any).contactPassword || "");
 
     if (!name || !slug) return NextResponse.json({ error: "Studio name and slug are required." }, { status: 400 });
     if (!contactName || !contactEmail) return NextResponse.json({ error: "Primary admin name and email are required." }, { status: 400 });
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(contactEmail)) {
       return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
+    }
+    if (!contactPassword || contactPassword.length < 8) {
+      return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
     }
 
     const starter = (body as any)?.starter || {};
@@ -62,6 +66,7 @@ export async function POST(request: Request) {
       contactName,
       contactEmail,
       contactPhone,
+      contactPassword,
       settings: { ...(body as any)?.settings, createdVia: "self_serve" },
       trialDays: 90,
       starter: {

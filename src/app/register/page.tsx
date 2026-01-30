@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Globe,
   Loader2,
+  Lock,
   Mail,
   Phone,
   User,
@@ -46,6 +47,8 @@ export default function RegisterPage() {
     contactName: "",
     contactEmail: "",
     contactPhone: "",
+    contactPassword: "",
+    contactPasswordConfirm: "",
 
     // Optional starter client
     createStarterClient: true,
@@ -65,7 +68,11 @@ export default function RegisterPage() {
 
   const canNext = useMemo(() => {
     if (step === 1) return !!form.studioName.trim() && !!effectiveSlug;
-    if (step === 2) return !!form.contactName.trim() && isValidEmail(form.contactEmail);
+    if (step === 2) {
+      const pw = String(form.contactPassword || "");
+      const okPw = pw.length >= 8 && pw === String(form.contactPasswordConfirm || "");
+      return !!form.contactName.trim() && isValidEmail(form.contactEmail) && okPw;
+    }
     return true;
   }, [step, form.studioName, form.contactName, form.contactEmail, effectiveSlug]);
 
@@ -89,6 +96,7 @@ export default function RegisterPage() {
         contactName: form.contactName.trim(),
         contactEmail: form.contactEmail.trim().toLowerCase(),
         contactPhone: form.contactPhone.trim(),
+        contactPassword: form.contactPassword,
         starter: {},
       };
 
@@ -293,6 +301,56 @@ export default function RegisterPage() {
                           className="w-full h-14 rounded-2xl border border-slate-100 bg-slate-50/50 pl-14 pr-4 text-[15px] font-bold text-slate-900 outline-none transition-all focus:border-slate-900 focus:bg-white focus:ring-[8px] focus:ring-slate-900/5 placeholder:text-slate-300"
                         />
                       </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <label className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] ml-1">
+                        Admin password
+                      </label>
+                      <div className="relative group">
+                        <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-3">
+                          <Lock className="h-4.5 w-4.5 text-slate-300 group-focus-within:text-emerald-500 transition-colors" />
+                          <div className="w-[1px] h-4 bg-slate-100" />
+                        </div>
+                        <input
+                          required
+                          type="password"
+                          autoComplete="new-password"
+                          value={form.contactPassword}
+                          onChange={(e) => setForm((p) => ({ ...p, contactPassword: e.target.value }))}
+                          placeholder="Minimum 8 characters"
+                          className="w-full h-14 rounded-2xl border border-slate-100 bg-slate-50/50 pl-14 pr-4 text-[15px] font-bold text-slate-900 outline-none transition-all focus:border-slate-900 focus:bg-white focus:ring-[8px] focus:ring-slate-900/5 placeholder:text-slate-300"
+                        />
+                      </div>
+                      <p className="text-[12px] text-slate-500 font-medium">
+                        This password is global per email and will be used to log in.
+                      </p>
+                    </div>
+
+                    <div className="space-y-3">
+                      <label className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] ml-1">
+                        Confirm password
+                      </label>
+                      <div className="relative group">
+                        <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-3">
+                          <Lock className="h-4.5 w-4.5 text-slate-300 group-focus-within:text-emerald-500 transition-colors" />
+                          <div className="w-[1px] h-4 bg-slate-100" />
+                        </div>
+                        <input
+                          required
+                          type="password"
+                          autoComplete="new-password"
+                          value={form.contactPasswordConfirm}
+                          onChange={(e) => setForm((p) => ({ ...p, contactPasswordConfirm: e.target.value }))}
+                          placeholder="Re-enter password"
+                          className="w-full h-14 rounded-2xl border border-slate-100 bg-slate-50/50 pl-14 pr-4 text-[15px] font-bold text-slate-900 outline-none transition-all focus:border-slate-900 focus:bg-white focus:ring-[8px] focus:ring-slate-900/5 placeholder:text-slate-300"
+                        />
+                      </div>
+                      {form.contactPasswordConfirm && form.contactPasswordConfirm !== form.contactPassword ? (
+                        <p className="text-[12px] font-bold text-rose-600">
+                          Passwords do not match.
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                 )}

@@ -37,6 +37,7 @@ import {
   Copy, 
   Check, 
   MapPin,
+  UserCircle,
   TrendingUp, 
   LayoutDashboard as DashboardIcon, 
   Activity
@@ -73,6 +74,7 @@ const IconMap: Record<string, any> = {
   Calendar,
   Image: ImageIcon,
   MapPin,
+  UserCircle,
   Paintbrush,
   Bell,
   Newspaper,

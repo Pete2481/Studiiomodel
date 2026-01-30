@@ -5,7 +5,7 @@ import { X, User, Camera, Trash2, Check, Phone, Mail, Plus } from "lucide-react"
 import { cn } from "@/lib/utils";
 import { upsertAgent, deleteAgent } from "@/app/actions/agent";
 import { formatDropboxUrl } from "@/lib/utils";
-import { adminSetUserPasswordByEmail, enableAgentPortalAccess } from "@/app/actions/password";
+import { enableAgentPortalAccess, setAgentPortalPassword } from "@/app/actions/password";
 
 interface AgentDrawerProps {
   isOpen: boolean;
@@ -250,7 +250,7 @@ export function AgentDrawer({
                   </div>
                 </div>
 
-                {(String(currentUserRole || "") === "TENANT_ADMIN" || String(currentUserRole || "") === "ADMIN") && (
+                {(["TENANT_ADMIN", "ADMIN", "CLIENT"].includes(String(currentUserRole || ""))) && (
                   <div className="p-6 rounded-3xl bg-slate-50 border border-slate-100 flex items-center justify-between gap-6">
                     <div className="space-y-1">
                       <h4 className="text-sm font-bold text-slate-900">Portal Password</h4>
@@ -274,12 +274,11 @@ export function AgentDrawer({
                       <button
                         type="button"
                         onClick={async () => {
-                          const targetEmail = String(formData.email || "").trim();
-                          if (!targetEmail) return alert("Add an email first.");
+                          if (!selectedAgent?.id) return alert("Save this contact first, then set a password.");
                           const pw = window.prompt("Set a new temporary password (min 8 chars):", "");
                           if (pw === null) return;
                           if (pw.trim().length < 8) return alert("Password must be at least 8 characters.");
-                          const res = await adminSetUserPasswordByEmail({ email: targetEmail, newPassword: pw.trim() });
+                          const res = await setAgentPortalPassword({ agentId: String(selectedAgent.id), newPassword: pw.trim() });
                           if (!res.success) return alert(res.error || "Failed to set password.");
                           alert("Password saved.");
                         }}
