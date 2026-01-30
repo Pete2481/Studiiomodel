@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useRef, useEffect, useState } from "react";
-import { X, RotateCcw, PenTool, Eraser, Check, Type, Trash2, Move } from "lucide-react";
+import React, { useRef, useEffect, useState, useImperativeHandle } from "react";
+import { X, RotateCcw, PenTool, Eraser, Check, Type, Trash2, Move, Minus, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface TextAnnotation {
@@ -17,9 +17,20 @@ interface DrawingCanvasProps {
   onCancel: () => void;
   isMaskMode?: boolean;
   maskPurpose?: "remove" | "place";
+  mode?: "overlay" | "embedded";
 }
 
-export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode, maskPurpose = "place" }: DrawingCanvasProps) {
+export type DrawingCanvasHandle = {
+  save: () => void;
+  clear: () => void;
+  setBrushSize: (n: number) => void;
+  setTool: (t: "pen" | "eraser") => void;
+};
+
+export const DrawingCanvas = React.forwardRef<DrawingCanvasHandle, DrawingCanvasProps>(function DrawingCanvas(
+  { imageUrl, onSave, onCancel, isMaskMode, maskPurpose = "place", mode = "overlay" }: DrawingCanvasProps,
+  ref
+) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -28,6 +39,10 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode, maskPurp
   const [currentPath, setCurrentPath] = useState<any[]>([]);
   const [scale, setScale] = useState({ x: 1, y: 1 });
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  const MIN_BRUSH = 8;
+  const MAX_BRUSH = 160;
+  const DEFAULT_BRUSH = 60;
+  const [brushSize, setBrushSize] = useState(DEFAULT_BRUSH);
   
   const [texts, setTexts] = useState<TextAnnotation[]>([]);
   const [draggingTextId, setDraggingTextId] = useState<string | null>(null);
@@ -39,17 +54,29 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode, maskPurp
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    const container = containerRef.current;
+    if (!container) return;
+
+    // Embedded mode: parent already renders the image; match the overlay to the image box.
+    if (mode === "embedded") {
+      const rect = container.getBoundingClientRect();
+      const w = Math.max(1, Math.floor(rect.width));
+      const h = Math.max(1, Math.floor(rect.height));
+      canvas.width = w;
+      canvas.height = h;
+      setDimensions({ width: w, height: h });
+      setScale({ x: 1, y: 1 });
+      redraw();
+      return;
+    }
+
+    // Overlay mode: size canvas to the image aspect ratio in our own container.
     const img = new Image();
     img.onload = () => {
-      const container = containerRef.current;
-      if (!container) return;
-
       const containerWidth = container.clientWidth;
       const containerHeight = container.clientHeight;
-
       if (containerWidth === 0 || containerHeight === 0) return;
 
-      // Calculate aspect ratio to fit image in container
       const imgRatio = img.width / img.height;
       const containerRatio = containerWidth / containerHeight;
 
@@ -64,18 +91,17 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode, maskPurp
 
       canvas.width = dWidth;
       canvas.height = dHeight;
-      
+
       setDimensions({ width: dWidth, height: dHeight });
       setScale({
         x: img.width / dWidth,
-        y: img.height / dHeight
+        y: img.height / dHeight,
       });
 
-      // Redraw everything
       redraw();
     };
     img.src = imageUrl;
-  }, [imageUrl, paths]);
+  }, [imageUrl, paths, mode]);
 
   const redraw = () => {
     const canvas = canvasRef.current;
@@ -87,13 +113,18 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode, maskPurp
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
+    const maskStroke =
+      isMaskMode && maskPurpose === "remove" ? "rgba(236, 72, 153, 0.75)" : (isMaskMode ? "rgba(255, 255, 255, 0.5)" : "rgba(255, 0, 0, 0.8)");
+
     // Draw all finished paths
     paths.forEach(path => {
       if (path.points.length < 2) return;
       ctx.beginPath();
-      ctx.strokeStyle = path.tool === "eraser" ? "rgba(0,0,0,1)" : (isMaskMode ? "rgba(255, 255, 255, 0.5)" : "rgba(255, 0, 0, 0.8)");
+      ctx.strokeStyle = path.tool === "eraser" ? "rgba(0,0,0,1)" : maskStroke;
       ctx.globalCompositeOperation = path.tool === "eraser" ? "destination-out" : "source-over";
-      ctx.lineWidth = path.tool === "eraser" ? (isMaskMode ? 40 : 40) : (isMaskMode ? 32 : 4);
+      const size = typeof path.size === "number" ? path.size : brushSize;
+      const penWidth = isMaskMode ? size : Math.max(2, Math.round(size / 10));
+      ctx.lineWidth = path.tool === "eraser" ? (isMaskMode ? size : 40) : penWidth;
       
       ctx.moveTo(path.points[0].x, path.points[0].y);
       for (let i = 1; i < path.points.length; i++) {
@@ -105,9 +136,10 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode, maskPurp
     // Draw current path
     if (currentPath.length >= 2) {
       ctx.beginPath();
-      ctx.strokeStyle = tool === "eraser" ? "rgba(0,0,0,1)" : (isMaskMode ? "rgba(255, 255, 255, 0.5)" : "rgba(255, 0, 0, 0.8)");
+      ctx.strokeStyle = tool === "eraser" ? "rgba(0,0,0,1)" : maskStroke;
       ctx.globalCompositeOperation = tool === "eraser" ? "destination-out" : "source-over";
-      ctx.lineWidth = tool === "eraser" ? (isMaskMode ? 32 : 40) : (isMaskMode ? 24 : 4);
+      const penWidth = isMaskMode ? brushSize : Math.max(2, Math.round(brushSize / 10));
+      ctx.lineWidth = tool === "eraser" ? (isMaskMode ? brushSize : 40) : penWidth;
 
       ctx.moveTo(currentPath[0].x, currentPath[0].y);
       for (let i = 1; i < currentPath.length; i++) {
@@ -116,6 +148,12 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode, maskPurp
       ctx.stroke();
     }
   };
+
+  // Redraw overlay when brush size/tool/mode changes (avoids stale strokes when adjusting size).
+  useEffect(() => {
+    redraw();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paths, currentPath, tool, brushSize, isMaskMode, maskPurpose]);
 
   const getPointerPos = (e: React.MouseEvent | React.TouchEvent) => {
     const canvas = canvasRef.current;
@@ -205,7 +243,7 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode, maskPurp
     if (!isDrawing) return;
     setIsDrawing(false);
     if (currentPath.length > 1) {
-      setPaths(prev => [...prev, { points: currentPath, tool }]);
+      setPaths(prev => [...prev, { points: currentPath, tool, size: brushSize }]);
     }
     setCurrentPath([]);
   };
@@ -257,7 +295,6 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode, maskPurp
         mctx.lineCap = "round";
         mctx.lineJoin = "round";
         mctx.strokeStyle = "white";
-        mctx.lineWidth = 80;
 
         paths.forEach(path => {
           if (path.tool === "eraser") {
@@ -267,6 +304,8 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode, maskPurp
           }
           
           if (path.points.length < 2) return;
+          const size = typeof path.size === "number" ? path.size : brushSize;
+          mctx.lineWidth = Math.max(1, size);
           mctx.beginPath();
           mctx.moveTo(path.points[0].x, path.points[0].y);
           for (let i = 1; i < path.points.length; i++) {
@@ -281,6 +320,47 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode, maskPurp
 
     onSave([...drawingPaths, ...textAnnotations], maskUrl);
   };
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      save: () => handleSave(),
+      clear: () => {
+        setPaths([]);
+        setCurrentPath([]);
+        setTexts([]);
+        setDraggingTextId(null);
+      },
+      setBrushSize: (n: number) => setBrushSize(Math.max(MIN_BRUSH, Math.min(MAX_BRUSH, Math.floor(Number(n))))),
+      setTool: (t: "pen" | "eraser") => setTool(t),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [paths, currentPath, tool, brushSize, texts, isMaskMode, maskPurpose]
+  );
+
+  if (mode === "embedded") {
+    return (
+      <div ref={containerRef} className="absolute inset-0 z-[60] pointer-events-none">
+        <canvas
+          ref={canvasRef}
+          onMouseDown={startDrawing}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onTouchStart={startDrawing}
+          onTouchMove={(e) => {
+            if (isDrawing) {
+              const pos = getPointerPos(e);
+              setCurrentPath((prev) => [...prev, pos]);
+              redraw();
+            }
+          }}
+          onTouchEnd={handleMouseUp}
+          className="absolute inset-0 z-20 pointer-events-auto"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-in fade-in duration-500">
@@ -359,6 +439,38 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode, maskPurp
                    : "Paint areas for furniture placement")
                  : "Draw on image to mark changes"}
              </p>
+             {isMaskMode && (
+               <div className="flex items-center gap-2 pr-2">
+                 <span className="text-[10px] font-black text-white/40 uppercase tracking-widest hidden md:block">
+                   Brush
+                 </span>
+                 <button
+                   type="button"
+                   onClick={() => setBrushSize((s) => Math.max(MIN_BRUSH, s - 8))}
+                   className="h-10 w-10 rounded-xl text-white/70 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center"
+                   title="Smaller brush"
+                 >
+                   <Minus className="h-4 w-4" />
+                 </button>
+                 <input
+                   type="range"
+                   min={MIN_BRUSH}
+                   max={MAX_BRUSH}
+                   value={brushSize}
+                   onChange={(e) => setBrushSize(Math.max(MIN_BRUSH, Math.min(MAX_BRUSH, Number(e.target.value))))}
+                   className="w-28 md:w-40 accent-pink-500"
+                   aria-label="Brush size"
+                 />
+                 <button
+                   type="button"
+                   onClick={() => setBrushSize((s) => Math.min(MAX_BRUSH, s + 8))}
+                   className="h-10 w-10 rounded-xl text-white/70 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center"
+                   title="Larger brush"
+                 >
+                   <Plus className="h-4 w-4" />
+                 </button>
+               </div>
+             )}
              <button 
               onClick={handleSave}
               disabled={paths.length === 0}
@@ -468,5 +580,5 @@ export function DrawingCanvas({ imageUrl, onSave, onCancel, isMaskMode, maskPurp
       </div>
     </div>
   );
-}
+});
 

@@ -38,6 +38,7 @@ import {
   Square,
   Sofa,
   Trash2,
+  Eraser,
   Wand2,
   Sliders
 } from "lucide-react";
@@ -45,9 +46,12 @@ import { cn, formatDropboxUrl, cleanDropboxLink } from "@/lib/utils";
 import { getGalleryAssets } from "@/app/actions/storage";
 import { toggleFavorite } from "@/app/actions/gallery";
 import { createEditRequest } from "@/app/actions/edit-request";
-import { unlockAiSuiteForGallery } from "@/app/actions/ai-suite";
+import { runAiSuiteSpotRemoval, unlockAiSuiteForGallery } from "@/app/actions/ai-suite";
 import { permissionService } from "@/lib/permission-service";
 import { CameraLoader } from "@/components/ui/camera-loader";
+import type { ProAnnotationCanvasHandle } from "./pro-annotation-canvas";
+import { generateSocialEditBlob, SOCIAL_ADJUSTMENTS, SOCIAL_PRESETS, type SocialEditorState } from "./social-cropper";
+import type { DrawingCanvasHandle } from "./drawing-canvas";
 
 // Lazy-load heavy components to reduce TBT (Total Blocking Time)
 const DrawingCanvas = dynamic(() => import("./drawing-canvas").then(m => m.DrawingCanvas), { ssr: false });
@@ -132,13 +136,17 @@ export function GalleryPublicViewer({
   const [isAiSocialVideoOpen, setIsAiSocialVideoOpen] = useState(false);
   const [aiSocialVideoError, setAiSocialVideoError] = useState<string | null>(null);
   const [isAiSocialVideoGenerating, setIsAiSocialVideoGenerating] = useState(false);
-  const [postUnlockAction, setPostUnlockAction] = useState<null | "ai_social_video" | "ai_day_to_dusk" | "ai_remove_furniture" | "ai_replace_furniture" | "ai_advanced_prompt">(null);
-  const [aiRequestedAction, setAiRequestedAction] = useState<null | "day_to_dusk" | "remove_furniture" | "replace_furniture" | "advanced_prompt">(null);
+  const [postUnlockAction, setPostUnlockAction] = useState<
+    null | "ai_social_video" | "ai_day_to_dusk" | "ai_remove_furniture" | "ai_replace_furniture" | "ai_advanced_prompt" | "ai_spot_removal"
+  >(null);
+  const [aiRequestedAction, setAiRequestedAction] = useState<
+    null | "day_to_dusk" | "remove_furniture" | "replace_furniture" | "advanced_prompt" | "spot_removal"
+  >(null);
   const [aiRequestedNonce, setAiRequestedNonce] = useState(0);
   const [socialInitialTab, setSocialInitialTab] = useState<"crop" | "adjust">("crop");
   const [annotationInitialTool, setAnnotationInitialTool] = useState<"select" | "pin" | "boundary" | "text">("select");
 
-  type EditorTool = "none" | "social" | "color" | "pin" | "boundary" | "ai" | "request";
+  type EditorTool = "none" | "social" | "color" | "pin" | "boundary" | "ai" | "spot" | "request";
   const [activeTool, setActiveTool] = useState<EditorTool>("none");
 
   type ImageVersion = {
@@ -167,6 +175,31 @@ export function GalleryPublicViewer({
   // Mobile-only header auto-hide on scroll (desktop/tablet unchanged)
   const [hideHeader, setHideHeader] = useState(false);
   const lastScrollY = useRef(0);
+  const proAnnotationRef = useRef<ProAnnotationCanvasHandle | null>(null);
+  const spotCanvasRef = useRef<DrawingCanvasHandle | null>(null);
+  const [spotUiTool, setSpotUiTool] = useState<"pen" | "eraser">("pen");
+  const [spotUiBrush, setSpotUiBrush] = useState(60);
+  const revisionCanvasRef = useRef<DrawingCanvasHandle | null>(null);
+  const [revisionUiTool, setRevisionUiTool] = useState<"pen" | "eraser">("pen");
+  const [revisionUiBrush, setRevisionUiBrush] = useState(60);
+  const [socialEditor, setSocialEditor] = useState<SocialEditorState>(() => ({
+    activeTab: "crop",
+    crop: { x: 0, y: 0 },
+    zoom: 1,
+    aspect: undefined,
+    activePreset: "original",
+    croppedAreaPixels: null,
+    adjustValues: {
+      exposure: 100,
+      luminance: 100,
+      contrast: 100,
+      saturation: 100,
+      warmth: 0,
+      hue: 0,
+    },
+    luminanceTargetHex: "#ffffff",
+    activeAdjId: SOCIAL_ADJUSTMENTS[0]?.id || "exposure",
+  }));
 
   // Image selection (images only)
   const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(() => new Set());
@@ -239,27 +272,91 @@ export function GalleryPublicViewer({
     setIsAISuiteOpen(true);
   };
 
+  const openLockedSpotRemoval = () => {
+    // Gate behind existing per-gallery AI Suite unlock/quota
+    if (!aiSuiteUnlocked || aiSuiteRemainingEdits <= 0) {
+      setAiSuiteTermsAccepted(false);
+      setPostUnlockAction("ai_spot_removal");
+      setIsAiSuiteUnlockOpen(true);
+      return;
+    }
+    setAiRequestedAction("spot_removal");
+    setAiRequestedNonce((n) => n + 1);
+    setIsRequestingEdit(false);
+    setIsAISuiteOpen(false);
+    setActiveTool("spot");
+    setIsSpotRemovalOpen(true);
+  };
+
   const TOOLBAR = useMemo(() => {
     return {
       unlocked: [
-        { id: "social", label: "Social Editor", icon: Instagram, onClick: () => { setIsRequestingEdit(false); setIsAISuiteOpen(false); setSocialInitialTab("crop"); setActiveTool("social"); setIsSocialCropperOpen(false); } },
-        { id: "color", label: "Colour", icon: Sliders, onClick: () => { setIsRequestingEdit(false); setIsAISuiteOpen(false); setSocialInitialTab("adjust"); setActiveTool("color"); setIsSocialCropperOpen(false); } },
-        { id: "pin", label: "Drop-pin", icon: MapPin, onClick: () => { setIsRequestingEdit(false); setIsAISuiteOpen(false); setAnnotationInitialTool("pin"); setActiveTool("pin"); setIsAnnotationOpen(false); } },
-        { id: "boundary", label: "Boundary", icon: Square, onClick: () => { setIsRequestingEdit(false); setIsAISuiteOpen(false); setAnnotationInitialTool("boundary"); setActiveTool("boundary"); setIsAnnotationOpen(false); } },
-        { id: "revision", label: "Request Revision", icon: PenTool, onClick: () => { setIsAISuiteOpen(false); setActiveTool("request"); setIsRequestingEdit(true); } },
+        { id: "revision", label: "Request Revision", description: "Send notes/markups to our editors (no AI unlock needed).", icon: PenTool, onClick: () => { 
+          setIsAISuiteOpen(false);
+          setIsSpotRemovalOpen(false);
+          setIsDrawingMode(false);
+          setActiveTool("request"); 
+          setIsRequestingEdit(true); 
+        } },
+        { id: "social", label: "Social Editor", description: "Crop presets + export for web/social.", icon: Instagram, onClick: () => { 
+          setIsRequestingEdit(false); 
+          setIsAISuiteOpen(false); 
+          setSocialInitialTab("crop"); 
+          setSocialEditor((prev) => ({
+            ...prev,
+            activeTab: "crop",
+            crop: { x: 0, y: 0 },
+            zoom: 1,
+            aspect: undefined,
+            activePreset: "original",
+            croppedAreaPixels: null,
+          }));
+          setActiveTool("social"); 
+          setIsSocialCropperOpen(false); 
+        } },
+        { id: "color", label: "Colour", description: "Adjust exposure/contrast/saturation (on this image).", icon: Sliders, onClick: () => { 
+          setIsRequestingEdit(false); 
+          setIsAISuiteOpen(false); 
+          setSocialInitialTab("adjust"); 
+          setSocialEditor((prev) => ({
+            ...prev,
+            activeTab: "adjust",
+          }));
+          setActiveTool("color"); 
+          setIsSocialCropperOpen(false); 
+        } },
+        { id: "pin", label: "Drop-pin", description: "Add pins/notes on the photo for your team.", icon: MapPin, onClick: () => { setIsRequestingEdit(false); setIsAISuiteOpen(false); setAnnotationInitialTool("pin"); setActiveTool("pin"); setIsAnnotationOpen(false); } },
+        { id: "boundary", label: "Boundary", description: "Draw boundary lines/areas for guidance.", icon: Square, onClick: () => { setIsRequestingEdit(false); setIsAISuiteOpen(false); setAnnotationInitialTool("boundary"); setActiveTool("boundary"); setIsAnnotationOpen(false); } },
       ],
       locked: [
-        { id: "day_to_dusk", label: "Day → Dusk", icon: Moon, onClick: () => openLockedAiTool("day_to_dusk") },
-        { id: "remove", label: "Remove Furniture", icon: Trash2, onClick: () => openLockedAiTool("remove_furniture") },
-        { id: "replace", label: "Replace Furniture", icon: Sofa, onClick: () => openLockedAiTool("replace_furniture") },
-        { id: "advanced", label: "Advanced Prompt", icon: Wand2, onClick: () => openLockedAiTool("advanced_prompt") },
+        { id: "day_to_dusk", label: "Day → Dusk", description: "Convert daylight to dusk lighting (AI).", icon: Moon, onClick: () => openLockedAiTool("day_to_dusk") },
+        { id: "remove", label: "Remove Furniture", description: "Remove existing furniture (AI).", icon: Trash2, onClick: () => openLockedAiTool("remove_furniture") },
+        { id: "spot", label: "Item removal", description: "Paint pink to remove objects (content-aware).", icon: Eraser, onClick: () => openLockedSpotRemoval() },
+        { id: "replace", label: "Replace Furniture", description: "Replace furniture style (AI).", icon: Sofa, onClick: () => openLockedAiTool("replace_furniture") },
+        { id: "advanced", label: "Advanced Prompt", description: "Custom AI prompt for this image.", icon: Wand2, onClick: () => openLockedAiTool("advanced_prompt") },
       ],
       comingSoon: [
-        { id: "ai_video", label: "AI Social Video", icon: Film },
+        { id: "ai_video", label: "AI Social Video", description: "Generate a quick social video from selected images.", icon: Film },
       ],
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiSuiteUnlocked, aiSuiteRemainingEdits]);
+
+  const startRevisionMarkup = () => {
+    setActiveTool("request");
+    setIsRequestingEdit(false);
+    setIsDrawingMode(true);
+    setRevisionUiTool("pen");
+    setRevisionUiBrush(60);
+    queueMicrotask(() => {
+      revisionCanvasRef.current?.setTool("pen");
+      revisionCanvasRef.current?.setBrushSize(60);
+    });
+  };
+
+  const [isSpotRemovalOpen, setIsSpotRemovalOpen] = useState(false);
+  const [isSpotRemovalProcessing, setIsSpotRemovalProcessing] = useState(false);
+  const [spotRemovalError, setSpotRemovalError] = useState<string | null>(null);
 
   const toggleSelectImage = (item: any) => {
     const key = getAssetKey(item);
@@ -1562,204 +1659,12 @@ export function GalleryPublicViewer({
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
-                <>
-                  {gallery.isCopyPublished && gallery.aiCopy && (
-                    <button 
-                      onClick={() => setIsCopyModalOpen(true)}
-                      className="h-10 px-6 rounded-full bg-white text-slate-900 text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all shadow-lg border border-slate-200"
-                    >
-                      <FileText className="h-3.5 w-3.5 text-primary" />
-                      Property Copy
-                    </button>
-                  )}
-
-                  <>
-                    {!!user && !isShared && (
-                      <>
-                        {/* Lightroom-style toolbar (replaces the choice modal) */}
-                        <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-2 py-1 max-w-[62vw] overflow-x-auto flex-nowrap rounded-full md:max-w-none md:overflow-visible md:flex-wrap md:rounded-2xl">
-                        {TOOLBAR.unlocked.map((t) => (
-                      <button 
-                            key={t.id}
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              (t as any).onClick?.();
-                            }}
-                            className={cn(
-                              "relative shrink-0 h-10 px-4 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all border",
-                              // Active tool glow (Photoshop-style)
-                              (t.id === "social" && activeTool === "social") ||
-                                (t.id === "color" && activeTool === "color") ||
-                                (t.id === "pin" && activeTool === "pin") ||
-                                (t.id === "boundary" && activeTool === "boundary") ||
-                                (t.id === "revision" && activeTool === "request")
-                                ? "bg-emerald-500/15 border-emerald-400/40 text-white shadow-[0_0_0_1px_rgba(16,185,129,0.25),0_0_24px_rgba(16,185,129,0.18)]"
-                                : "bg-white/5 hover:bg-white/10 text-white/90 border-white/10"
-                            )}
-                            title={t.label}
-                            aria-label={t.label}
-                          >
-                            <t.icon
-                              className={cn(
-                                "h-3.5 w-3.5",
-                                (t.id === "pin" && activeTool === "pin") ||
-                                  (t.id === "boundary" && activeTool === "boundary") ||
-                                  (t.id === "social" && activeTool === "social") ||
-                                  (t.id === "color" && activeTool === "color") ||
-                                  (t.id === "revision" && activeTool === "request")
-                                  ? "text-emerald-200"
-                                  : "text-white/80"
-                              )}
-                            />
-                            <span className="hidden md:inline">{t.label}</span>
-                      </button>
-                        ))}
-
-                        {TOOLBAR.locked.map((t) => (
-                          (() => {
-                            const aiReady = aiSuiteUnlocked && aiSuiteRemainingEdits > 0;
-                            const aiSelected =
-                              activeTool === "ai" &&
-                              ((t.id === "day_to_dusk" && aiRequestedAction === "day_to_dusk") ||
-                                (t.id === "remove" && aiRequestedAction === "remove_furniture") ||
-                                (t.id === "replace" && aiRequestedAction === "replace_furniture") ||
-                                (t.id === "advanced" && aiRequestedAction === "advanced_prompt"));
-                            return (
-                          <button
-                            key={t.id}
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              (t as any).onClick?.();
-                            }}
-                            className={cn(
-                              "relative shrink-0 h-10 px-4 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all border",
-                              aiSelected && "shadow-[0_0_0_1px_rgba(16,185,129,0.25),0_0_24px_rgba(16,185,129,0.18)]",
-                              aiReady
-                                ? "bg-emerald-500/10 hover:bg-emerald-500/20 text-white border-emerald-500/25"
-                                : "bg-white/5 hover:bg-white/10 text-white/70 border-white/10"
-                            )}
-                            title={t.label}
-                            aria-label={t.label}
-                          >
-                            <t.icon className="h-3.5 w-3.5" />
-                            <span className="hidden md:inline">{t.label}</span>
-                            <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-slate-900 border border-white/10 flex items-center justify-center">
-                              {aiReady ? (
-                                <Zap className="h-3 w-3 text-emerald-400" />
-                              ) : (
-                                <Lock className="h-3 w-3 text-white/80" />
-                              )}
-                            </span>
-                          </button>
-                            );
-                          })()
-                        ))}
-
-                        {TOOLBAR.comingSoon.map((t) => (
-                          <button
-                            key={t.id}
-                            type="button"
-                            disabled
-                            className="relative shrink-0 h-10 px-4 rounded-full bg-white/5 text-white/30 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all border border-white/10 cursor-not-allowed"
-                            title={`${t.label} (coming soon)`}
-                            aria-label={`${t.label} (coming soon)`}
-                          >
-                            <t.icon className="h-3.5 w-3.5" />
-                            <span className="hidden md:inline">{t.label}</span>
-                            <span className="absolute -top-1 -right-1 px-2 py-0.5 rounded-full bg-slate-900 border border-white/10 text-[8px] font-black uppercase tracking-widest text-white/60">
-                              Soon
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-
-                      {versionsForSelected.length > 1 && activeAssetKey && (
-                        <div className="hidden lg:flex items-center gap-2 max-w-[340px] overflow-x-auto no-scrollbar">
-                          {versionsForSelected.map((v) => (
-                            <button
-                              key={v.id}
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveVersionIdByAssetId((prev) => ({ ...prev, [activeAssetKey]: v.id }));
-                              }}
-                              className={cn(
-                                "shrink-0 h-10 px-4 rounded-full text-[10px] font-black uppercase tracking-widest transition-all border",
-                                v.id === activeVersionId
-                                  ? "bg-white text-slate-900 border-white shadow-lg"
-                                  : "bg-white/5 text-white/70 border-white/10 hover:bg-white/10"
-                              )}
-                              title={v.label}
-                            >
-                              {v.label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      </>
-                    )}
-
-                      <button 
-                        onClick={(e) => handleToggleFavorite(e, selectedAsset)}
-                        className={cn(
-                          "h-10 w-10 rounded-full flex items-center justify-center transition-all border shadow-lg",
-                          favorites.includes(selectedAsset.id || selectedAsset.url)
-                            ? "bg-rose-500 border-rose-400 text-white"
-                            : "bg-white/5 border-white/10 text-white hover:bg-white hover:text-rose-500"
-                        )}
-                      >
-                        <Heart className={cn("h-4 w-4", favorites.includes(selectedAsset.id || selectedAsset.url) && "fill-current")} />
-                      </button>
-                  </>
-                  
-                  {canDownload && (
-                    <button 
-                      onClick={() => {
-                        if (activeVersion && activeVersion.id !== "original") {
-                          if (activeVersion.kind === "blob" && activeVersion.blob) {
-                            const downloadUrl = URL.createObjectURL(activeVersion.blob);
-                            const vAsset = {
-                              ...selectedAsset,
-                              id: `version-${selectedAsset.id}-${activeVersion.id}`,
-                              name: `${activeVersion.label}-${selectedAsset.name}`,
-                              isMarkup: true,
-                              markupBlob: activeVersion.blob,
-                              originalPath: selectedAsset.path,
-                              originalName: selectedAsset.name,
-                              url: downloadUrl,
-                            };
-                            setDownloadAssets([vAsset]);
-                          } else {
-                            const vAsset = {
-                              ...selectedAsset,
-                              id: `version-${selectedAsset.id}-${activeVersion.id}`,
-                              name: `${activeVersion.label}-${selectedAsset.name}`,
-                              url: activeVersion.src,
-                              originalPath: selectedAsset.path,
-                              originalName: selectedAsset.name,
-                              isAiResult: activeVersion.tool === "ai",
-                            };
-                            setDownloadAssets([vAsset]);
-                          }
-                        } else {
-                          setDownloadAssets([selectedAsset]);
-                        }
-                        setIsDownloadManagerOpen(true);
-                      }}
-                      className="h-10 px-6 rounded-full bg-white text-slate-900 text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all"
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                      Download
-                    </button>
-                  )}
-                </>
-            </div>
+            <div className="flex items-center gap-3" />
           </div>
 
-            <div className="flex-1 relative flex items-center justify-center p-8">
+            <div className="flex-1 relative flex gap-5 p-4 md:p-8 overflow-hidden">
+              {/* Image area */}
+              <div className="flex-1 relative flex items-center justify-center min-w-0">
                 <button 
                   className={cn(
                     "absolute left-6 h-14 w-14 rounded-full bg-white/5 text-white flex items-center justify-center hover:bg-white/10 transition-all border border-white/5 group z-20",
@@ -1785,13 +1690,13 @@ export function GalleryPublicViewer({
                   )}
                 </button>
               
-              <div className={cn(
-                "relative group/main transition-all duration-500 ease-in-out",
-                (activeTool === "request" || activeTool === "pin" || activeTool === "boundary") ? "lg:mr-[1000px]"
-                  : activeTool === "ai" ? "lg:mr-[480px]"
-                  : (activeTool === "social" || activeTool === "color") ? "lg:mr-[520px]"
-                  : "lg:mr-0"
-              )}>
+              <div
+                className={cn(
+                  "relative inline-block align-middle group/main transition-all duration-500 ease-in-out",
+                  // Space is now handled by the right rail; avoid huge layout jumps.
+                  "lg:mr-0"
+                )}
+              >
                 <img 
                   ref={imgRef}
                   src={activeImageSrc || getImageUrl(selectedAsset.url, "w1024h768")} 
@@ -1806,6 +1711,159 @@ export function GalleryPublicViewer({
                   }}
                   className="max-h-[85vh] max-w-full object-contain rounded-xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.8)]"
                 />
+
+                {/* Photoshop-style: Pin/Boundary edits happen on the MAIN image (no second preview panel). */}
+                {(activeTool === "pin" || activeTool === "boundary") && selectedAsset && (
+                  <ProAnnotationCanvas
+                    // Dynamic component types don't carry refs well; cast is safe for our imperative handle.
+                    ref={proAnnotationRef as any}
+                    mode="embedded"
+                    enabledTools={["select", "pin", "boundary"]}
+                    imageUrl={activeImageSrc}
+                    exportImageUrl={
+                      selectedAsset?.path
+                        ? `/api/dropbox/download/${gallery.id}?path=${encodeURIComponent(selectedAsset.path)}&sharedLink=${encodeURIComponent(String(gallery.metadata?.dropboxLink || ""))}&applyBranding=false`
+                        : activeImageSrc
+                    }
+                    logoUrl={
+                      (() => {
+                        const raw = (gallery.clientBranding?.url || tenant.logoUrl || "").toString();
+                        if (!raw) return undefined;
+                        if (raw.includes("dropbox.com") || raw.includes("dropboxusercontent.com")) {
+                          return `/api/logo-proxy?url=${encodeURIComponent(raw)}`;
+                        }
+                        return raw;
+                      })()
+                    }
+                    initialTool={annotationInitialTool}
+                    onSave={(data, blob) => {
+                      setAnnotationData(data);
+
+                      if (blob) {
+                        const persistUrl = URL.createObjectURL(blob);
+                        const downloadUrl = URL.createObjectURL(blob);
+                        addVersion(selectedAsset, {
+                          id: `markup-${Date.now()}`,
+                          label: activeTool === "boundary" ? "Boundary" : "Pin Drop",
+                          tool: activeTool,
+                          kind: "blob",
+                          src: persistUrl,
+                          blob,
+                        });
+
+                        const markedUpAsset = {
+                          ...selectedAsset,
+                          id: `markup-${selectedAsset.id}`,
+                          name: `MarkedUp-${selectedAsset.name}`,
+                          isMarkup: true,
+                          markupBlob: blob,
+                          originalName: selectedAsset.name,
+                          originalPath: selectedAsset.path,
+                          url: downloadUrl,
+                        };
+                        setDownloadAssets([markedUpAsset]);
+                        setIsDownloadManagerOpen(true);
+                        setActiveTool("none");
+                      } else {
+                        setIsRequestingEdit(true);
+                        setActiveTool("request");
+                      }
+                    }}
+                    onCancel={() => setActiveTool("none")}
+                  />
+                )}
+
+                {/* Photoshop-style: Social/Colour edits happen on the MAIN image (no second preview panel). */}
+                {(activeTool === "social" || activeTool === "color") && selectedAsset && (
+                  <SocialCropper
+                    mode="embedded"
+                    variant={activeTool === "color" ? "adjust" : "crop"}
+                    imageUrl={activeImageSrc}
+                    imageName={selectedAsset.name}
+                    onClose={() => setActiveTool("none")}
+                    state={socialEditor}
+                    onStateChange={(patch) => {
+                      setSocialEditor((prev) => ({
+                        ...prev,
+                        ...patch,
+                        adjustValues: patch.adjustValues ? { ...prev.adjustValues, ...patch.adjustValues } : prev.adjustValues,
+                      }));
+                    }}
+                  />
+                )}
+
+                {/* Photoshop-style: Item Removal paints directly on the MAIN image (no separate view). */}
+                {isSpotRemovalOpen && activeTool === "spot" && selectedAsset && (
+                  <DrawingCanvas
+                    ref={spotCanvasRef as any}
+                    mode="embedded"
+                    imageUrl={activeVersion?.kind === "blob" ? getImageUrl(selectedAsset.url, "w2048h1536") : activeImageSrc}
+                    isMaskMode
+                    maskPurpose="remove"
+                    onSave={async (_data, maskUrl) => {
+                      if (!maskUrl) {
+                        setSpotRemovalError("Please paint over the item(s) you want removed.");
+                        return;
+                      }
+                      setSpotRemovalError(null);
+                      setIsSpotRemovalOpen(false);
+                      setIsSpotRemovalProcessing(true);
+                      try {
+                        const res = await runAiSuiteSpotRemoval({
+                          galleryId: gallery.id,
+                          assetUrl: activeVersion?.kind === "blob" ? getImageUrl(selectedAsset.url, "w2048h1536") : activeImageSrc,
+                          dbxPath: selectedAsset.path,
+                          maskDataUrl: maskUrl,
+                        });
+                        if (res?.success && res.outputUrl) {
+                          if (res.aiSuite) setAiSuiteState((prev: any) => ({ ...(prev || {}), ...(res.aiSuite || {}) }));
+                          addVersion(selectedAsset, {
+                            id: `spot-${Date.now()}`,
+                            label: "Item Removal",
+                            tool: "spot",
+                            kind: "url",
+                            src: String(res.outputUrl),
+                          });
+                          setActiveTool("none");
+                        } else {
+                          if ((res as any)?.error === "AI_DISABLED") {
+                            setSpotRemovalError("AI Suite is disabled for this studio.");
+                          } else if ((res as any)?.error === "AI_SUITE_LOCKED" || (res as any)?.error === "AI_SUITE_LIMIT") {
+                            setAiSuiteTermsAccepted(false);
+                            setPostUnlockAction("ai_spot_removal");
+                            setIsAiSuiteUnlockOpen(true);
+                          }
+                          setSpotRemovalError((res as any)?.error || "AI removal failed. Please try again.");
+                        }
+                      } finally {
+                        setIsSpotRemovalProcessing(false);
+                      }
+                    }}
+                    onCancel={() => {
+                      setIsSpotRemovalOpen(false);
+                      setSpotRemovalError(null);
+                      setActiveTool("none");
+                    }}
+                  />
+                )}
+
+                {/* Photoshop-style: Request Revision markups draw directly on the MAIN image (no popup drawing screen). */}
+                {isDrawingMode && activeTool === "request" && selectedAsset && (
+                  <DrawingCanvas
+                    ref={revisionCanvasRef as any}
+                    mode="embedded"
+                    imageUrl={activeVersion?.kind === "blob" ? getImageUrl(selectedAsset.url, "w2048h1536") : activeImageSrc}
+                    onSave={(data) => {
+                      setDrawingData(data);
+                      setIsDrawingMode(false);
+                      setIsRequestingEdit(true);
+                    }}
+                    onCancel={() => {
+                      setIsDrawingMode(false);
+                      setIsRequestingEdit(true);
+                    }}
+                  />
+                )}
                 
                 {activeTool === "none" && (
                   <div className="absolute bottom-8 left-1/2 -translate-x-1/2 px-4 py-2 bg-black/40 backdrop-blur-md rounded-full border border-white/10 opacity-0 group-hover/main:opacity-100 transition-opacity text-center">
@@ -1842,52 +1900,755 @@ export function GalleryPublicViewer({
                     <ChevronRight className="h-8 w-8 group-hover:scale-110 transition-transform" />
                   )}
                 </button>
+              </div>
+
+              {/* Right rail: Tools + Results */}
+              <aside className="w-[220px] sm:w-[260px] lg:w-[320px] shrink-0">
+                <div className="h-full max-h-[calc(100vh-140px)] overflow-y-auto no-scrollbar rounded-3xl bg-white/5 border border-white/10 p-4 backdrop-blur-md">
+                  {/* Top actions */}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      {!!user && !isShared && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleToggleFavorite(e as any, selectedAsset)}
+                          className={cn(
+                            "h-10 w-10 rounded-2xl flex items-center justify-center transition-all border shadow-lg",
+                            favorites.includes(selectedAsset.id || selectedAsset.url)
+                              ? "bg-rose-500 border-rose-400 text-white"
+                              : "bg-white/5 border-white/10 text-white hover:bg-white hover:text-rose-500"
+                          )}
+                          title="Favourite"
+                        >
+                          <Heart
+                            className={cn(
+                              "h-4 w-4",
+                              favorites.includes(selectedAsset.id || selectedAsset.url) && "fill-current"
+                            )}
+                          />
+                        </button>
+                      )}
+
+                      {gallery.isCopyPublished && gallery.aiCopy && (
+                        <button
+                          type="button"
+                          onClick={() => setIsCopyModalOpen(true)}
+                          className="h-10 px-4 rounded-2xl bg-white text-slate-900 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-[1.02] transition-all shadow-lg border border-slate-200"
+                          title="Property Copy"
+                        >
+                          <FileText className="h-3.5 w-3.5 text-primary" />
+                          Copy
+                        </button>
+                      )}
+                    </div>
+
+                    {canDownload && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (activeVersion && activeVersion.id !== "original") {
+                            if (activeVersion.kind === "blob" && activeVersion.blob) {
+                              const downloadUrl = URL.createObjectURL(activeVersion.blob);
+                              const vAsset = {
+                                ...selectedAsset,
+                                id: `version-${selectedAsset.id}-${activeVersion.id}`,
+                                name: `${activeVersion.label}-${selectedAsset.name}`,
+                                isMarkup: true,
+                                markupBlob: activeVersion.blob,
+                                originalPath: selectedAsset.path,
+                                originalName: selectedAsset.name,
+                                url: downloadUrl,
+                              };
+                              setDownloadAssets([vAsset]);
+                            } else {
+                              const vAsset = {
+                                ...selectedAsset,
+                                id: `version-${selectedAsset.id}-${activeVersion.id}`,
+                                name: `${activeVersion.label}-${selectedAsset.name}`,
+                                url: activeVersion.src,
+                                originalPath: selectedAsset.path,
+                                originalName: selectedAsset.name,
+                                isAiResult: activeVersion.tool === "ai",
+                              };
+                              setDownloadAssets([vAsset]);
+                            }
+                          } else {
+                            setDownloadAssets([selectedAsset]);
+                          }
+                          setIsDownloadManagerOpen(true);
+                        }}
+                        className="h-10 px-4 rounded-2xl bg-white text-slate-900 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-[1.02] transition-all shadow-lg"
+                        title="Download"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Download
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Results */}
+                  <div className="mt-5">
+                    <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-3">Results</p>
+                    <div className="space-y-2">
+                      {versionsForSelected.map((v) => (
+                        <button
+                          key={v.id}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!activeAssetKey) return;
+                            setActiveVersionIdByAssetId((prev) => ({ ...prev, [activeAssetKey]: v.id }));
+                          }}
+                          className={cn(
+                            "w-full h-10 px-4 rounded-2xl text-left text-[10px] font-black uppercase tracking-widest transition-all border flex items-center justify-between",
+                            v.id === activeVersionId
+                              ? "bg-white text-slate-900 border-white shadow-lg"
+                              : "bg-white/5 text-white/70 border-white/10 hover:bg-white/10"
+                          )}
+                          title={v.label}
+                        >
+                          <span className="truncate">{v.label}</span>
+                          {v.id === activeVersionId && (
+                            <span className="ml-3 text-[9px] font-black uppercase tracking-widest text-slate-500">
+                              Active
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Tools */}
+                  {!!user && !isShared && (
+                    <div className="mt-6">
+                      <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-3">Tools</p>
+
+                      {(activeTool === "pin" || activeTool === "boundary") && (
+                        <div className="mb-4 p-4 rounded-3xl bg-white/5 border border-white/10">
+                          <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">Editing</p>
+                          <p className="text-sm font-black text-white mt-2 tracking-tight">
+                            {activeTool === "boundary" ? "Boundary" : "Drop-pin"} (on main image)
+                          </p>
+                          <p className="text-xs font-medium text-white/50 mt-1">
+                            Click directly on the photo to add. Drag to move. Resize the logo using the corner handle.
+                          </p>
+
+                          <div className="mt-4 grid grid-cols-3 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setAnnotationInitialTool("select")}
+                              className={cn(
+                                "h-10 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all",
+                                annotationInitialTool === "select"
+                                  ? "bg-white text-slate-950 border-white"
+                                  : "bg-white/0 text-white/70 border-white/10 hover:bg-white/5"
+                              )}
+                            >
+                              Move
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setAnnotationInitialTool("pin")}
+                              className={cn(
+                                "h-10 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all",
+                                annotationInitialTool === "pin"
+                                  ? "bg-white text-slate-950 border-white"
+                                  : "bg-white/0 text-white/70 border-white/10 hover:bg-white/5"
+                              )}
+                            >
+                              Pin
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setAnnotationInitialTool("boundary")}
+                              className={cn(
+                                "h-10 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all",
+                                annotationInitialTool === "boundary"
+                                  ? "bg-white text-slate-950 border-white"
+                                  : "bg-white/0 text-white/70 border-white/10 hover:bg-white/5"
+                              )}
+                            >
+                              Boundary
+                            </button>
+                          </div>
+
+                          <div className="mt-4 grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                proAnnotationRef.current?.clear();
+                                setActiveTool("none");
+                              }}
+                              className="h-11 rounded-2xl bg-white/0 border border-white/10 text-white/80 text-[10px] font-black uppercase tracking-widest hover:bg-white/5 transition-all"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => proAnnotationRef.current?.save()}
+                              className="h-11 rounded-2xl bg-white text-slate-950 text-[10px] font-black uppercase tracking-widest hover:scale-[1.01] transition-all shadow-lg"
+                            >
+                              Apply
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {(activeTool === "social" || activeTool === "color") && selectedAsset && (
+                        <div className="mb-4 p-4 rounded-3xl bg-white/5 border border-white/10">
+                          <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">Editing</p>
+                          <p className="text-sm font-black text-white mt-2 tracking-tight">
+                            {activeTool === "color" ? "Colour" : "Social Crop"} (on main image)
+                          </p>
+                          <p className="text-xs font-medium text-white/50 mt-1">
+                            {activeTool === "color"
+                              ? "Adjust sliders and preview directly on the photo."
+                              : "Choose a preset and zoom/position directly on the photo."}
+                          </p>
+
+                          {activeTool === "social" ? (
+                            <div className="mt-4 space-y-3">
+                              <div className="grid grid-cols-2 gap-2">
+                                {SOCIAL_PRESETS.map((p) => (
+                                  <button
+                                    key={p.id}
+                                    type="button"
+                                    onClick={() =>
+                                      setSocialEditor((prev) => ({
+                                        ...prev,
+                                        activeTab: "crop",
+                                        activePreset: p.id,
+                                        aspect: p.ratio as any,
+                                      }))
+                                    }
+                                    className={cn(
+                                      "h-10 px-3 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center",
+                                      socialEditor.activePreset === p.id
+                                        ? "bg-white text-slate-950 border-white"
+                                        : "bg-white/0 text-white/70 border-white/10 hover:bg-white/5"
+                                    )}
+                                  >
+                                    {p.label}
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">
+                                    Zoom
+                                  </span>
+                                  <span className="text-[10px] font-black text-white/60">
+                                    {Math.round((socialEditor.zoom || 1) * 100)}%
+                                  </span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min={1}
+                                  max={3}
+                                  step={0.01}
+                                  value={socialEditor.zoom || 1}
+                                  onChange={(e) =>
+                                    setSocialEditor((prev) => ({ ...prev, zoom: Number(e.target.value) }))
+                                  }
+                                  className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary"
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="mt-4 space-y-3">
+                              <div className="grid grid-cols-2 gap-2">
+                                {SOCIAL_ADJUSTMENTS.map((a) => (
+                                  <button
+                                    key={a.id}
+                                    type="button"
+                                    onClick={() => setSocialEditor((prev) => ({ ...prev, activeAdjId: a.id }))}
+                                    className={cn(
+                                      "h-10 px-3 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center",
+                                      socialEditor.activeAdjId === a.id
+                                        ? "bg-white text-slate-950 border-white"
+                                        : "bg-white/0 text-white/70 border-white/10 hover:bg-white/5"
+                                    )}
+                                  >
+                                    {a.label}
+                                  </button>
+                                ))}
+                              </div>
+
+                              {socialEditor.activeAdjId === "hue" && (
+                                <div className="flex items-center justify-between gap-3">
+                                  <input
+                                    type="color"
+                                    value={(() => {
+                                      // derive a hue swatch from current hue by reusing the helper in SocialCropper (approx)
+                                      const h = ((Number(socialEditor.adjustValues?.hue || 0) % 360) + 360) % 360;
+                                      const s = 1;
+                                      const l = 0.5;
+                                      const c = (1 - Math.abs(2 * l - 1)) * s;
+                                      const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+                                      const m = l - c / 2;
+                                      let r = 0, g = 0, b = 0;
+                                      if (h < 60) [r, g, b] = [c, x, 0];
+                                      else if (h < 120) [r, g, b] = [x, c, 0];
+                                      else if (h < 180) [r, g, b] = [0, c, x];
+                                      else if (h < 240) [r, g, b] = [0, x, c];
+                                      else if (h < 300) [r, g, b] = [x, 0, c];
+                                      else [r, g, b] = [c, 0, x];
+                                      const to255 = (v: number) => Math.round((v + m) * 255);
+                                      const toHex = (v: number) => to255(v).toString(16).padStart(2, "0");
+                                      return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+                                    })()}
+                                    onChange={(e) => {
+                                      // quick hex->hue conversion
+                                      const m = /^#?([0-9a-f]{6})$/i.exec(e.target.value || "");
+                                      if (!m) return;
+                                      const int = parseInt(m[1], 16);
+                                      const r = ((int >> 16) & 255) / 255;
+                                      const g = ((int >> 8) & 255) / 255;
+                                      const b = (int & 255) / 255;
+                                      const max = Math.max(r, g, b);
+                                      const min = Math.min(r, g, b);
+                                      const d = max - min;
+                                      let h = 0;
+                                      if (d === 0) h = 0;
+                                      else if (max === r) h = ((g - b) / d) % 6;
+                                      else if (max === g) h = (b - r) / d + 2;
+                                      else h = (r - g) / d + 4;
+                                      h = Math.round(h * 60);
+                                      if (h < 0) h += 360;
+                                      setSocialEditor((prev) => ({
+                                        ...prev,
+                                        adjustValues: { ...prev.adjustValues, hue: h },
+                                      }));
+                                    }}
+                                    className="h-10 w-10 rounded-xl border border-white/10 bg-white/5 p-0 overflow-hidden cursor-pointer"
+                                    aria-label="Hue color picker"
+                                  />
+                                  <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">
+                                    Hue swatch
+                                  </p>
+                                </div>
+                              )}
+
+                              {socialEditor.activeAdjId === "luminance" && (
+                                <div className="flex items-center justify-between gap-3">
+                                  <input
+                                    type="color"
+                                    value={socialEditor.luminanceTargetHex || "#ffffff"}
+                                    onChange={(e) =>
+                                      setSocialEditor((prev) => ({ ...prev, luminanceTargetHex: e.target.value }))
+                                    }
+                                    className="h-10 w-10 rounded-xl border border-white/10 bg-white/5 p-0 overflow-hidden cursor-pointer"
+                                    aria-label="Luminance target color picker"
+                                  />
+                                  <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">
+                                    Target color
+                                  </p>
+                                </div>
+                              )}
+
+                              {(() => {
+                                const a = SOCIAL_ADJUSTMENTS.find((x) => x.id === socialEditor.activeAdjId);
+                                if (!a) return null;
+                                const v = Number(socialEditor.adjustValues?.[a.id] ?? a.defaultValue);
+                                return (
+                                  <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">
+                                        {a.label}
+                                      </span>
+                                      <span className="text-[10px] font-black text-white/60">
+                                        {v}
+                                        {a.unit}
+                                      </span>
+                                    </div>
+                                    <input
+                                      type="range"
+                                      min={a.min}
+                                      max={a.max}
+                                      step={1}
+                                      value={v}
+                                      onChange={(e) =>
+                                        setSocialEditor((prev) => ({
+                                          ...prev,
+                                          adjustValues: { ...prev.adjustValues, [a.id]: Number(e.target.value) },
+                                        }))
+                                      }
+                                      className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary"
+                                    />
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          )}
+
+                          <div className="mt-4 grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSocialEditor((prev) => ({
+                                  ...prev,
+                                  crop: { x: 0, y: 0 },
+                                  zoom: 1,
+                                  aspect: undefined,
+                                  activePreset: "original",
+                                  croppedAreaPixels: null,
+                                  activeTab: activeTool === "color" ? "adjust" : "crop",
+                                  activeAdjId: prev.activeAdjId,
+                                }));
+                                setActiveTool("none");
+                              }}
+                              className="h-11 rounded-2xl bg-white/0 border border-white/10 text-white/80 text-[10px] font-black uppercase tracking-widest hover:bg-white/5 transition-all"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  const exportImageUrl = selectedAsset?.path
+                                    ? `/api/dropbox/download/${gallery.id}?path=${encodeURIComponent(selectedAsset.path)}&sharedLink=${encodeURIComponent(String(gallery.metadata?.dropboxLink || ""))}&applyBranding=false`
+                                    : activeImageSrc;
+
+                                  const blob = await generateSocialEditBlob({
+                                    previewImageUrl: activeImageSrc,
+                                    exportImageUrl,
+                                    state: {
+                                      ...socialEditor,
+                                      activeTab: activeTool === "color" ? "adjust" : "crop",
+                                    },
+                                    mime: "image/jpeg",
+                                    quality: 0.95,
+                                  });
+
+                                  const persistUrl = URL.createObjectURL(blob);
+                                  const downloadUrl = URL.createObjectURL(blob);
+                                  addVersion(selectedAsset, {
+                                    id: `social-${Date.now()}`,
+                                    label: activeTool === "color" ? "Colour" : "Social",
+                                    tool: activeTool,
+                                    kind: "blob",
+                                    src: persistUrl,
+                                    blob,
+                                  });
+
+                                  const editedAsset = {
+                                    ...selectedAsset,
+                                    id: `social-${selectedAsset.id}`,
+                                    name: `${activeTool === "color" ? "Colour" : "Social"}-${selectedAsset.name}`,
+                                    isMarkup: true,
+                                    markupBlob: blob,
+                                    originalPath: selectedAsset.path,
+                                    originalName: selectedAsset.name,
+                                    url: downloadUrl,
+                                  };
+                                  setDownloadAssets([editedAsset]);
+                                  setIsDownloadManagerOpen(true);
+                                  setActiveTool("none");
+                                } catch (e: any) {
+                                  alert(e?.message || "Failed to apply edit.");
+                                }
+                              }}
+                              className="h-11 rounded-2xl bg-white text-slate-950 text-[10px] font-black uppercase tracking-widest hover:scale-[1.01] transition-all shadow-lg"
+                            >
+                              Apply
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Request Revision markup controls while drawing (kept in right rail so nothing blocks the image). */}
+                      {isDrawingMode && activeTool === "request" && (
+                        <div className="mb-4 p-4 rounded-3xl bg-emerald-500/10 border border-emerald-400/25">
+                          <p className="text-[10px] font-black text-emerald-200/80 uppercase tracking-widest">Markup</p>
+                          <p className="text-sm font-black text-white mt-2 tracking-tight">Request Revision (on main image)</p>
+                          <p className="text-xs font-medium text-white/60 mt-1">
+                            Draw directly on the photo. Click Done when finished.
+                          </p>
+
+                          <div className="mt-4 grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRevisionUiTool("pen");
+                                revisionCanvasRef.current?.setTool("pen");
+                              }}
+                              className={cn(
+                                "h-10 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all",
+                                revisionUiTool === "pen"
+                                  ? "bg-white text-slate-950 border-white"
+                                  : "bg-white/0 text-white/80 border-white/10 hover:bg-white/5"
+                              )}
+                            >
+                              Brush
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRevisionUiTool("eraser");
+                                revisionCanvasRef.current?.setTool("eraser");
+                              }}
+                              className={cn(
+                                "h-10 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all",
+                                revisionUiTool === "eraser"
+                                  ? "bg-white text-slate-950 border-white"
+                                  : "bg-white/0 text-white/80 border-white/10 hover:bg-white/5"
+                              )}
+                            >
+                              Eraser
+                            </button>
+                          </div>
+
+                          <div className="mt-4 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">Brush size</span>
+                              <span className="text-[10px] font-black text-white/70">{revisionUiBrush}px</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={8}
+                              max={160}
+                              step={1}
+                              value={revisionUiBrush}
+                              onChange={(e) => {
+                                const v = Number(e.target.value);
+                                setRevisionUiBrush(v);
+                                revisionCanvasRef.current?.setBrushSize(v);
+                              }}
+                              className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-emerald-400"
+                              aria-label="Brush size"
+                            />
+                          </div>
+
+                          <div className="mt-4 grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                revisionCanvasRef.current?.clear();
+                                setIsDrawingMode(false);
+                                setIsRequestingEdit(true);
+                              }}
+                              className="h-11 rounded-2xl bg-white/0 border border-white/10 text-white/85 text-[10px] font-black uppercase tracking-widest hover:bg-white/5 transition-all"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => revisionCanvasRef.current?.save()}
+                              className="h-11 rounded-2xl bg-white text-slate-950 text-[10px] font-black uppercase tracking-widest hover:scale-[1.01] transition-all shadow-lg"
+                            >
+                              Done
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {isSpotRemovalOpen && activeTool === "spot" && (
+                        <div className="mb-4 p-4 rounded-3xl bg-white/5 border border-white/10">
+                          <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">Editing</p>
+                          <p className="text-sm font-black text-white mt-2 tracking-tight">Item Removal (on main image)</p>
+                          <p className="text-xs font-medium text-white/50 mt-1">
+                            Paint pink over what you want removed. Use eraser to refine. Then Apply.
+                          </p>
+
+                          <div className="mt-4 grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSpotUiTool("pen");
+                                spotCanvasRef.current?.setTool("pen");
+                              }}
+                              className={cn(
+                                "h-10 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all",
+                                spotUiTool === "pen"
+                                  ? "bg-white text-slate-950 border-white"
+                                  : "bg-white/0 text-white/70 border-white/10 hover:bg-white/5"
+                              )}
+                            >
+                              Brush
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSpotUiTool("eraser");
+                                spotCanvasRef.current?.setTool("eraser");
+                              }}
+                              className={cn(
+                                "h-10 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all",
+                                spotUiTool === "eraser"
+                                  ? "bg-white text-slate-950 border-white"
+                                  : "bg-white/0 text-white/70 border-white/10 hover:bg-white/5"
+                              )}
+                            >
+                              Eraser
+                            </button>
+                          </div>
+
+                          <div className="mt-4 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">Brush size</span>
+                              <span className="text-[10px] font-black text-white/60">{spotUiBrush}px</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={8}
+                              max={160}
+                              step={1}
+                              value={spotUiBrush}
+                              onChange={(e) => {
+                                const v = Number(e.target.value);
+                                setSpotUiBrush(v);
+                                spotCanvasRef.current?.setBrushSize(v);
+                              }}
+                              className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-pink-500"
+                              aria-label="Brush size"
+                            />
+                          </div>
+
+                          <div className="mt-4 grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                spotCanvasRef.current?.clear();
+                                setIsSpotRemovalOpen(false);
+                                setSpotRemovalError(null);
+                                setActiveTool("none");
+                              }}
+                              className="h-11 rounded-2xl bg-white/0 border border-white/10 text-white/80 text-[10px] font-black uppercase tracking-widest hover:bg-white/5 transition-all"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => spotCanvasRef.current?.save()}
+                              className="h-11 rounded-2xl bg-white text-slate-950 text-[10px] font-black uppercase tracking-widest hover:scale-[1.01] transition-all shadow-lg"
+                            >
+                              Apply
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="space-y-2">
+                        {TOOLBAR.unlocked.map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              (t as any).onClick?.();
+                            }}
+                            className={cn(
+                              "group relative w-full h-10 px-4 rounded-2xl text-left text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all border",
+                              // Request Revision is the primary, non-AI workflow: keep a subtle green glow even when idle.
+                              t.id === "revision" && activeTool !== "request" &&
+                                "bg-emerald-500/14 border-emerald-300/45 text-white shadow-[0_0_0_1px_rgba(16,185,129,0.26),0_0_26px_rgba(16,185,129,0.22)] hover:bg-emerald-500/18 hover:shadow-[0_0_0_1px_rgba(16,185,129,0.30),0_0_34px_rgba(16,185,129,0.26)]",
+                              (t.id === "social" && activeTool === "social") ||
+                                (t.id === "color" && activeTool === "color") ||
+                                (t.id === "pin" && activeTool === "pin") ||
+                                (t.id === "boundary" && activeTool === "boundary") ||
+                                (t.id === "revision" && activeTool === "request")
+                                ? "bg-emerald-500/22 border-emerald-200/70 text-white shadow-[0_0_0_1px_rgba(16,185,129,0.34),0_0_44px_rgba(16,185,129,0.32)]"
+                                : "bg-white/5 hover:bg-white/10 text-white/90 border-white/10"
+                            )}
+                            title={t.label}
+                            aria-label={t.label}
+                          >
+                            <t.icon className="h-3.5 w-3.5" />
+                            <span className="truncate">{t.label}</span>
+                            <span
+                              className={cn(
+                                "pointer-events-none absolute left-1/2 -translate-x-1/2 -top-2 -translate-y-full z-[200] whitespace-nowrap",
+                                "px-3 py-1 rounded-xl bg-slate-950/95 border border-white/10 shadow-xl",
+                                "text-[10px] font-black uppercase tracking-widest text-white/85",
+                                "opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-150"
+                              )}
+                            >
+                              {String((t as any).description || t.label)}
+                            </span>
+                          </button>
+                        ))}
+
+                        {TOOLBAR.locked.map((t) => {
+                          const aiReady = aiSuiteUnlocked && aiSuiteRemainingEdits > 0;
+                          const aiSelected =
+                            (activeTool === "ai" || activeTool === "spot") &&
+                            ((t.id === "day_to_dusk" && aiRequestedAction === "day_to_dusk") ||
+                              (t.id === "remove" && aiRequestedAction === "remove_furniture") ||
+                              (t.id === "spot" && aiRequestedAction === "spot_removal") ||
+                              (t.id === "replace" && aiRequestedAction === "replace_furniture") ||
+                              (t.id === "advanced" && aiRequestedAction === "advanced_prompt"));
+                          return (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                (t as any).onClick?.();
+                              }}
+                              className={cn(
+                                "group relative w-full h-10 px-4 rounded-2xl text-left text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all border",
+                                aiSelected && "shadow-[0_0_0_1px_rgba(16,185,129,0.25),0_0_24px_rgba(16,185,129,0.18)]",
+                                aiReady
+                                  ? "bg-emerald-500/10 hover:bg-emerald-500/20 text-white border-emerald-500/25"
+                                  : "bg-white/5 hover:bg-white/10 text-white/70 border-white/10"
+                              )}
+                              title={t.label}
+                              aria-label={t.label}
+                            >
+                              <t.icon className="h-3.5 w-3.5" />
+                              <span className="truncate">{t.label}</span>
+                              <span className="ml-auto h-6 w-6 rounded-xl bg-slate-900 border border-white/10 flex items-center justify-center">
+                                {aiReady ? (
+                                  <Zap className="h-3.5 w-3.5 text-emerald-400" />
+                                ) : (
+                                  <Lock className="h-3.5 w-3.5 text-white/80" />
+                                )}
+                              </span>
+                              <span
+                                className={cn(
+                                  "pointer-events-none absolute left-1/2 -translate-x-1/2 -top-2 -translate-y-full z-[200] whitespace-nowrap",
+                                  "px-3 py-1 rounded-xl bg-slate-950/95 border border-white/10 shadow-xl",
+                                  "text-[10px] font-black uppercase tracking-widest text-white/85",
+                                  "opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-150"
+                                )}
+                              >
+                                {String((t as any).description || t.label)}
+                              </span>
+                            </button>
+                          );
+                        })}
+
+                        {TOOLBAR.comingSoon.map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            disabled
+                            className="group relative w-full h-10 px-4 rounded-2xl bg-white/5 text-white/30 text-left text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all border border-white/10 cursor-not-allowed"
+                            title={`${t.label} (coming soon)`}
+                            aria-label={`${t.label} (coming soon)`}
+                          >
+                            <t.icon className="h-3.5 w-3.5" />
+                            <span className="truncate">{t.label}</span>
+                            <span
+                              className={cn(
+                                "pointer-events-none absolute left-1/2 -translate-x-1/2 -top-2 -translate-y-full z-[200] whitespace-nowrap",
+                                "px-3 py-1 rounded-xl bg-slate-950/95 border border-white/10 shadow-xl",
+                                "text-[10px] font-black uppercase tracking-widest text-white/85",
+                                "opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-150"
+                              )}
+                            >
+                              {String((t as any).description || t.label)}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </aside>
             </div>
 
-          {/* Unified Tool Panel: Social / Colour (non-destructive versions) */}
-          {(activeTool === "social" || activeTool === "color") && selectedAsset && (
-            <div className="absolute inset-0 z-[60] flex items-center justify-end p-4 md:p-8 bg-transparent pointer-events-none animate-in fade-in duration-200">
-              <div
-                className="w-full max-w-[520px] bg-slate-950 rounded-[32px] shadow-2xl overflow-hidden flex flex-col h-full max-h-[850px] animate-in slide-in-from-right duration-500 pointer-events-auto border border-white/10"
-                onClick={(e) => e.stopPropagation()}
-              >
-            <SocialCropper 
-                  mode="panel"
-                    variant={activeTool === "color" ? "adjust" : "crop"}
-                  imageUrl={activeImageSrc}
-              imageName={selectedAsset.name}
-                    initialTab={activeTool === "color" ? "adjust" : "crop"}
-                  onClose={() => setActiveTool("none")}
-              onSave={(blob) => {
-                    const persistUrl = URL.createObjectURL(blob);
-                    const downloadUrl = URL.createObjectURL(blob);
-                    addVersion(selectedAsset, {
-                      id: `social-${Date.now()}`,
-                      label: activeTool === "color" ? "Colour" : "Social",
-                      tool: activeTool,
-                      kind: "blob",
-                      src: persistUrl,
-                      blob,
-                    });
-                    // Optional: also open a download flow immediately
-                const editedAsset = {
-                  ...selectedAsset,
-                  id: `social-${selectedAsset.id}`,
-                      name: `${activeTool === "color" ? "Colour" : "Social"}-${selectedAsset.name}`,
-                      isMarkup: true,
-                  markupBlob: blob,
-                      originalPath: selectedAsset.path,
-                      originalName: selectedAsset.name,
-                      url: downloadUrl,
-                };
-                setDownloadAssets([editedAsset]);
-                setIsDownloadManagerOpen(true);
-                    setActiveTool("none");
-              }}
-            />
-              </div>
-            </div>
-          )}
+          {/* Social/Colour now run as an embedded overlay on the main image (Photoshop-style). */}
 
           {isAISuiteOpen && selectedAsset && (
             <AISuiteDrawer
@@ -1908,7 +2669,9 @@ export function GalleryPublicViewer({
                 setIsAiSuiteUnlockOpen(true);
               }}
               onAiSuiteUpdate={(next) => setAiSuiteState((prev: any) => ({ ...(prev || {}), ...(next || {}) }))}
-              requestedAction={aiRequestedAction || undefined}
+              requestedAction={
+                aiRequestedAction && aiRequestedAction !== "spot_removal" ? aiRequestedAction : undefined
+              }
               requestedActionNonce={aiRequestedNonce}
               onComplete={(newUrl) => {
                 addVersion(selectedAsset, {
@@ -2126,10 +2889,15 @@ export function GalleryPublicViewer({
                               ai_remove_furniture: "remove_furniture",
                               ai_replace_furniture: "replace_furniture",
                               ai_advanced_prompt: "advanced_prompt",
+                              ai_spot_removal: "spot_removal",
                             };
                             const next = map[String(postUnlockAction)];
                             setPostUnlockAction(null);
                             if (next) {
+                              if (next === "spot_removal") {
+                                // Let the modal close before opening the paint overlay
+                                setTimeout(() => openLockedSpotRemoval(), 50);
+                              } else {
                               setAiRequestedAction(next);
                               setAiRequestedNonce((n) => n + 1);
                               // Let the modal close before opening the drawer
@@ -2137,6 +2905,7 @@ export function GalleryPublicViewer({
                                 setActiveTool("ai");
                                 setIsAISuiteOpen(true);
                               }, 50);
+                              }
                             }
                           }
                         } else {
@@ -2220,7 +2989,8 @@ export function GalleryPublicViewer({
           {/* Download Manager Overlay - Moved outside Lightbox */}
 
           {/* Edit Request Details Form (Slide-over style inside lightbox) */}
-          {isRequestingEdit && (
+          {/* Hide while drawing so the main image is fully usable (no UI blocking the canvas). */}
+          {isRequestingEdit && !isDrawingMode && (
             <div className="absolute inset-0 z-[60] flex items-center justify-end p-4 md:p-8 bg-transparent pointer-events-none animate-in fade-in duration-300">
               <div 
                 className="w-full max-w-[860px] bg-white rounded-[28px] shadow-2xl overflow-hidden flex flex-col h-full max-h-[760px] animate-in slide-in-from-right duration-500 pointer-events-auto"
@@ -2254,10 +3024,10 @@ export function GalleryPublicViewer({
                     <div className="space-y-4">
                       <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center justify-between">
                         Visual Marking (Optional)
-                        {drawingData && (
+                        {drawingData && !isDrawingMode && (
                           <button 
                             type="button"
-                            onClick={() => setIsDrawingMode(true)}
+                            onClick={() => startRevisionMarkup()}
                             className="text-primary hover:underline text-[9px] font-black"
                           >
                             EDIT MARKUP
@@ -2265,9 +3035,92 @@ export function GalleryPublicViewer({
                         )}
                       </label>
                       
-                      {drawingData ? (
+                      {isDrawingMode ? (
+                        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 space-y-4">
+                          <div className="space-y-1">
+                            <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Drawing on main image</p>
+                            <p className="text-xs font-semibold text-slate-700">
+                              Paint directly on the photo. Click Done when finished.
+                            </p>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRevisionUiTool("pen");
+                                revisionCanvasRef.current?.setTool("pen");
+                              }}
+                              className={cn(
+                                "h-10 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all",
+                                revisionUiTool === "pen"
+                                  ? "bg-slate-900 text-white border-slate-900"
+                                  : "bg-white text-slate-700 border-slate-200 hover:border-slate-300"
+                              )}
+                            >
+                              Brush
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRevisionUiTool("eraser");
+                                revisionCanvasRef.current?.setTool("eraser");
+                              }}
+                              className={cn(
+                                "h-10 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all",
+                                revisionUiTool === "eraser"
+                                  ? "bg-slate-900 text-white border-slate-900"
+                                  : "bg-white text-slate-700 border-slate-200 hover:border-slate-300"
+                              )}
+                            >
+                              Eraser
+                            </button>
+                          </div>
+
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Brush size</span>
+                              <span className="text-[10px] font-black text-slate-700">{revisionUiBrush}px</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={8}
+                              max={160}
+                              step={1}
+                              value={revisionUiBrush}
+                              onChange={(e) => {
+                                const v = Number(e.target.value);
+                                setRevisionUiBrush(v);
+                                revisionCanvasRef.current?.setBrushSize(v);
+                              }}
+                              className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                              aria-label="Brush size"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                revisionCanvasRef.current?.clear();
+                                setIsDrawingMode(false);
+                              }}
+                              className="h-11 rounded-2xl bg-white border border-slate-200 text-slate-700 text-[10px] font-black uppercase tracking-widest hover:border-slate-300 transition-all"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => revisionCanvasRef.current?.save()}
+                              className="h-11 rounded-2xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-[0_10px_20px_-12px_rgba(16,185,129,0.6)]"
+                            >
+                              Done
+                            </button>
+                          </div>
+                        </div>
+                      ) : drawingData ? (
                         <div 
-                          onClick={() => setIsDrawingMode(true)}
+                          onClick={() => startRevisionMarkup()}
                           className="aspect-square rounded-2xl bg-slate-50 border border-slate-200 overflow-hidden relative group cursor-pointer"
                         >
                           <img
@@ -2328,7 +3181,7 @@ export function GalleryPublicViewer({
                       ) : (
                         <button 
                           type="button"
-                          onClick={() => setIsDrawingMode(true)}
+                          onClick={() => startRevisionMarkup()}
                           className="w-full aspect-square rounded-2xl border-2 border-dashed border-slate-200 hover:border-primary/40 hover:bg-primary/[0.02] transition-all flex flex-col items-center justify-center gap-3 group"
                         >
                           <div className="h-12 w-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:text-primary group-hover:bg-primary/10 transition-all">
@@ -2431,20 +3284,26 @@ export function GalleryPublicViewer({
             </div>
           )}
 
-          {/* Drawing Mode Overlay - Rendered AFTER everything with top-tier Z-index */}
-          {isDrawingMode && (
-            <DrawingCanvas 
-              imageUrl={getImageUrl(selectedAsset.url, "w2048h1536")}
-              onSave={(data) => {
-                setDrawingData(data);
-                setIsDrawingMode(false);
-                setIsRequestingEdit(true);
-              }}
-              onCancel={() => {
-                setIsDrawingMode(false);
-                setIsRequestingEdit(true);
-              }}
-            />
+          {/* Drawing for Request Revision now happens as an EMBEDDED overlay on the main image (Photoshop-style). */}
+
+          {/* Item/Spot Removal now paints on the main image (Photoshop-style). */}
+
+          {isSpotRemovalProcessing && (
+            <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/35 backdrop-blur-[2px]">
+              <div className="px-6 py-4 rounded-2xl bg-slate-950 border border-white/10 shadow-2xl flex items-center gap-3">
+                <Loader2 className="h-5 w-5 text-white animate-spin" />
+                <p className="text-xs font-black uppercase tracking-widest text-white/90">Removing item…</p>
+              </div>
+            </div>
+          )}
+
+          {spotRemovalError && !isSpotRemovalOpen && !isSpotRemovalProcessing && (
+            <div className="fixed inset-x-0 bottom-6 z-[141] flex justify-center px-6">
+              <div className="max-w-[720px] w-full px-5 py-4 rounded-2xl bg-rose-500 text-white shadow-2xl border border-rose-400/40">
+                <p className="text-xs font-black uppercase tracking-widest">Item removal</p>
+                <p className="text-sm font-bold mt-1">{spotRemovalError}</p>
+              </div>
+            </div>
           )}
 
           {/* AI suite is prompt-only: no mask overlay */}
@@ -2742,75 +3601,7 @@ export function GalleryPublicViewer({
 
       {/* Choice Modal removed (toolbar is always visible in the viewer header) */}
 
-      {(activeTool === "pin" || activeTool === "boundary") && selectedAsset && (
-        // NOTE: Must be fixed and above the lightbox (which is z-[100]), otherwise it renders behind it.
-        <div className="fixed inset-0 z-[140] flex items-center justify-end p-4 md:p-8 bg-transparent pointer-events-none animate-in fade-in duration-200">
-          <div
-            className="w-full max-w-5xl bg-slate-950 rounded-[32px] shadow-2xl overflow-hidden flex flex-col h-full max-h-[850px] animate-in slide-in-from-right duration-500 pointer-events-auto border border-white/10"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <ProAnnotationCanvas 
-              mode="panel"
-              enabledTools={["select", "pin", "boundary"]}
-              imageUrl={activeImageSrc}
-              exportImageUrl={
-                selectedAsset?.path
-                  ? `/api/dropbox/download/${gallery.id}?path=${encodeURIComponent(selectedAsset.path)}&sharedLink=${encodeURIComponent(String(gallery.metadata?.dropboxLink || ""))}&applyBranding=false`
-                  : activeImageSrc
-              }
-              logoUrl={
-                (() => {
-                  const raw = (gallery.clientBranding?.url || tenant.logoUrl || "").toString();
-                  if (!raw) return undefined;
-                  if (raw.includes("dropbox.com") || raw.includes("dropboxusercontent.com")) {
-                    return `/api/logo-proxy?url=${encodeURIComponent(raw)}`;
-                  }
-                  return raw;
-                })()
-              }
-              initialTool={annotationInitialTool}
-              onSave={(data, blob) => {
-                setAnnotationData(data);
-                
-                if (blob) {
-                  const persistUrl = URL.createObjectURL(blob);
-                  const downloadUrl = URL.createObjectURL(blob);
-                  addVersion(selectedAsset, {
-                    id: `markup-${Date.now()}`,
-                    label: activeTool === "boundary" ? "Boundary" : "Pin Drop",
-                    tool: activeTool,
-                    kind: "blob",
-                    src: persistUrl,
-                    blob,
-                  });
-
-                  // Optional: also open a download flow immediately
-                  const markedUpAsset = {
-                    ...selectedAsset,
-                    id: `markup-${selectedAsset.id}`,
-                    name: `MarkedUp-${selectedAsset.name}`,
-                    isMarkup: true,
-                    markupBlob: blob,
-                    originalName: selectedAsset.name,
-                    originalPath: selectedAsset.path,
-                    url: downloadUrl,
-                  };
-                  setDownloadAssets([markedUpAsset]);
-                  setIsDownloadManagerOpen(true);
-                  setActiveTool("none");
-                } else {
-                  // Fallback to standard edit request if no blob generated
-                  setIsRequestingEdit(true);
-                  setActiveTool("request");
-                }
-              }}
-              onCancel={() => {
-                setActiveTool("none");
-              }}
-            />
-          </div>
-        </div>
-      )}
+      {/* ProAnnotationCanvas is now embedded directly on the main image (Photoshop-style). */}
     </div>
   );
 }

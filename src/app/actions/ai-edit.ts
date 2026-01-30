@@ -36,6 +36,179 @@ interface AIProcessResult {
   error?: string;
 }
 
+async function readImageBytes(input: string): Promise<Buffer> {
+  const s = String(input || "").trim();
+  if (!s) throw new Error("Missing image input");
+  if (s.startsWith("data:")) {
+    const m = /^data:([^;]+);base64,(.+)$/i.exec(s);
+    if (!m) throw new Error("Invalid data URL");
+    return Buffer.from(m[2], "base64");
+  }
+  const res = await fetch(s);
+  if (!res.ok) throw new Error(`Failed to fetch image (${res.status})`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
+async function contentAwareFillFallback(args: {
+  imageBytes: Buffer;
+  maskBytes: Buffer;
+  force?: boolean;
+}): Promise<{ outputDataUrl: string; meanAbsDiffInside: number; used: boolean }> {
+  const { imageBytes, maskBytes, force = false } = args;
+  const img = sharp(imageBytes, { failOn: "none" });
+  const meta = await img.metadata();
+  const width = meta.width || 0;
+  const height = meta.height || 0;
+  if (!width || !height) return { outputDataUrl: "", meanAbsDiffInside: 0, used: false };
+
+  const imgRawObj = await img.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const imgRaw = imgRawObj.data;
+
+  // Resize mask to image size and take luminance as alpha.
+  const maskRaw = await sharp(maskBytes, { failOn: "none" })
+    .resize(width, height, { fit: "fill" })
+    .ensureAlpha()
+    .raw()
+    .toBuffer();
+
+  const pxCount = width * height;
+  const maskBin = new Uint8Array(pxCount);
+  for (let i = 0; i < pxCount; i++) {
+    const r = maskRaw[i * 4 + 0];
+    const g = maskRaw[i * 4 + 1];
+    const b = maskRaw[i * 4 + 2];
+    const v = (r + g + b) / 3;
+    maskBin[i] = v > 128 ? 1 : 0;
+  }
+
+  // Collect border samples just outside the mask (up to 5000).
+  const samplesR: number[] = [];
+  const samplesG: number[] = [];
+  const samplesB: number[] = [];
+  const maxSamples = 5000;
+  const get = (x: number, y: number) => y * width + x;
+  for (let y = 1; y < height - 1 && samplesR.length < maxSamples; y++) {
+    for (let x = 1; x < width - 1 && samplesR.length < maxSamples; x++) {
+      const idx = get(x, y);
+      if (maskBin[idx] === 1) continue;
+      if (
+        maskBin[get(x - 1, y)] ||
+        maskBin[get(x + 1, y)] ||
+        maskBin[get(x, y - 1)] ||
+        maskBin[get(x, y + 1)]
+      ) {
+        const off = idx * 4;
+        samplesR.push(imgRaw[off + 0]);
+        samplesG.push(imgRaw[off + 1]);
+        samplesB.push(imgRaw[off + 2]);
+      }
+    }
+  }
+
+  if (samplesR.length < 100) return { outputDataUrl: "", meanAbsDiffInside: 0, used: false };
+
+  // Border variance: if high, don't use this fallback (it will look like a patch),
+  // unless forced (Spot Removal mode: never hallucinate).
+  const mean = (arr: number[]) => arr.reduce((a, b) => a + b, 0) / arr.length;
+  const variance = (arr: number[]) => {
+    const m = mean(arr);
+    let s = 0;
+    for (const v of arr) s += (v - m) * (v - m);
+    return s / arr.length;
+  };
+  const std = (v: number) => Math.sqrt(v);
+  const stdBorder = (std(variance(samplesR)) + std(variance(samplesG)) + std(variance(samplesB))) / 3;
+  if (!force && stdBorder > 18) return { outputDataUrl: "", meanAbsDiffInside: 0, used: false };
+
+  // For forced mode, prefer a blur-based fill (less “solid patch” on textured areas).
+  if (force) {
+    const blurredRaw = await sharp(imageBytes, { failOn: "none" })
+      .ensureAlpha()
+      // Strong blur so object silhouettes don't bleed through.
+      .blur(24)
+      .raw()
+      .toBuffer();
+
+    const alphaBuf = Buffer.alloc(pxCount);
+    for (let i = 0; i < pxCount; i++) alphaBuf[i] = maskBin[i] ? 255 : 0;
+    const alphaBlur = await sharp(alphaBuf, { raw: { width, height, channels: 1 } })
+      // Edge feather only (core stays hard masked below).
+      .blur(10)
+      .raw()
+      .toBuffer();
+
+    const outRaw = Buffer.from(imgRaw);
+    let diffSum = 0;
+    let diffCount = 0;
+    for (let i = 0; i < pxCount; i++) {
+      // HARD remove inside the mask, feather only at the edge.
+      const a = (maskBin[i] ? 255 : alphaBlur[i]) / 255;
+      if (a <= 0) continue;
+      const off = i * 4;
+      const or = outRaw[off + 0];
+      const og = outRaw[off + 1];
+      const ob = outRaw[off + 2];
+      const br = blurredRaw[off + 0];
+      const bg = blurredRaw[off + 1];
+      const bb = blurredRaw[off + 2];
+      const nr = Math.round(or * (1 - a) + br * a);
+      const ng = Math.round(og * (1 - a) + bg * a);
+      const nb = Math.round(ob * (1 - a) + bb * a);
+      outRaw[off + 0] = nr;
+      outRaw[off + 1] = ng;
+      outRaw[off + 2] = nb;
+      if (maskBin[i]) {
+        diffSum += Math.abs(nr - or) + Math.abs(ng - og) + Math.abs(nb - ob);
+        diffCount += 3;
+      }
+    }
+    const outPng = await sharp(outRaw, { raw: { width, height, channels: 4 } }).png().toBuffer();
+    const outputDataUrl = `data:image/png;base64,${outPng.toString("base64")}`;
+    return { outputDataUrl, meanAbsDiffInside: diffCount ? diffSum / diffCount : 0, used: true };
+  }
+
+  const median = (arr: number[]) => {
+    const a = [...arr].sort((x, y) => x - y);
+    return a[Math.floor(a.length / 2)];
+  };
+  const fillR = median(samplesR);
+  const fillG = median(samplesG);
+  const fillB = median(samplesB);
+
+  const alphaBuf = Buffer.alloc(pxCount);
+  for (let i = 0; i < pxCount; i++) alphaBuf[i] = maskBin[i] ? 255 : 0;
+  const alphaBlur = await sharp(alphaBuf, { raw: { width, height, channels: 1 } })
+    .blur(6)
+    .raw()
+    .toBuffer();
+
+  const outRaw = Buffer.from(imgRaw); // copy
+  let diffSum = 0;
+  let diffCount = 0;
+  for (let i = 0; i < pxCount; i++) {
+    const a = alphaBlur[i] / 255;
+    if (a <= 0) continue;
+    const off = i * 4;
+    const or = outRaw[off + 0];
+    const og = outRaw[off + 1];
+    const ob = outRaw[off + 2];
+    const nr = Math.round(or * (1 - a) + fillR * a);
+    const ng = Math.round(og * (1 - a) + fillG * a);
+    const nb = Math.round(ob * (1 - a) + fillB * a);
+    outRaw[off + 0] = nr;
+    outRaw[off + 1] = ng;
+    outRaw[off + 2] = nb;
+    if (maskBin[i]) {
+      diffSum += Math.abs(nr - or) + Math.abs(ng - og) + Math.abs(nb - ob);
+      diffCount += 3;
+    }
+  }
+
+  const outPng = await sharp(outRaw, { raw: { width, height, channels: 4 } }).png().toBuffer();
+  const outputDataUrl = `data:image/png;base64,${outPng.toString("base64")}`;
+  return { outputDataUrl, meanAbsDiffInside: diffCount ? diffSum / diffCount : 0, used: true };
+}
+
 export async function processImageWithAI(
   assetUrl: string,
   taskType: AITaskType,
@@ -48,6 +221,12 @@ export async function processImageWithAI(
   // without requiring a full server restart
   const replicate = new Replicate({
     auth: process.env.REPLICATE_API_TOKEN,
+    // When passing browser-generated masks (data URLs), prefer uploading Buffer inputs.
+    fileEncodingStrategy:
+      (typeof maskUrl === "string" && maskUrl.startsWith("data:")) ||
+      (typeof assetUrl === "string" && assetUrl.startsWith("data:"))
+        ? "upload"
+        : "default",
   });
 
   try {
@@ -168,14 +347,44 @@ export async function processImageWithAI(
         break;
 
       case "object_removal":
-        // UPGRADED: Using Google's Nano-Banana for professional-grade inpainting
         if (maskUrl) {
-          model = "google/nano-banana";
+          // True object removal (non-generative fill) via LaMa inpainting.
+          // Requires only image+mask; does not accept prompt fields.
+          // Pinned version for stability.
+          model = "allenhooo/lama:cdac78a1bec5b23c07fd29692fb70baa513ea403a39e643c48ec5edadb15fe72";
           input = {
-            image_input: [publicImageUrl, maskUrl],
-            prompt: "Remove ONLY the objects highlighted in the mask and seamlessly rebuild the background floors and walls. Preserve the original lighting and architectural details exactly. Do not change architecture, windows, doors, or colors. High resolution, professional real estate photography.",
-            aspect_ratio: "match_input_image"
+            image: publicImageUrl,
+            mask: maskUrl,
           };
+
+          // LaMa expects the mask to match the image resolution.
+          // Our UI mask is generated at the displayed size, so resize/threshold server-side.
+          try {
+            const [imgBytes, maskBytes] = await Promise.all([
+              readImageBytes(publicImageUrl),
+              readImageBytes(maskUrl),
+            ]);
+            const meta = await sharp(imgBytes, { failOn: "none" }).metadata();
+            const w = Number(meta.width || 0);
+            const h = Number(meta.height || 0);
+            if (w > 0 && h > 0) {
+              const resizedMaskPng = await sharp(maskBytes, { failOn: "none" })
+                .resize(w, h, { fit: "fill" })
+                .ensureAlpha()
+                // Make it a hard black/white mask.
+                .threshold(128)
+                .png()
+                .toBuffer();
+
+              // Upload both as bytes to ensure Replicate sees identical dimensions.
+              input = {
+                image: imgBytes,
+                mask: resizedMaskPng,
+              };
+            }
+          } catch (e) {
+            console.warn("[AI_EDIT] Mask resize for LaMa failed, proceeding with raw inputs:", e);
+          }
         } else {
           model = "reve/edit-fast";
           input = {
@@ -217,11 +426,55 @@ export async function processImageWithAI(
     let retries = 0;
     const maxRetries = 2;
 
+    const dataUrlToBuffer = (dataUrl: string): { buffer: Buffer; mime: string } | null => {
+      try {
+        const m = /^data:([^;]+);base64,(.+)$/i.exec(String(dataUrl || "").trim());
+        if (!m) return null;
+        const mime = m[1] || "application/octet-stream";
+        const b64 = m[2] || "";
+        return { buffer: Buffer.from(b64, "base64"), mime };
+      } catch {
+        return null;
+      }
+    };
+
     while (retries <= maxRetries) {
       try {
         // Do NOT blindly inject `image` into every model (some use image_input/mask schemas).
         const runInput: any = { ...input };
         if (runInput.image) runInput.image = publicImageUrl;
+
+        // Convert any browser-generated image/mask data URLs into Buffers so Replicate uploads them.
+        if (typeof runInput.image === "string" && runInput.image.startsWith("data:image/")) {
+          const parsed = dataUrlToBuffer(runInput.image);
+          if (parsed) runInput.image = parsed.buffer;
+        }
+        if (typeof runInput.mask === "string" && runInput.mask.startsWith("data:image/")) {
+          const parsed = dataUrlToBuffer(runInput.mask);
+          if (parsed) runInput.mask = parsed.buffer;
+        }
+
+        // Final safety: only populate `prompt` if this schema uses it.
+        if ("prompt" in runInput && !String(runInput.prompt || "").trim()) {
+          runInput.prompt = String(prompt || "").trim() || "Edit the image according to the provided inputs.";
+        }
+
+        console.log(
+          "[AI_EDIT] Replicate input check:",
+          JSON.stringify(
+            {
+              model,
+              taskType,
+              keys: Object.keys(runInput || {}),
+              promptLen: String(runInput.prompt || "").length,
+              hasMask: !!runInput.mask,
+              maskType: runInput.mask ? (Buffer.isBuffer(runInput.mask) ? "buffer" : typeof runInput.mask) : null,
+            },
+            null,
+            2
+          )
+        );
+
         output = await replicate.run(model, { input: runInput });
         break; // Success!
       } catch (runError: any) {

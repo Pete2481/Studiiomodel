@@ -556,4 +556,81 @@ export async function runAiSuiteTask(args: {
   return { success: true as const, outputUrl: String(result.outputUrl), aiSuite: nextAiSuite };
 }
 
+export async function runAiSuiteSpotRemoval(args: {
+  galleryId: string;
+  assetUrl: string;
+  maskDataUrl: string;
+  dbxPath?: string;
+}) {
+  const session = await auth();
+  if (!session) return { success: false as const, error: "Unauthorized" };
+
+  const { galleryId, assetUrl, maskDataUrl, dbxPath } = args;
+  const gallery = await prisma.gallery.findUnique({
+    where: { id: galleryId },
+    select: { id: true, tenantId: true, clientId: true, metadata: true },
+  });
+  if (!gallery) return { success: false as const, error: "Gallery not found" };
+
+  const aiSuite = readAiSuiteMeta(gallery.metadata);
+  const remaining = aiSuite.remainingEdits ?? 0;
+  const unlocked = !!aiSuite.unlocked;
+
+  if (!unlocked) return { success: false as const, error: "AI_SUITE_LOCKED", aiSuite };
+  if (remaining <= 0) return { success: false as const, error: "AI_SUITE_LIMIT", aiSuite };
+
+  const unlockBlockId = aiSuite.unlockBlockId;
+  if (!unlockBlockId) return { success: false as const, error: "AI_SUITE_LOCKED", aiSuite };
+
+  const tenantAi = await getTenantAiSuiteSettings(gallery.tenantId);
+  if (!tenantAi.enabled && aiSuite.unlockType !== "trial") {
+    return { success: false as const, error: "AI_DISABLED", aiSuite };
+  }
+
+  const nextAiSuite: AiSuiteMeta = { ...aiSuite, remainingEdits: remaining - 1 };
+  await prisma.gallery.update({
+    where: { id: galleryId },
+    data: { metadata: writeAiSuiteMeta(gallery.metadata, nextAiSuite) },
+  });
+
+  try {
+    await ensureAiSuiteUnlockEditRequest({
+      tenantId: gallery.tenantId,
+      galleryId,
+      clientId: gallery.clientId || null,
+      requestedById: (session.user as any)?.id || null,
+      unlockBlockId,
+      mode: "backfill",
+    });
+  } catch (e) {
+    console.error("[AI_SUITE_BILLING] Failed to ensure unlock charge EditRequest:", e);
+  }
+
+  const mask = String(maskDataUrl || "").trim();
+  if (!mask.startsWith("data:image/")) {
+    return { success: false as const, error: "Invalid mask image", aiSuite: nextAiSuite };
+  }
+
+  // True “remove + fill” via LaMa inpainting (image+mask only).
+  // This avoids the generative “replacement object” artifacts from prompt-based models.
+  const result = await processImageWithAI(
+    String(assetUrl),
+    "object_removal",
+    undefined,
+    dbxPath,
+    gallery.tenantId,
+    mask
+  );
+  if (!result.success) {
+    return { success: false as const, error: result.error || "AI processing failed", aiSuite: nextAiSuite };
+  }
+
+  await incrementTenantAiSuiteUsage(gallery.tenantId, {
+    model: "allenhooo/lama",
+    estimatedUsdDelta: 0.15,
+  });
+
+  return { success: true as const, outputUrl: String(result.outputUrl), aiSuite: nextAiSuite };
+}
+
 

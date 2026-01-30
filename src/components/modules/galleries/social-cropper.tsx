@@ -5,18 +5,33 @@ import Cropper from "react-easy-crop";
 import { X, Check, Smartphone, Monitor, Square, ChevronRight, Share2, Download, Loader2, Sun, Contrast, Droplets, ThermometerSun, Sliders, Crop as CropIcon, Image as ImageIcon, Palette, SunMedium } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+export type SocialEditorState = {
+  activeTab: "crop" | "adjust";
+  crop: { x: number; y: number };
+  zoom: number;
+  aspect: number | undefined;
+  activePreset: string;
+  croppedAreaPixels: { x: number; y: number; width: number; height: number } | null;
+  adjustValues: Record<string, number>;
+  luminanceTargetHex: string;
+  activeAdjId: string;
+};
+
 interface SocialCropperProps {
   imageUrl: string;
   imageName: string;
   onClose: () => void;
   onSave?: (blob: Blob) => void;
   initialTab?: "crop" | "adjust";
-  mode?: "overlay" | "panel";
+  mode?: "overlay" | "panel" | "embedded";
   /** Split Social vs Colour without duplicating the whole component. */
   variant?: "crop" | "adjust" | "both";
+  /** Optional controlled state (used by the Gallery viewer right-rail controls). */
+  state?: SocialEditorState;
+  onStateChange?: (patch: Partial<SocialEditorState>) => void;
 }
 
-const PRESETS = [
+export const SOCIAL_PRESETS = [
   { id: "original", label: "No Crop", ratio: undefined, icon: ImageIcon },
   { id: "square", label: "IG Post", ratio: 1, icon: Square },
   { id: "portrait", label: "IG Portrait", ratio: 4 / 5, icon: Monitor },
@@ -24,7 +39,7 @@ const PRESETS = [
   { id: "landscape", label: "FB Cover", ratio: 16 / 9, icon: Monitor },
 ];
 
-const ADJUSTMENTS = [
+export const SOCIAL_ADJUSTMENTS = [
   { id: "exposure", label: "Exposure", icon: Sun, min: 50, max: 150, defaultValue: 100, unit: "%" },
   { id: "luminance", label: "Luminance", icon: SunMedium, min: 50, max: 150, defaultValue: 100, unit: "%" },
   { id: "contrast", label: "Contrast", icon: Contrast, min: 50, max: 150, defaultValue: 100, unit: "%" },
@@ -32,6 +47,129 @@ const ADJUSTMENTS = [
   { id: "warmth", label: "Warmth", icon: ThermometerSun, min: -50, max: 50, defaultValue: 0, unit: "" },
   { id: "hue", label: "Hue", icon: Palette, min: 0, max: 360, defaultValue: 0, unit: "°" },
 ];
+
+function clamp(n: number, min: number, max: number) {
+  if (!Number.isFinite(n)) return min;
+  return Math.max(min, Math.min(max, n));
+}
+
+async function loadImage(src: string, timeoutMs = 12_000): Promise<HTMLImageElement> {
+  const url = String(src || "").trim();
+  if (!url) throw new Error("Missing image URL");
+  return await new Promise((resolve, reject) => {
+    let done = false;
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    const t = window.setTimeout(() => {
+      if (done) return;
+      done = true;
+      reject(new Error(`Image load timeout (${timeoutMs}ms)`));
+    }, timeoutMs);
+    img.onload = () => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(t);
+      resolve(img);
+    };
+    img.onerror = () => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(t);
+      reject(new Error("Image failed to load"));
+    };
+    img.src = url;
+  });
+}
+
+export async function generateSocialEditBlob(args: {
+  previewImageUrl: string;
+  exportImageUrl?: string;
+  state: SocialEditorState;
+  mime?: "image/jpeg" | "image/png";
+  quality?: number;
+}): Promise<Blob> {
+  const mime = args.mime || "image/jpeg";
+  const quality = clamp(Number(args.quality ?? 0.95), 0.5, 1);
+
+  const state = args.state;
+  const previewImg = await loadImage(args.previewImageUrl);
+  const exportImg = await loadImage(args.exportImageUrl || args.previewImageUrl);
+
+  const scaleX = exportImg.width / Math.max(1, previewImg.width);
+  const scaleY = exportImg.height / Math.max(1, previewImg.height);
+
+  const isNoCrop = state.activePreset === "original";
+  const cropPx = state.croppedAreaPixels;
+
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas not available");
+
+  if (isNoCrop || !cropPx) {
+    canvas.width = exportImg.width;
+    canvas.height = exportImg.height;
+  } else {
+    canvas.width = Math.max(1, Math.round(cropPx.width * scaleX));
+    canvas.height = Math.max(1, Math.round(cropPx.height * scaleY));
+  }
+
+  // Apply global filters via canvas filter first.
+  const { exposure, contrast, saturation, warmth, hue } = state.adjustValues;
+  const warmthHue = warmth < 0 ? warmth : 0;
+  const hueDeg = Number(hue || 0) + Number(warmthHue || 0);
+  ctx.filter = `brightness(${exposure}%) contrast(${contrast}%) saturate(${saturation}%) sepia(${warmth > 0 ? warmth : 0}%) hue-rotate(${hueDeg}deg)`;
+
+  if (isNoCrop || !cropPx) {
+    ctx.drawImage(exportImg, 0, 0);
+  } else {
+    ctx.drawImage(
+      exportImg,
+      Math.round(cropPx.x * scaleX),
+      Math.round(cropPx.y * scaleY),
+      Math.round(cropPx.width * scaleX),
+      Math.round(cropPx.height * scaleY),
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+  }
+
+  // Targeted luminance pixel pass.
+  const lumFactor = Number(state.adjustValues.luminance || 100) / 100;
+  const hasTargetedLum = Math.abs(lumFactor - 1) > 0.001;
+  if (hasTargetedLum) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(state.luminanceTargetHex || "");
+    const int = m ? parseInt(m[1], 16) : 0xffffff;
+    const tr = (int >> 16) & 255;
+    const tg = (int >> 8) & 255;
+    const tb = int & 255;
+
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imgData.data;
+    const tol = 46;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const wr = Math.max(0, 1 - Math.abs(r - tr) / tol);
+      const wg = Math.max(0, 1 - Math.abs(g - tg) / tol);
+      const wb = Math.max(0, 1 - Math.abs(b - tb) / tol);
+      const w = wr * wg * wb;
+      if (w <= 0) continue;
+      const nr = Math.max(0, Math.min(255, r * lumFactor));
+      const ng = Math.max(0, Math.min(255, g * lumFactor));
+      const nb = Math.max(0, Math.min(255, b * lumFactor));
+      data[i] = Math.round(r * (1 - w) + nr * w);
+      data[i + 1] = Math.round(g * (1 - w) + ng * w);
+      data[i + 2] = Math.round(b * (1 - w) + nb * w);
+    }
+    ctx.putImageData(imgData, 0, 0);
+  }
+
+  const blob: Blob = await new Promise((resolve) => canvas.toBlob((b) => resolve(b!), mime, quality));
+  return blob;
+}
 
 export function SocialCropper({
   imageUrl,
@@ -41,18 +179,20 @@ export function SocialCropper({
   initialTab = "crop",
   mode = "overlay",
   variant = "both",
+  state,
+  onStateChange,
 }: SocialCropperProps) {
   const filterId = useId().replace(/:/g, "_");
-  const [activeTab, setActiveTab] = useState<"crop" | "adjust">(initialTab);
-  const [crop, setCrop] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [aspect, setAspect] = useState(PRESETS[0].ratio);
-  const [activePreset, setActivePreset] = useState(PRESETS[0].id);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
+  const [uActiveTab, uSetActiveTab] = useState<"crop" | "adjust">(initialTab);
+  const [uCrop, uSetCrop] = useState({ x: 0, y: 0 });
+  const [uZoom, uSetZoom] = useState(1);
+  const [uAspect, uSetAspect] = useState<number | undefined>(SOCIAL_PRESETS[0].ratio);
+  const [uActivePreset, uSetActivePreset] = useState(SOCIAL_PRESETS[0].id);
+  const [uCroppedAreaPixels, uSetCroppedAreaPixels] = useState<any>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
   // Color Adjustments State
-  const [adjustValues, setAdjustValues] = useState<Record<string, number>>({
+  const [uAdjustValues, uSetAdjustValues] = useState<Record<string, number>>({
     exposure: 100,
     luminance: 100,
     contrast: 100,
@@ -60,8 +200,48 @@ export function SocialCropper({
     warmth: 0,
     hue: 0,
   });
-  const [luminanceTargetHex, setLuminanceTargetHex] = useState<string>("#ffffff");
-  const [activeAdjId, setActiveAdjId] = useState(ADJUSTMENTS[0].id);
+  const [uLuminanceTargetHex, uSetLuminanceTargetHex] = useState<string>("#ffffff");
+  const [uActiveAdjId, uSetActiveAdjId] = useState(SOCIAL_ADJUSTMENTS[0].id);
+
+  const setPatch = useCallback(
+    (patch: Partial<SocialEditorState>) => {
+      if (onStateChange) onStateChange(patch);
+    },
+    [onStateChange]
+  );
+
+  const activeTab = state?.activeTab ?? uActiveTab;
+  const setActiveTab = (v: "crop" | "adjust") => (state ? setPatch({ activeTab: v }) : uSetActiveTab(v));
+
+  const crop = state?.crop ?? uCrop;
+  const setCrop = (v: { x: number; y: number }) => (state ? setPatch({ crop: v }) : uSetCrop(v));
+
+  const zoom = state?.zoom ?? uZoom;
+  const setZoom = (v: number) => (state ? setPatch({ zoom: v }) : uSetZoom(v));
+
+  const aspect = state?.aspect ?? uAspect;
+  const setAspect = (v: number | undefined) => (state ? setPatch({ aspect: v }) : uSetAspect(v));
+
+  const activePreset = state?.activePreset ?? uActivePreset;
+  const setActivePreset = (v: string) => (state ? setPatch({ activePreset: v }) : uSetActivePreset(v));
+
+  const croppedAreaPixels = state?.croppedAreaPixels ?? uCroppedAreaPixels;
+  const setCroppedAreaPixels = (v: any) => (state ? setPatch({ croppedAreaPixels: v }) : uSetCroppedAreaPixels(v));
+
+  const adjustValues = state?.adjustValues ?? uAdjustValues;
+  const setAdjustValues = (updater: (prev: Record<string, number>) => Record<string, number>) => {
+    if (state) {
+      setPatch({ adjustValues: updater(adjustValues) });
+    } else {
+      uSetAdjustValues(updater);
+    }
+  };
+
+  const luminanceTargetHex = state?.luminanceTargetHex ?? uLuminanceTargetHex;
+  const setLuminanceTargetHex = (v: string) => (state ? setPatch({ luminanceTargetHex: v }) : uSetLuminanceTargetHex(v));
+
+  const activeAdjId = state?.activeAdjId ?? uActiveAdjId;
+  const setActiveAdjId = (v: string) => (state ? setPatch({ activeAdjId: v }) : uSetActiveAdjId(v));
 
   // If the parent is using this component as a dedicated panel (crop-only or adjust-only),
   // force the active tab to match and hide the other mode.
@@ -278,6 +458,90 @@ export function SocialCropper({
     URL.revokeObjectURL(url);
   };
 
+  // Embedded mode: Photoshop-style. The main image stays in place; we only render the interactive cropper overlay.
+  if (mode === "embedded") {
+    return (
+      <div className="absolute inset-0 z-[60] pointer-events-auto">
+        <svg width="0" height="0" aria-hidden="true" className="absolute">
+          <filter id={filterId} colorInterpolationFilters="sRGB">
+            <feColorMatrix
+              in="SourceGraphic"
+              type="matrix"
+              values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1 0 0 0 0"
+              result="rAlpha"
+            />
+            <feComponentTransfer in="rAlpha" result="maskR">
+              <feFuncA type="table" tableValues={luminanceTables.r} />
+            </feComponentTransfer>
+
+            <feColorMatrix
+              in="SourceGraphic"
+              type="matrix"
+              values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 1 0 0 0"
+              result="gAlpha"
+            />
+            <feComponentTransfer in="gAlpha" result="maskG">
+              <feFuncA type="table" tableValues={luminanceTables.g} />
+            </feComponentTransfer>
+
+            <feColorMatrix
+              in="SourceGraphic"
+              type="matrix"
+              values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 1 0 0"
+              result="bAlpha"
+            />
+            <feComponentTransfer in="bAlpha" result="maskB">
+              <feFuncA type="table" tableValues={luminanceTables.b} />
+            </feComponentTransfer>
+
+            <feComposite in="maskR" in2="maskG" operator="arithmetic" k1="1" k2="0" k3="0" k4="0" result="maskRG" />
+            <feComposite in="maskRG" in2="maskB" operator="arithmetic" k1="1" k2="0" k3="0" k4="0" result="maskRGB" />
+
+            <feComponentTransfer in="SourceGraphic" result="bright">
+              <feFuncR type="linear" slope={String(Number(adjustValues.luminance || 100) / 100)} />
+              <feFuncG type="linear" slope={String(Number(adjustValues.luminance || 100) / 100)} />
+              <feFuncB type="linear" slope={String(Number(adjustValues.luminance || 100) / 100)} />
+            </feComponentTransfer>
+
+            <feComponentTransfer in="maskRGB" result="invMask">
+              <feFuncA type="linear" slope="-1" intercept="1" />
+            </feComponentTransfer>
+            <feComposite in="SourceGraphic" in2="invMask" operator="in" result="origPart" />
+
+            <feComposite in="bright" in2="maskRGB" operator="in" result="brightPart" />
+            <feComposite in="origPart" in2="brightPart" operator="arithmetic" k1="0" k2="1" k3="1" k4="0" result="out" />
+            <feColorMatrix in="out" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" />
+          </filter>
+        </svg>
+
+        <div className="absolute inset-0">
+          <Cropper
+            image={imageUrl}
+            crop={crop}
+            zoom={zoom}
+            aspect={aspect}
+            onCropChange={setCrop}
+            onCropComplete={onCropComplete}
+            onZoomChange={setZoom}
+            showGrid={activePreset !== "original"}
+            classes={{
+              containerClassName: "bg-transparent",
+              mediaClassName: "max-h-full transition-all duration-300",
+              cropAreaClassName: cn(
+                "border-2 border-white shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]",
+                effectiveTab === "adjust" && "opacity-20",
+                activePreset === "original" && "opacity-0 pointer-events-none"
+              ),
+            }}
+            style={{
+              mediaStyle: { filter: getFilterString() },
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -435,7 +699,7 @@ export function SocialCropper({
               <div>
                 <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-4">Select Preset</p>
                 <div className="grid grid-cols-1 gap-2">
-                  {PRESETS.map((preset) => {
+                  {SOCIAL_PRESETS.map((preset) => {
                     const Icon = preset.icon;
                     const isActive = activePreset === preset.id;
                     return (
@@ -475,7 +739,7 @@ export function SocialCropper({
               <div>
                 <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-4">Adjustments</p>
                 <div className="grid grid-cols-1 gap-2">
-                  {ADJUSTMENTS.map((adj) => {
+                  {SOCIAL_ADJUSTMENTS.map((adj) => {
                     const Icon = adj.icon;
                     const isActive = activeAdjId === adj.id;
                     const currentVal = adjustValues[adj.id];
@@ -581,10 +845,10 @@ export function SocialCropper({
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-black text-white uppercase tracking-[0.2em]">
-                    {ADJUSTMENTS.find(a => a.id === activeAdjId)?.label}
+                    {SOCIAL_ADJUSTMENTS.find(a => a.id === activeAdjId)?.label}
                   </span>
                   <span className="text-[10px] font-black text-primary">
-                    {adjustValues[activeAdjId]}{ADJUSTMENTS.find(a => a.id === activeAdjId)?.unit}
+                    {adjustValues[activeAdjId]}{SOCIAL_ADJUSTMENTS.find(a => a.id === activeAdjId)?.unit}
                   </span>
                 </div>
 
@@ -629,8 +893,8 @@ export function SocialCropper({
                 <input
                   type="range"
                   value={adjustValues[activeAdjId]}
-                  min={ADJUSTMENTS.find(a => a.id === activeAdjId)?.min}
-                  max={ADJUSTMENTS.find(a => a.id === activeAdjId)?.max}
+                  min={SOCIAL_ADJUSTMENTS.find(a => a.id === activeAdjId)?.min}
+                  max={SOCIAL_ADJUSTMENTS.find(a => a.id === activeAdjId)?.max}
                   step={1}
                   onChange={(e) => setAdjustValues(prev => ({ ...prev, [activeAdjId]: Number(e.target.value) }))}
                   className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary"

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useEffect, useState, useMemo } from "react";
+import React, { useRef, useEffect, useState, useMemo, useImperativeHandle } from "react";
 import { 
   X, 
   RotateCcw, 
@@ -60,11 +60,16 @@ interface ProAnnotationCanvasProps {
   onSave: (data: any, blob?: Blob) => void;
   onCancel: () => void;
   initialTool?: "select" | "pin" | "boundary" | "text";
-  mode?: "overlay" | "panel";
+  mode?: "overlay" | "panel" | "embedded";
   enabledTools?: Array<"select" | "pin" | "boundary" | "text">;
 }
 
-export function ProAnnotationCanvas({
+export type ProAnnotationCanvasHandle = {
+  save: () => void;
+  clear: () => void;
+};
+
+export const ProAnnotationCanvas = React.forwardRef<ProAnnotationCanvasHandle, ProAnnotationCanvasProps>(function ProAnnotationCanvas({
   imageUrl,
   exportImageUrl,
   logoUrl,
@@ -73,7 +78,7 @@ export function ProAnnotationCanvas({
   initialTool = "select",
   mode = "overlay",
   enabledTools,
-}: ProAnnotationCanvasProps) {
+}: ProAnnotationCanvasProps, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
@@ -95,15 +100,27 @@ export function ProAnnotationCanvas({
         const container = containerRef.current;
         if (!container) return;
         
-        // Subtract padding for toolbar and spacing
-        const paddingH = 48; 
-        const paddingV = 160; 
+        // Subtract padding for toolbar and spacing (except embedded mode, where parent is the exact image box)
+        const paddingH = mode === "embedded" ? 0 : 48;
+        const paddingV = mode === "embedded" ? 0 : 160;
         
         const bounds = container.getBoundingClientRect();
-        const cW = (mode === "panel" ? bounds.width : window.innerWidth) - paddingH;
-        const cH = (mode === "panel" ? bounds.height : window.innerHeight) - paddingV;
+        const cW = (mode === "panel" || mode === "embedded" ? bounds.width : window.innerWidth) - paddingH;
+        const cH = (mode === "panel" || mode === "embedded" ? bounds.height : window.innerHeight) - paddingV;
         
         if (cW <= 0 || cH <= 0) return;
+
+        if (mode === "embedded") {
+          const finalWidth = Math.max(1, Math.floor(cW));
+          const finalHeight = Math.max(1, Math.floor(cH));
+          setDimensions({ width: finalWidth, height: finalHeight });
+          setIsImageLoaded(true);
+          if (canvasRef.current) {
+            canvasRef.current.width = finalWidth;
+            canvasRef.current.height = finalHeight;
+          }
+          return;
+        }
 
         const imgRatio = img.width / img.height;
         const containerRatio = cW / cH;
@@ -645,6 +662,129 @@ export function ProAnnotationCanvas({
     }
   };
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      save: () => void handleSave(),
+      clear: () => {
+        setPins([]);
+        setPaths([]);
+        setTextPins([]);
+        setSelectedId(null);
+        setEditingTextId(null);
+        setDragging(null);
+      },
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pins, paths, textPins, dimensions, selectedId, editingTextId, dragging]
+  );
+
+  if (mode === "embedded") {
+    return (
+      <div ref={containerRef} className="absolute inset-0 z-[60] pointer-events-none">
+        {/* Canvas captures interactions; parent renders the visible image below */}
+        <canvas
+          ref={canvasRef}
+          onMouseDown={handlePointerDown}
+          className="absolute inset-0 z-20 cursor-crosshair pointer-events-auto"
+        />
+
+        {/* Text Labels Layer */}
+        {textPins.map((tPin) => (
+          <div
+            key={tPin.id}
+            style={{
+              position: "absolute",
+              left: `${tPin.textPos.x * 100}%`,
+              top: `${tPin.textPos.y * 100}%`,
+              transform: "translate(-50%, -100%)",
+              pointerEvents: "auto",
+            }}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              setDragging({ id: tPin.id, type: "textLabel" });
+              setSelectedId(tPin.id);
+            }}
+            className={cn(
+              "z-30 px-2 py-1 cursor-move flex items-center gap-2 group transition-all pointer-events-auto",
+              selectedId === tPin.id ? "ring-2 ring-blue-500 rounded-lg shadow-lg bg-blue-500/10" : ""
+            )}
+          >
+            {editingTextId === tPin.id ? (
+              <input
+                autoFocus
+                className="bg-slate-900/80 backdrop-blur-sm text-white text-xs font-bold border border-white/20 rounded px-2 py-1 outline-none min-w-[100px] text-center"
+                value={tPin.text}
+                onChange={(e) =>
+                  setTextPins((prev) => prev.map((p) => (p.id === tPin.id ? { ...p, text: e.target.value } : p)))
+                }
+                onBlur={() => setEditingTextId(null)}
+                onKeyDown={(e) => e.key === "Enter" && setEditingTextId(null)}
+              />
+            ) : (
+              <span
+                className="text-white text-sm font-black whitespace-nowrap px-1 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] tracking-tight uppercase"
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setEditingTextId(tPin.id);
+                }}
+              >
+                {tPin.text}
+              </span>
+            )}
+          </div>
+        ))}
+
+        {/* Logo Layer */}
+        {pins.map((pin) => (
+          <div
+            key={pin.id}
+            style={{
+              position: "absolute",
+              left: `${pin.logoPos.x * 100}%`,
+              top: `${pin.logoPos.y * 100}%`,
+              width: pin.logoSize,
+              height: pin.logoSize,
+              transform: "translate(-50%, -50%)",
+              pointerEvents: "auto",
+            }}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              setDragging({ id: pin.id, type: "logo" });
+              setSelectedId(pin.id);
+            }}
+            className={cn(
+              "z-30 flex items-center justify-center rounded-full cursor-move transition-shadow p-1 pointer-events-auto",
+              selectedId === pin.id ? "ring-4 ring-blue-500/20 shadow-2xl" : ""
+            )}
+          >
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt="Logo"
+                className="w-full h-full object-contain pointer-events-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)]"
+              />
+            ) : (
+              <span className="text-[8px] font-black text-white/40">LOGO</span>
+            )}
+
+            {selectedId === pin.id && (
+              <div
+                className="absolute bottom-0 right-0 w-6 h-6 bg-blue-500 rounded-full cursor-nwse-resize border-2 border-white shadow-lg flex items-center justify-center transform translate-x-1/4 translate-y-1/4 z-40 active:scale-110 transition-transform pointer-events-auto"
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  setDragging({ id: pin.id, type: "resize" });
+                }}
+              >
+                <Maximize2 className="h-2.5 w-2.5 text-white" />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -962,7 +1102,7 @@ export function ProAnnotationCanvas({
       </div>
     </div>
   );
-}
+});
 
 function ToolbarButton({ active, onClick, icon, title }: any) {
   return (
